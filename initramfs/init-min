@@ -1,0 +1,28 @@
+#!/bin/sh
+# Prueba minima: demuestra que el kernel ejecuta nuestro /init. Escribe marcas en /dev/kmsg y en pmsg
+# (sobrevive al reinicio en pstore: pmsg-ramoops-0) y reinicia a los 20 s.
+export PATH=/bin:/sbin
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t tmpfs tmpfs /dev
+mknod -m 600 /dev/kmsg c 1 11
+mknod -m 600 /dev/console c 5 1
+echo "RGSLIDE-MIN: init ejecutado, kernel $(uname -r)" > /dev/kmsg
+PM=$(cat /sys/class/misc/pmsg0/dev 2>/dev/null)
+if [ -n "$PM" ]; then
+	mknod -m 600 /dev/pmsg0 c ${PM%:*} ${PM#*:}
+	{
+		echo "RGSLIDE-MIN-INICIO uptime=$(cut -d' ' -f1 /proc/uptime)"
+		echo "cmdline: $(cat /proc/cmdline)"
+		echo "UDC: $(ls /sys/class/udc 2>&1)"
+		echo "modulos: $(wc -l < /proc/modules)"
+		echo "ramdisk /lib/modules: $(ls /lib/modules 2>&1 | wc -l)"
+		dmesg | tail -n 150
+		echo "RGSLIDE-MIN-FIN"
+	} > /dev/pmsg0 2>/dev/null
+else
+	echo "RGSLIDE-MIN: sin /sys/class/misc/pmsg0" > /dev/kmsg
+fi
+sleep 20
+echo "RGSLIDE-MIN: reiniciando" > /dev/kmsg
+reboot -f

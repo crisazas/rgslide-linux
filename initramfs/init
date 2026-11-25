@@ -1,177 +1,131 @@
 #!/bin/sh
-# /init — initramfs de rescate para la Anbernic RG Slide (ums9620_2h10).
-# Shell POSIX estricta: no usar bashismos. Objetivo: consola por USB (ACM)
-# + red por USB (RNDIS) y, si aparece la particion userdata, arrancar el
-# sistema real con switch_root. Si algo falla, se queda en shell de rescate.
+# /init de rescate para la Anbernic RG Slide (ums9620_2h10), kernel de serie 5.4.233.
+# Se ejecuta DESPUES de la ramdisk de vendor (que aporta /lib/modules con los modulos de first stage).
+# Kernel sin devtmpfs ni ACM: /dev con mdev, consola por RNDIS(+telnetd) y gser, logs al pstore via /dev/kmsg.
+# Por defecto NO toca userdata (en pruebas es la particion de datos de Android). `rgslide.rootfs=1` en la cmdline
+# activa find_userdata + switch_root. Reinicio de seguridad a los RESCUE_TIMEOUT s salvo que exista /run/keep.
 
 export PATH=/sbin:/bin:/usr/sbin:/usr/bin
-export HOME=/root
-export TERM=linux
+export HOME=/root TERM=linux
 umask 022
+RESCUE_TIMEOUT=${RESCUE_TIMEOUT:-240}
 
-# --- utilidades minimas ----------------------------------------------------
-msg() { echo "[init] $*" > /dev/kmsg 2>/dev/null || true; echo "[init] $*" >&2; }
-fail() { msg "FALLO: $*"; }
+mount -t proc proc /proc 2>/dev/null
+mount -t sysfs sysfs /sys 2>/dev/null
+mount -t tmpfs -o mode=755 tmpfs /dev 2>/dev/null
+mknod -m 600 /dev/console c 5 1 2>/dev/null
+mknod -m 666 /dev/null c 1 3 2>/dev/null
+mknod -m 600 /dev/kmsg c 1 11 2>/dev/null
+mknod -m 666 /dev/tty c 5 0 2>/dev/null
+exec </dev/console >/dev/console 2>&1
 
-# --- pseudo-sistemas -------------------------------------------------------
-mount -t proc     proc     /proc 2>/dev/null || fail "proc"
-mount -t sysfs    sysfs    /sys  2>/dev/null || fail "sysfs"
-mount -t devtmpfs devtmpfs /dev  2>/dev/null || fail "devtmpfs"
-mount -t tmpfs    tmpfs    /run  2>/dev/null || fail "tmpfs /run"
-mount -t devpts   devpts   /dev/pts 2>/dev/null || true
-mkdir -p /dev/pts /run/lock
+msg() { echo "[rgslide] $*" > /dev/kmsg 2>/dev/null; echo "[rgslide] $*"; }
 
-STAMP=$(date +%Y%m%d-%H%M%S 2>/dev/null || echo arranque)
-LOGDIR=/mnt/root/var/log
-LOG=""
+mkdir -p /dev/pts /run /tmp /mnt/root
+mount -t devpts devpts /dev/pts 2>/dev/null
+mount -t tmpfs tmpfs /run 2>/dev/null
+mount -t configfs none /sys/kernel/config 2>/dev/null || msg "configfs: fallo"
 
-# --- log en pstore (si el kernel lo ofrece) --------------------------------
-pstore_write() {
-	# $1 = fichero destino dentro de pstore; stdin = contenido
-	[ -d /sys/fs/pstore ] || return 0
-	if [ -e /sys/fs/pstore/dmesg-ramoops-0 ]; then
-		cat > "/sys/fs/pstore/dmesg-ramoops-0" 2>/dev/null || return 0
-	else
-		cat > "/sys/fs/pstore/dmesg-$STAMP.log" 2>/dev/null || true
-	fi
-}
+CMDLINE=$(cat /proc/cmdline)
+msg "init de rescate, kernel $(uname -r), timeout ${RESCUE_TIMEOUT}s"
 
-# --- modulos en el orden de /lib/modules/modules.load ----------------------
-load_modules() {
-	LIST=/lib/modules/modules.load
-	[ -r "$LIST" ] || return 0
+( sleep "$RESCUE_TIMEOUT"
+  [ -e /run/keep ] && exit 0
+  msg "timeout de rescate: reiniciando"
+  sync
+  reboot -f ) &
+
+mdev -d &
+sleep 1
+
+load_list() {
+	# $1 = fichero con un .ko por linea (orden de carga); insmod sin deps, el orden ya las respeta
 	while IFS= read -r mod; do
-		case "$mod" in
-			''|'#'*) continue ;;
-		esac
-		msg "modprobe $mod"
-		modprobe "$mod" 2>&1 | while IFS= read -r l; do msg "  $l"; done || fail "modprobe $mod"
-	done < "$LIST"
+		case "$mod" in ''|'#'*) continue ;; esac
+		f=/lib/modules/$mod
+		[ -f "$f" ] || { msg "falta $mod"; continue; }
+		out=$(insmod "$f" 2>&1) && msg "ok $mod" || msg "insmod $mod: $out"
+	done < "$1"
 }
 
-# --- gadget USB: ACM (consola) + RNDIS (red) -------------------------------
-setup_gadget() {
-	mount -t configfs none /sys/kernel/config 2>/dev/null || { fail "configfs"; return 1; }
-	UDC_DIR=/sys/kernel/config/usb_gadget/g1
-	mkdir -p "$UDC_DIR" 2>/dev/null || { fail "gadget g1"; return 1; }
+[ -r /lib/modules/modules.load ] && load_list /lib/modules/modules.load
+[ -r /lib/modules/rgslide-usb.load ] && load_list /lib/modules/rgslide-usb.load
+mdev -s
 
-	echo 0x1d6b > "$UDC_DIR/idVendor"
-	echo 0x0104 > "$UDC_DIR/idProduct"
-	echo 0x0100 > "$UDC_DIR/bcdDevice"
-	echo 0x0200 > "$UDC_DIR/bcdUSB"
-	mkdir -p "$UDC_DIR/strings/0x409"
-	echo "Anbernic"      > "$UDC_DIR/strings/0x409/manufacturer"
-	echo "RG Slide rescue" > "$UDC_DIR/strings/0x409/product"
-	echo "rgslide-rescue" > "$UDC_DIR/strings/0x409/serialnumber"
-	mkdir -p "$UDC_DIR/configs/c.1/strings/0x409"
-	echo "acm+rndis" > "$UDC_DIR/configs/c.1/strings/0x409/configuration"
-	echo 250        > "$UDC_DIR/configs/c.1/MaxPower"
-
-	mkdir -p "$UDC_DIR/functions/acm.usb0"    || fail "func acm"
-	mkdir -p "$UDC_DIR/functions/rndis.usb0"  || fail "func rndis"
-	ln -s "$UDC_DIR/functions/acm.usb0"   "$UDC_DIR/configs/c.1/acm.usb0"   2>/dev/null || true
-	ln -s "$UDC_DIR/functions/rndis.usb0" "$UDC_DIR/configs/c.1/rndis.usb0" 2>/dev/null || true
-
-	UDC=""
-	for u in /sys/class/udc/*; do
-		[ -e "$u" ] || continue
-		UDC=${u##*/}
-		break
-	done
-	if [ -z "$UDC" ]; then
-		fail "sin controlador UDC"
-		return 1
-	fi
-	echo "$UDC" > "$UDC_DIR/UDC" 2>/dev/null || { fail "enlazar UDC $UDC"; return 1; }
-	msg "gadget en $UDC"
-
-	# Red USB: direccion fija en el lado del dispositivo.
-	for n in 0 1 2 3; do
-		IF="usb$n"
-		if [ -e "/sys/class/net/$IF" ]; then
-			ip link set "$IF" up 2>/dev/null || true
-			ip addr add 10.55.0.2/24 dev "$IF" 2>/dev/null || true
-			break
-		fi
-	done
-
-	# Getty en la consola ACM cuando aparezca el tty.
-	for _ in $(seq 1 50); do
-		[ -c /dev/ttyGS0 ] && break
-		sleep 0.1
-	done
-	if [ -c /dev/ttyGS0 ]; then
-		msg "getty en ttyGS0"
-		setsid getty 115200 ttyGS0 </dev/ttyGS0 >/dev/ttyGS0 2>&1 &
-	else
-		fail "no aparece /dev/ttyGS0"
-	fi
-}
-
-# --- localizar userdata por PARTNAME ---------------------------------------
-find_userdata() {
-	for u in /sys/class/block/*/uevent; do
-		[ -r "$u" ] || continue
-		grep -qx 'PARTNAME=userdata' "$u" 2>/dev/null || continue
-		dev=${u%/uevent}; dev=${dev##*/}
-		[ -b "/dev/$dev" ] && { echo "/dev/$dev"; return 0; }
+pick_udc() {
+	for u in /sys/class/udc/*dwc3* /sys/class/udc/*; do
+		[ -e "$u" ] && { echo "${u##*/}"; return 0; }
 	done
 	return 1
 }
 
-# --- arranque --------------------------------------------------------------
-msg "initramfs de rescate $STAMP"
-load_modules
-setup_gadget || fail "gadget USB no disponible"
+setup_gadget() {
+	G=/sys/kernel/config/usb_gadget/g1
+	mkdir -p "$G" || { msg "gadget: no se puede crear g1"; return 1; }
+	echo 0x1d6b > "$G/idVendor"; echo 0x0104 > "$G/idProduct"
+	mkdir -p "$G/strings/0x409" "$G/configs/c.1/strings/0x409"
+	echo Anbernic > "$G/strings/0x409/manufacturer"
+	echo "RG Slide rescue" > "$G/strings/0x409/product"
+	echo rgslide-rescue > "$G/strings/0x409/serialnumber"
+	echo "rndis+gser" > "$G/configs/c.1/strings/0x409/configuration"
+	echo 250 > "$G/configs/c.1/MaxPower"
+	mkdir "$G/functions/rndis.gs4" || msg "gadget: funcion rndis no disponible"
+	mkdir "$G/functions/gser.gs0"  || msg "gadget: funcion gser no disponible"
+	[ -d "$G/functions/rndis.gs4" ] && ln -s "$G/functions/rndis.gs4" "$G/configs/c.1/f1"
+	[ -d "$G/functions/gser.gs0" ]  && ln -s "$G/functions/gser.gs0"  "$G/configs/c.1/f2"
+	UDC=$(pick_udc) || { msg "gadget: sin UDC en /sys/class/udc"; return 1; }
+	echo "$UDC" > "$G/UDC" 2>&1 || { msg "gadget: no se pudo enlazar $UDC"; return 1; }
+	msg "gadget enlazado a $UDC"
+}
 
-# Log a tmpfs para poder volcarlo aunque userdata no exista.
-mkdir -p /run/log
-LOG=/run/log/dmesg-$STAMP.log
-dmesg > "$LOG" 2>/dev/null || true
+setup_net() {
+	i=0
+	while [ $i -lt 50 ]; do
+		for n in /sys/class/net/*; do
+			n=${n##*/}
+			case "$n" in lo|dummy*|sit*|ip6*|tunl*|ifb*|bond*|ccmni*|seth*|sipa*) continue ;; esac
+			ip link set "$n" up 2>/dev/null
+			ip addr add 10.55.0.2/24 dev "$n" 2>/dev/null
+			msg "red: $n -> 10.55.0.2/24"
+			telnetd -l /bin/sh -b 10.55.0.2 &
+			return 0
+		done
+		i=$((i+1)); sleep 0.2
+	done
+	msg "red: no aparece interfaz USB"
+	return 1
+}
 
-PART=$(find_userdata) || PART=""
-if [ -n "$PART" ]; then
-	msg "userdata en $PART"
-	mkdir -p /mnt/root
-	if mount -t ext4 -o rw,noatime "$PART" /mnt/root; then
-		mkdir -p "$LOGDIR"
-		if dmesg > "$LOGDIR/dmesg-$STAMP.log" 2>/dev/null; then
-			msg "log en $LOGDIR/dmesg-$STAMP.log"
-		else
-			fail "no se pudo escribir el log en userdata"
-		fi
-		# pstore tambien, con el mismo contenido.
-		dmesg 2>/dev/null | pstore_write
+setup_gadget && setup_net
+mdev -s
+for i in 1 2 3 4 5 6 7 8 9 10; do [ -c /dev/ttyGS0 ] && break; sleep 0.3; done
+[ -c /dev/ttyGS0 ] && { msg "getty en ttyGS0"; setsid getty -n -l /bin/sh 115200 ttyGS0 & }
 
-		# busybox 1.36 no trae resize2fs: se usa el del rootfs si ya existe,
-		# y si no, tune2fs tampoco crece; se avisa y se sigue.
-		if command -v resize2fs >/dev/null 2>&1; then
-			resize2fs "$PART" >/dev/null 2>&1 || msg "resize2fs sin efecto"
-		else
-			msg "sin resize2fs en este initramfs; userdata no se redimensiona"
-		fi
+msg "UDC: $(ls /sys/class/udc 2>&1 | tr '\n' ' ') estado: $(cat /sys/class/udc/*/state 2>&1 | tr '\n' ' ')"
+msg "red: $(ls /sys/class/net | tr '\n' ' ')"
+msg "modulos cargados: $(wc -l < /proc/modules)"
 
-		if [ -x /mnt/root/sbin/init ]; then
-			msg "switch_root a /mnt/root/sbin/init"
-			mount --move /proc /mnt/root/proc 2>/dev/null || true
-			mount --move /sys  /mnt/root/sys  2>/dev/null || true
-			mount --move /dev  /mnt/root/dev  2>/dev/null || true
-			mount --move /run  /mnt/root/run  2>/dev/null || true
-			exec switch_root /mnt/root /sbin/init
-			fail "switch_root fallo"
-		else
-			fail "$PART sin /sbin/init"
-		fi
-	else
-		fail "no se pudo montar $PART"
+find_userdata() {
+	for u in /sys/class/block/*/uevent; do
+		[ -r "$u" ] || continue
+		grep -qx 'PARTNAME=userdata' "$u" 2>/dev/null || continue
+		d=${u%/uevent}; d=${d##*/}
+		[ -b "/dev/$d" ] && { echo "/dev/$d"; return 0; }
+	done
+	return 1
+}
+
+case "$CMDLINE" in
+*rgslide.rootfs=1*)
+	touch /run/keep
+	PART=$(find_userdata) && msg "userdata en $PART" || msg "sin PARTNAME=userdata"
+	if [ -n "$PART" ] && mount -t ext4 -o rw,noatime "$PART" /mnt/root && [ -x /mnt/root/sbin/init ]; then
+		mount --move /proc /mnt/root/proc; mount --move /sys /mnt/root/sys
+		mount --move /dev /mnt/root/dev;   mount --move /run /mnt/root/run
+		exec switch_root /mnt/root /sbin/init
 	fi
-else
-	fail "no hay particion PARTNAME=userdata"
-fi
+	msg "no se pudo arrancar el rootfs; shell de rescate" ;;
+esac
 
-# --- rescate ---------------------------------------------------------------
-msg "SHELL DE RESCATE (salir = reiniciar; Alt+SysRq+B)"
-dmesg 2>/dev/null | pstore_write
-cd /root 2>/dev/null || cd /
-setsid sh -c 'exec sh </dev/ttyGS0 >/dev/ttyGS0 2>&1' &
-exec sh -c 'exec sh </dev/console >/dev/console 2>&1'
+msg "listo: telnet 10.55.0.2 (o ttyGS0). touch /run/keep evita el reinicio"
+while :; do sleep 5; done

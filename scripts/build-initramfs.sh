@@ -6,11 +6,12 @@ set -eu
 
 SRC=$(cd "$(dirname "$0")/.." && pwd)
 OUT="$SRC/out"
-STAGE="$OUT/initramfs-root"
-IMG="$OUT/initramfs.cpio.gz"
+STAGE="${STAGE_DIR:-$OUT/initramfs-root}"
+IMG="${OUT_IMG:-$OUT/initramfs.cpio.gz}"
+INIT_SRC="${INIT_SRC:-$SRC/initramfs/init}"
 BB_SRC="$SRC/third_party/busybox-aarch64"
 
-[ -f "$SRC/initramfs/init" ] || { echo "falta initramfs/init" >&2; exit 1; }
+[ -f "$INIT_SRC" ] || { echo "falta $INIT_SRC" >&2; exit 1; }
 if [ "$#" -ge 1 ]; then
 	BB=$1
 else
@@ -34,17 +35,15 @@ chmod 700 "$STAGE/root"
 
 cp "$BB" "$STAGE/bin/busybox"
 chmod 755 "$STAGE/bin/busybox"
-cp "$SRC/initramfs/init" "$STAGE/init"
+cp "$INIT_SRC" "$STAGE/init"
 chmod 755 "$STAGE/init"
 
-# Applets: enlaces a busybox en bin/ y sbin/.
+# Applets: enlaces a busybox en bin/ (reboot/poweroff/halt tambien en sbin/).
 for a in $(cd "$STAGE" && ./bin/busybox --list); do
-	case "$a" in
-		sh|ash|mount|umount|modprobe|dmesg|date|grep|seq|sleep|switch_root|mkdir|ln|ip|getty|setsid|cat|echo|mknod|chmod|cd|exec)
-			ln -sf busybox "$STAGE/bin/$a" ;;
-		reboot|poweroff|halt)
-			ln -sf ../bin/busybox "$STAGE/sbin/$a" ;;
-	esac
+	ln -sf busybox "$STAGE/bin/$a"
+done
+for a in reboot poweroff halt; do
+	ln -sf ../bin/busybox "$STAGE/sbin/$a"
 done
 ln -sf ../bin/busybox "$STAGE/sbin/init"
 

@@ -5,3 +5,4 @@ third_party/
 *.pac
 __pycache__/
 *.pyc
+initramfs/modules/*.ko
