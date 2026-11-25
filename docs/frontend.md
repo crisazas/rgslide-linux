@@ -39,3 +39,9 @@ Como el 20 es a la vez "hotkey" y "menu", RetroArch (`input_driver.c`, `input_dr
 - Solucion: `tools/udev/rgslide-usb.nmconnection` (match `driver=rndis_host` + `interface-name=enx*`, IP manual `10.55.0.1/24`, sin gateway, prioridad 100, IPv6 desactivado).
 - Instalar en el PC: `sudo install -m 600 -o root -g root tools/udev/rgslide-usb.nmconnection /etc/NetworkManager/system-connections/ && sudo nmcli connection reload`.
 - Verificado: perfil activo con la interfaz actual, ssh sin poner la IP a mano, la ruta por defecto sigue por wifi, y baja/sube del perfil conserva la IP. NO probado: desenchufar el cable y volver a enchufarlo / un reinicio de la Slide (MAC nueva).
+
+## Carrera del UDC en el arranque en frio (2026-11-25)
+- Causa del arranque de las 15:41 sin USB (MEDIDA en `journalctl -b -1`): `setup_gadget` de `initramfs/init` busco el UDC a los 23,067 s y no habia ninguno (`gadget: sin UDC en /sys/class/udc`); `dwc3 gadget init done!` llego 0,2 ms despues. Sin gadget nunca hay `b_sess_vld`. En el arranque bueno el UDC aparecio unos ms antes. NO era cable ni ES.
+- Arreglo (commit cc5c662): `setup_gadget` reintenta hasta 10 s; deja `gadget: UDC visible tras N esperas` si tuvo que esperar. Imagen `out/boot-rootfs-udcwait.img` (kernel y cmdline iguales; con el init antiguo el script reproduce `boot-rootfs.img` byte a byte).
+- Flasheado en `boot_a` (`/dev/sda36`) desde Linux, releido md5 853536e0. `boot_b` queda con la imagen anterior (19b927a7), como ultimo arranque bueno.
+- Probar: `misc` con `_a`, a = prio 15 tries 1 sin successful, b = prio 14 (copia previa en `out/misc-antes-udcwait.bin`). Si A no marca exito, el LK vuelve a B. Reproducir la carrera es improbable: un arranque bueno no la demuestra arreglada; la evidencia es la linea `UDC visible tras N esperas`.
