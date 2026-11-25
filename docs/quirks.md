@@ -118,3 +118,11 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
 - Mesa documenta G57 (Valhall v9) con GLES 3.1 / GL 3.1 sobre panfrost upstream.
 - Existe `zenithblue-oss/panvk-kbase-android` (PanVK sobre mali_kbase), pensado para Android y Vulkan; no verificado para G57 ni en glibc.
 - Opciones sin decidir: (1) Mesa propio con backend kbase, (2) libmali de Arm (bionic) en glibc con capa de compatibilidad, (3) kernel con panfrost upstream para el T820 (no se si existe).
+
+## panvk-kbase-android: lo que dice el repo (leido 2026-11-25, no probado en la Slide)
+- Mesa PanVK 26.3-devel parcheado para hablar con `mali_kbase` (`/dev/mali0`). Vulkan 1.4. Soporta G57 (v9, JM) con perfil `profiles/g57-v9-jm.json`. Probado por ellos en una G57 MC2 (Lenovo TB336FU, Android): PanProbe 41/41; PanPlay (DXVK) solo "1-9 pass".
+- Es Vulkan, no OpenGL ES. Para emuladores GL haria falta Zink (OpenGL sobre Vulkan) o que el emulador use Vulkan.
+- Tiene `meson/linux-aarch64-native.ini` (glibc, "NativeCode PRoot / Bachata") y mencionan "glibc gates" pasadas, pero el README, las apps y el empaquetado son Android/bionic. La via glibc existe y NO esta documentada como soportada.
+- Build: fetch-mesa.sh + apply-patches.sh --profile g57-v9-jm + meson con el native file; compila contra Mesa fijado en sources.lock.
+- Limitaciones declaradas: sin geometry/tessellation en algunos casos, sin BC nativo, sin display/wayland/xcb (en Android).
+- Riesgo: kbase JM en G57 con el UAPI de ESTE kernel (5.4.233 de Unisoc); el repo exige coincidir `pan_arch+gpu_id+frontend+kbase_uapi`. Nuestro gpu_id es 0x9091.
