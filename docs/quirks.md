@@ -246,3 +246,9 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
 - Si el allocator muere: `android-services start` lo relanza; `hybristest` espera eternamente en `HidlServiceManagement getService` sin el.
 - Tras el SSH colgado la Slide entro en bucle de reinicios ~40-80 s durante unos 15 min (pm_sys/CM4 sin arrancar a tiempo, sin panic en journal); se estabilizo sola (>350 s). Tras cada reinicio la IP del PC cambia de interfaz (MAC aleatoria de usb0): `ip addr add 10.55.0.1/24 dev enx...`.
 - SEGV al cerrar RESUELTO: los buffers y la ventana de `drm` son de la cuenta de referencias del blob; hay que `incRef` al crearlos y `decRef` (no `delete`) al destruirlos (como fbdev/wayland). `hybristest 3`: 59.2 fps, teardown completo, rc=0. `glGetError=0x502` al final queda sin investigar (menor).
+
+## RetroArch con hybris: menu a ~57 fps (2026-11-25)
+- `rgslide-retroarch` (RGUI, contexto `hybris`, GLES 2) en la Slide: 171 PAGE_FLIP en 3 s (~57 fps), 4 servicios Android arriba, joypad udev reconocido (`retrogame_joypad` 484b:1101, sin autoconfig).
+- SEGV inicial en `glDisableVertexAttribArray` del blob (`TPIDR_EL0+0x18` basura): RetroArch tenia un segmento TLS (`.tbss`, 0x30 B) por el pool `__thread` de `libretro-common/formats/data_transfer.c`; un ejecutable glibc con PT_TLS desplaza el TP y el blob bionic lee sus slots de TLS en `[tp+0x18]`. Solucion: compilar con `-DDT_NO_POOL` (`make CC="$CC -DDT_NO_POOL"` en `build-retroarch.sh`) -> binario SIN PT_TLS. REGLA: ningun ejecutable/lib glibc que llame a GL por hybris puede tener PT_TLS propio (comprobar con `llvm-readelf -l | grep TLS`).
+- `audio_driver=alsa` hace salir a RetroArch ("Failed to open PLAYBACK ... default"): sin tarjeta ALSA todavia; usar `audio_driver=null` hasta que el audio funcione (`/tmp/ra3/a.cfg`).
+- `tools/segvtrace` + `out/libsegvtrace.so` (LD_PRELOAD): imprime PC/LR/addr con el mapa en un SIGSEGV; asi se localizo el fallo.
