@@ -1,7 +1,7 @@
 # PROGRESS
 
 ## Ahora
-- Boton de encendido ya NO suspende (suspend deep cuelga en sprd-sensorhub); 3 subagentes en marcha: power key/mask suspend, sensores CM4, bluetooth. NO probar suspension real sin usuario delante. Falta audio (AGDSP), ventilador por persona
+- Sensores: CM4 ch arranca y el acelerometro da datos (rgslide-ch.service instalado SIN habilitar). BT: hci0 UP (rgslide-bt.service SIN habilitar). Suspension enmascarada. Esperando subagente de audio; luego habilitar ch+bt y reinicio en frio con vigilante. Falta por persona: ventilador, giro, A2DP, emparejar
 
 ## Siguiente
 - /dev/sctl_ch da ENODEV en bucle (mayor dinamico 498); CM4 Version no visto
