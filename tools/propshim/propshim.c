@@ -1533,3 +1533,15 @@ int property_get(const char*k,char*v,const char*d){
   n=0; if(d){while(d[n]&&n<91){v[n]=d[n];n++;}} v[n]=0; return n;}
 int __system_property_get(const char*k,char*v){int n=lookup(k,v); if(n<0){v[0]=0;return 0;} return n;}
 int property_set(const char*k,const char*v){(void)k;(void)v;return 0;}
+
+/* API de bajo nivel de bionic (la usa el blob de Mali): find devuelve un puntero opaco a la fila de T. */
+const void *__system_property_find(const char *k){
+  for(int i=0;T[i][0];i++) if(eq(T[i][0],k)) return &T[i];
+  return 0;}
+void __system_property_read_callback(const void *pi,
+    void (*cb)(void*,const char*,const char*,unsigned),void *cookie){
+  const char *const *r=(const char *const *)pi; cb(cookie,r[0],r[1],0);}
+int __system_property_read(const void *pi,char *name,char *value){
+  const char *const *r=(const char *const *)pi; int n=0;
+  if(name){int j=0;while(r[0][j]&&j<31){name[j]=r[0][j];j++;}name[j]=0;}
+  while(r[1][n]&&n<91){value[n]=r[1][n];n++;} value[n]=0; return n;}

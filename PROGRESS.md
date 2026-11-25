@@ -1,7 +1,7 @@
 # PROGRESS
 
 ## Ahora
-- DECIDIDO: GPU por el blob de Arm del vendor (GLES 3.2 + Vulkan 1.4). Plan pendiente de OK: hito 1 = render offscreen con el blob como proceso bionic (sin libhybris) para saber si Mali rinde; luego salida a DRM.
+- HITO 1 HECHO: Mali-G57 renderiza GLES 3.2 offscreen en Debian con el blob de Arm (gltest). Siguiente: hito 2 = sacar el buffer al panel (drmshow, sin probar) y medir rendimiento.
 
 ## Siguiente
 - Arreglar /dev (sin devtmpfs: /dev/null 660, dbus/resolved/wpa_supplicant fallan, systemd degraded)
