@@ -1,0 +1,14 @@
+[Unit]
+Description=Servicios minimos de Android para gralloc (servicemanager, vndservicemanager, hwservicemanager, allocator@4.0)
+After=rgslide-gpu.service
+Requires=rgslide-gpu.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+KillMode=process
+ExecStart=/usr/local/sbin/android-services start
+ExecStop=/usr/local/sbin/android-services stop
+
+[Install]
+WantedBy=multi-user.target
