@@ -1,7 +1,7 @@
 # PROGRESS
 
 ## Ahora
-- Pantalla y GPU del kernel de fabrica registradas en Debian (card0 DSI, mali0 G57). Siguiente: mknod /dev/dri/card0 y /dev/mali0, probar modetest/kmscube y driver de usuario Mali (kbase).
+- Modeset DSI funciona con kmscube (card0 por mknod, 1280x960@60) pero Mesa va por llvmpipe. Pendiente: confirmar imagen en el panel (usuario), driver de usuario Mali para kbase, mknod en arranque.
 
 ## Siguiente
 - Arreglar /dev (sin devtmpfs: /dev/null 660, dbus/resolved/wpa_supplicant fallan, systemd degraded)
