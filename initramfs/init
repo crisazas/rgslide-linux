@@ -181,6 +181,7 @@ setup_net() {
 			ip addr add 10.55.0.2/24 dev "$IFN" 2>/dev/null
 			msg "red: IP 10.55.0.2/24 en $IFN (usb0 up)"
 			telnetd -l /bin/sh -b 10.55.0.2 &
+			TELNETD_PID=$!
 			return 0
 		fi
 		i=$((i+1)); sleep 0.2
@@ -196,6 +197,7 @@ for i in 1 2 3 4 5 6 7 8 9 10; do [ -c /dev/ttyGS0 ] && break; sleep 0.3; done
 if [ -c /dev/ttyGS0 ]; then
 	msg "getty en ttyGS0 (bucle)"
 	( while :; do setsid getty -n -l /bin/sh 115200 ttyGS0; sleep 1; done ) &
+	GETTY_PID=$!
 fi
 
 msg "UDC: $(ls /sys/class/udc 2>&1 | tr '\n' ' ') estado: $(cat /sys/class/udc/*/state 2>&1 | tr '\n' ' ')"
@@ -225,7 +227,13 @@ boot_rootfs() {
 	[ -x /mnt/root/sbin/init ] || { msg "rootfs: /mnt/root/sbin/init no existe"; umount /mnt/root; return 1; }
 	# El ext4 se crece despues, en caliente, con rgslide-resize.service (resize2fs es un binario dinamico de Debian: no corre desde aqui).
 	flush_marks
-	# los hilos de fondo del init (vigilante, getty, telnetd) viven en el initramfs: se paran antes de moverlo
+	# Hilos de fondo del init: se paran para que no compitan con systemd (agetty en ttyGS0, sshd). mdev -d SE QUEDA: el kernel no tiene
+	# devtmpfs y udev no crea los nodos de /dev por si mismo.
+	[ -n "$USBW_PID" ] && kill "$USBW_PID" 2>/dev/null
+	[ -n "$GETTY_PID" ] && kill "$GETTY_PID" 2>/dev/null
+	[ -n "$TELNETD_PID" ] && kill "$TELNETD_PID" 2>/dev/null
+	killall getty telnetd 2>/dev/null
+	flush_marks
 	for d in proc sys dev run; do mkdir -p /mnt/root/$d; done
 	mount --move /proc /mnt/root/proc; mount --move /sys /mnt/root/sys
 	mount --move /dev /mnt/root/dev;   mount --move /run /mnt/root/run
@@ -251,5 +259,6 @@ usbwatch() {
 	done
 }
 usbwatch &
+USBW_PID=$!
 flush_marks
 while :; do sleep 5; done
