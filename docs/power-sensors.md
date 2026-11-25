@@ -55,8 +55,9 @@ Todo probado a mano en la Slide por ssh. Entregables en `rootfs/overlay/`:
 ## No comprobado
 Giro fisico, IMU real, hall al cerrar, ruido del ventilador, `systemctl suspend`, power key, deep sleep, arranque en frio con los servicios nuevos.
 
-## Prueba de suspension que acabo en panic (2026-11-25, ~17:03 hora del PC)
-- Lanzada SIN avisar al usuario: `power/wakeup=disabled` en `/sys/devices/platform/soc/soc:ipa-apb/25220000.sipa` y luego `echo freeze > /sys/power/state` con `wakealarm` a +25 s (script `/tmp/susp-test.sh`, su log se perdio al reiniciar).
-- Resultado MEDIDO (`/var/lib/systemd/pstore/dmesg-ramoops-0/1`): a los 900 s de uptime `Unable to handle kernel NULL pointer dereference at virtual address 0x40`, `pc : sipa_recv_skb+0x7c [sipa_core]`, `Kernel panic - not syncing: Fatal exception in interrupt`; la Slide reinicio sola (arranque limpio, ES y wifi activos).
-- NO se sabe: si el panic ocurrio al suspender (el console-ramoops no tiene lineas `PM: suspend entry`) ni si lo causo desactivar el wakeup de sipa. Hipotesis sin comprobar.
-- Regla: no repetir pruebas de suspension sin que el usuario este delante y lo apruebe; la suspension sigue SIN funcionar.
+## Prueba de suspension que acabo en panic (2026-11-25, ~17:03 hora del PC = 23:19:36 UTC)
+- Lanzada SIN avisar al usuario: `echo disabled > /sys/devices/platform/soc/soc:ipa-apb/25220000.sipa/power/wakeup` y luego `echo freeze > /sys/power/state` con `wakealarm` a +25 s (`/tmp/susp-test.sh`, su log se perdio al reiniciar).
+- MEDIDO (`/var/lib/systemd/pstore/dmesg-ramoops-0/1`): a los 900,3 s de uptime (23:19:38 UTC, 2 s despues de mi orden) `Unable to handle kernel NULL pointer dereference at virtual address 0x40`, `pc : sipa_recv_skb+0x7c [sipa_core]`, `lr : sipa_dummy_rx_poll+0xf0`, `Kernel panic - not syncing: Fatal exception in interrupt`; la Slide reinicio sola y el arranque siguiente fue limpio. En el console-ramoops NO hay `PM: suspend entry` ni `Freezing`: el panic fue ANTES de suspender.
+- CAUSA (deducida del desensamblado de `dump/boot/rd_vendor/lib/modules/sipa-core.ko` y de los registros del oops, no de las fuentes): `sipa_recv_skb` hace `pm_wakeup_dev_event(dev, 500, 1)` tras leer `dev->power.wakeup` (offset 360) y un campo suyo (offset 64) SIN comprobar NULL; con el oops `x8 = 0`. `echo disabled > power/wakeup` destruye el `wakeup_source` del dispositivo (`power.wakeup = NULL`), y el siguiente paquete recibido por IPA desreferencia NULL.
+- REGLA: **nunca** deshabilitar `power/wakeup` de `25220000.sipa` (ni de otros dispositivos sipa/IPA) mientras el modem o el wifi (pasa por IPA: `sipa_dummy: dev wlan0`) reciban trafico. Para evitar que sipa despierte el s2idle hay que parar el trafico o usar otro mecanismo, no esto.
+- Sin repetir pruebas de suspension a ciegas: la suspension sigue SIN funcionar (ver arriba: sipa despierta al instante).
