@@ -1,0 +1,258 @@
+diff -ruN orig/SDL2-2.32.4/src/video/hybris/SDL_hybrisopengles.c SDL2-2.32.4/src/video/hybris/SDL_hybrisopengles.c
+--- orig/SDL2-2.32.4/src/video/hybris/SDL_hybrisopengles.c	1969-12-31 18:00:00.000000000 -0600
++++ SDL2-2.32.4/src/video/hybris/SDL_hybrisopengles.c	2026-11-25 14:47:05.383532824 -0600
+@@ -0,0 +1,30 @@
++#include "../../SDL_internal.h"
++#if defined(SDL_VIDEO_DRIVER_HYBRIS) && defined(SDL_VIDEO_OPENGL_EGL)
++#include "SDL_hybrisvideo.h"
++
++void HYBRIS_GLES_DefaultProfileConfig(_THIS, int *mask, int *major, int *minor)
++{
++    *mask = SDL_GL_CONTEXT_PROFILE_ES;
++    *major = 2;
++    *minor = 0;
++}
++
++int HYBRIS_GLES_LoadLibrary(_THIS, const char *path)
++{
++    /* EGL_DEFAULT_DISPLAY: es lo unico que atiende el vendor hybris de glvnd */
++    return SDL_EGL_LoadLibrary(_this, path, EGL_DEFAULT_DISPLAY, 0);
++}
++
++int HYBRIS_GLES_SwapWindow(_THIS, SDL_Window *window)
++{
++    SDL_WindowData *wdata = (SDL_WindowData *)window->driverdata;
++    if (!_this->egl_data->eglSwapBuffers(_this->egl_data->egl_display, wdata->egl_surface)) {
++        return SDL_SetError("eglSwapBuffers failed");
++    }
++    return 0;
++}
++
++SDL_EGL_CreateContext_impl(HYBRIS)
++SDL_EGL_MakeCurrent_impl(HYBRIS)
++
++#endif
+diff -ruN orig/SDL2-2.32.4/src/video/hybris/SDL_hybrisvideo.c SDL2-2.32.4/src/video/hybris/SDL_hybrisvideo.c
+--- orig/SDL2-2.32.4/src/video/hybris/SDL_hybrisvideo.c	1969-12-31 18:00:00.000000000 -0600
++++ SDL2-2.32.4/src/video/hybris/SDL_hybrisvideo.c	2026-11-25 14:47:05.382884929 -0600
+@@ -0,0 +1,141 @@
++#include "../../SDL_internal.h"
++#ifdef SDL_VIDEO_DRIVER_HYBRIS
++
++#include "../SDL_sysvideo.h"
++#include "../../events/SDL_events_c.h"
++#include "../../events/SDL_keyboard_c.h"
++#include "../../events/SDL_mouse_c.h"
++#ifdef SDL_INPUT_LINUXEV
++#include "../../core/linux/SDL_evdev.h"
++#endif
++#include "SDL_hybrisvideo.h"
++
++#define HYBRISVID_DRIVER_NAME "hybris"
++#define HYBRIS_W 1280
++#define HYBRIS_H 960
++
++static void HYBRIS_Destroy(SDL_VideoDevice *device)
++{
++    SDL_free(device);
++}
++
++int HYBRIS_VideoInit(_THIS)
++{
++    SDL_DisplayMode mode;
++    SDL_zero(mode);
++    mode.format = SDL_PIXELFORMAT_ABGR8888;
++    mode.w = HYBRIS_W;
++    mode.h = HYBRIS_H;
++    mode.refresh_rate = 60;
++    if (SDL_AddBasicVideoDisplay(&mode) < 0) {
++        return -1;
++    }
++    SDL_AddDisplayMode(&_this->displays[0], &mode);
++#ifdef SDL_INPUT_LINUXEV
++    if (SDL_EVDEV_Init() < 0) {
++        return -1;
++    }
++#endif
++    return 0;
++}
++
++void HYBRIS_VideoQuit(_THIS)
++{
++#ifdef SDL_INPUT_LINUXEV
++    SDL_EVDEV_Quit();
++#endif
++}
++
++static int HYBRIS_SetDisplayMode(_THIS, SDL_VideoDisplay *display, SDL_DisplayMode *mode)
++{
++    return 0;
++}
++
++int HYBRIS_CreateWindow(_THIS, SDL_Window *window)
++{
++    SDL_WindowData *wdata = (SDL_WindowData *)SDL_calloc(1, sizeof(*wdata));
++    if (!wdata) {
++        return SDL_OutOfMemory();
++    }
++    window->x = 0;
++    window->y = 0;
++    window->w = HYBRIS_W;
++    window->h = HYBRIS_H;
++    window->flags |= SDL_WINDOW_FULLSCREEN | SDL_WINDOW_SHOWN | SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_MOUSE_FOCUS;
++    wdata->egl_surface = EGL_NO_SURFACE;
++
++    if (window->flags & SDL_WINDOW_OPENGL) {
++        if (!_this->egl_data) {
++            if (SDL_GL_LoadLibrary(NULL) < 0) {
++                SDL_free(wdata);
++                return -1;
++            }
++        }
++        /* nativa 0: la plataforma "drm" de hybris crea su propia ventana a pantalla completa */
++        wdata->egl_surface = SDL_EGL_CreateSurface(_this, (NativeWindowType)0);
++        if (wdata->egl_surface == EGL_NO_SURFACE) {
++            SDL_free(wdata);
++            return SDL_SetError("hybris: no pude crear la superficie EGL");
++        }
++    }
++    window->driverdata = wdata;
++    SDL_SetMouseFocus(window);
++    SDL_SetKeyboardFocus(window);
++    return 0;
++}
++
++void HYBRIS_DestroyWindow(_THIS, SDL_Window *window)
++{
++    SDL_WindowData *wdata = (SDL_WindowData *)window->driverdata;
++    if (wdata) {
++        if (wdata->egl_surface != EGL_NO_SURFACE) {
++            SDL_EGL_DestroySurface(_this, wdata->egl_surface);
++        }
++        SDL_free(wdata);
++    }
++    window->driverdata = NULL;
++}
++
++static void HYBRIS_PumpEvents(_THIS)
++{
++#ifdef SDL_INPUT_LINUXEV
++    SDL_EVDEV_Poll();
++#endif
++}
++
++static SDL_VideoDevice *HYBRIS_CreateDevice(void)
++{
++    SDL_VideoDevice *device = (SDL_VideoDevice *)SDL_calloc(1, sizeof(SDL_VideoDevice));
++    if (!device) {
++        SDL_OutOfMemory();
++        return NULL;
++    }
++    device->VideoInit = HYBRIS_VideoInit;
++    device->VideoQuit = HYBRIS_VideoQuit;
++    device->SetDisplayMode = HYBRIS_SetDisplayMode;
++    device->PumpEvents = HYBRIS_PumpEvents;
++    device->CreateSDLWindow = HYBRIS_CreateWindow;
++    device->DestroyWindow = HYBRIS_DestroyWindow;
++    device->free = HYBRIS_Destroy;
++#ifdef SDL_VIDEO_OPENGL_EGL
++    device->GL_DefaultProfileConfig = HYBRIS_GLES_DefaultProfileConfig;
++    device->GL_LoadLibrary = HYBRIS_GLES_LoadLibrary;
++    device->GL_GetProcAddress = SDL_EGL_GetProcAddress;
++    device->GL_UnloadLibrary = SDL_EGL_UnloadLibrary;
++    device->GL_CreateContext = HYBRIS_GLES_CreateContext;
++    device->GL_MakeCurrent = HYBRIS_GLES_MakeCurrent;
++    device->GL_SetSwapInterval = SDL_EGL_SetSwapInterval;
++    device->GL_GetSwapInterval = SDL_EGL_GetSwapInterval;
++    device->GL_SwapWindow = HYBRIS_GLES_SwapWindow;
++    device->GL_DeleteContext = SDL_EGL_DeleteContext;
++#endif
++    return device;
++}
++
++VideoBootStrap HYBRIS_bootstrap = {
++    HYBRISVID_DRIVER_NAME, "SDL hybris video driver (rgslide)",
++    HYBRIS_CreateDevice,
++    NULL
++};
++
++#endif /* SDL_VIDEO_DRIVER_HYBRIS */
+diff -ruN orig/SDL2-2.32.4/src/video/hybris/SDL_hybrisvideo.h SDL2-2.32.4/src/video/hybris/SDL_hybrisvideo.h
+--- orig/SDL2-2.32.4/src/video/hybris/SDL_hybrisvideo.h	1969-12-31 18:00:00.000000000 -0600
++++ SDL2-2.32.4/src/video/hybris/SDL_hybrisvideo.h	2026-11-25 14:47:05.382048760 -0600
+@@ -0,0 +1,17 @@
++/* Driver de video "hybris" de SDL2 (rgslide): EGL/GLES por libhybris con la plataforma "drm"; la ventana nativa la entrega la plataforma
++ * (eglCreateWindowSurface con 0), como hace RetroArch. Tamano = el del panel. Entrada por evdev. */
++#ifndef SDL_hybrisvideo_h_
++#define SDL_hybrisvideo_h_
++#include "../SDL_sysvideo.h"
++#include "../SDL_egl_c.h"
++
++typedef struct SDL_WindowData {
++    EGLSurface egl_surface;
++} SDL_WindowData;
++
++extern int HYBRIS_GLES_LoadLibrary(_THIS, const char *path);
++extern int HYBRIS_GLES_SwapWindow(_THIS, SDL_Window *window);
++extern SDL_GLContext HYBRIS_GLES_CreateContext(_THIS, SDL_Window *window);
++extern int HYBRIS_GLES_MakeCurrent(_THIS, SDL_Window *window, SDL_GLContext context);
++extern void HYBRIS_GLES_DefaultProfileConfig(_THIS, int *mask, int *major, int *minor);
++#endif
+diff -ruN orig/SDL2-2.32.4/src/video/SDL_sysvideo.h SDL2-2.32.4/src/video/SDL_sysvideo.h
+--- orig/SDL2-2.32.4/src/video/SDL_sysvideo.h	2025-01-01 09:47:53.000000000 -0600
++++ SDL2-2.32.4/src/video/SDL_sysvideo.h	2026-11-25 14:47:05.397592532 -0600
+@@ -482,6 +482,7 @@
+ extern VideoBootStrap Emscripten_bootstrap;
+ extern VideoBootStrap QNX_bootstrap;
+ extern VideoBootStrap OFFSCREEN_bootstrap;
++extern VideoBootStrap HYBRIS_bootstrap;
+ extern VideoBootStrap NGAGE_bootstrap;
+ extern VideoBootStrap OS2DIVE_bootstrap;
+ extern VideoBootStrap OS2VMAN_bootstrap;
+diff -ruN orig/SDL2-2.32.4/src/video/SDL_video.c SDL2-2.32.4/src/video/SDL_video.c
+--- orig/SDL2-2.32.4/src/video/SDL_video.c	2025-01-29 16:45:49.000000000 -0600
++++ SDL2-2.32.4/src/video/SDL_video.c	2026-11-25 14:47:05.397965609 -0600
+@@ -142,6 +142,9 @@
+ #ifdef SDL_VIDEO_DRIVER_NGAGE
+     &NGAGE_bootstrap,
+ #endif
++#ifdef SDL_VIDEO_DRIVER_HYBRIS
++    &HYBRIS_bootstrap,
++#endif
+ #ifdef SDL_VIDEO_DRIVER_OFFSCREEN
+     &OFFSCREEN_bootstrap,
+ #endif
+--- orig/SDL2-2.32.4/CMakeLists.txt	2025-03-31 10:12:51.000000000 -0600
++++ SDL2-2.32.4/CMakeLists.txt	2026-11-25 14:47:13.270134404 -0600
+@@ -489,6 +489,7 @@
+ set_option(SDL_KMSDRM              "Use KMS DRM video driver" ${UNIX_SYS})
+ dep_option(SDL_KMSDRM_SHARED       "Dynamically load KMS DRM support" ON "SDL_KMSDRM" OFF)
+ set_option(SDL_OFFSCREEN           "Use offscreen video driver" ON)
++set_option(SDL_HYBRIS              "Use hybris (rgslide) video driver" ON)
+ option_string(SDL_BACKGROUNDING_SIGNAL "number to use for magic backgrounding signal or 'OFF'" OFF)
+ option_string(SDL_FOREGROUNDING_SIGNAL "number to use for magic foregrounding signal or 'OFF'" OFF)
+ set_option(SDL_HIDAPI              "Enable the HIDAPI subsystem" ON)
+@@ -1506,6 +1507,13 @@
+     # Need to check for EGL first because KMSDRM and Wayland depends on it.
+     CheckEGL()
+     CheckKMSDRM()
++    if(SDL_HYBRIS AND SDL_VIDEO_OPENGL_EGL)
++      set(SDL_VIDEO_DRIVER_HYBRIS 1)
++      file(GLOB VIDEO_HYBRIS_SOURCES ${SDL2_SOURCE_DIR}/src/video/hybris/*.c)
++      list(APPEND SOURCE_FILES ${VIDEO_HYBRIS_SOURCES})
++      set(HAVE_HYBRIS TRUE)
++      set(HAVE_SDL_VIDEO TRUE)
++    endif()
+     CheckGLX()
+     CheckOpenGL()
+     CheckOpenGLES()
+--- orig/SDL2-2.32.4/include/SDL_config.h.cmake	2025-01-01 09:47:53.000000000 -0600
++++ SDL2-2.32.4/include/SDL_config.h.cmake	2026-11-25 14:47:05.398123297 -0600
+@@ -412,6 +412,7 @@
+ #cmakedefine SDL_VIDEO_DRIVER_DIRECTFB_DYNAMIC @SDL_VIDEO_DRIVER_DIRECTFB_DYNAMIC@
+ #cmakedefine SDL_VIDEO_DRIVER_DUMMY @SDL_VIDEO_DRIVER_DUMMY@
+ #cmakedefine SDL_VIDEO_DRIVER_OFFSCREEN @SDL_VIDEO_DRIVER_OFFSCREEN@
++#cmakedefine SDL_VIDEO_DRIVER_HYBRIS @SDL_VIDEO_DRIVER_HYBRIS@
+ #cmakedefine SDL_VIDEO_DRIVER_WINDOWS @SDL_VIDEO_DRIVER_WINDOWS@
+ #cmakedefine SDL_VIDEO_DRIVER_WINRT @SDL_VIDEO_DRIVER_WINRT@
+ #cmakedefine SDL_VIDEO_DRIVER_WAYLAND @SDL_VIDEO_DRIVER_WAYLAND@
