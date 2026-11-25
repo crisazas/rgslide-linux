@@ -1,0 +1,14 @@
+#!/bin/bash -l
+# Lanzador de EmulationStation para la RG Slide. ES, al "reiniciar" o "apagar" desde su menu, termina y deja /tmp/es-restart, /tmp/es-sysrestart o /tmp/es-shutdown:
+# este bucle los atiende (igual que el emulationstation.sh del proyecto). `-l`: shell de login, para leer /etc/profile.d (variables de hybris).
+export LD_LIBRARY_PATH=/opt/emulationstation/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+while true; do
+    rm -f /tmp/es-restart /tmp/es-sysrestart /tmp/es-shutdown
+    /opt/emulationstation/emulationstation "$@"
+    ret=$?
+    [ -f /tmp/es-restart ] && continue
+    if [ -f /tmp/es-sysrestart ]; then rm -f /tmp/es-sysrestart; sudo -n systemctl reboot; break; fi
+    if [ -f /tmp/es-shutdown ]; then rm -f /tmp/es-shutdown; sudo -n systemctl poweroff; break; fi
+    break
+done
+exit $ret
