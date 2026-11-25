@@ -7,7 +7,8 @@ SSH="ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/tmp
 T=$(mktemp -d)
 cp -a "${CORES:-/tmp/opencode/ra/tree}/opt" "$T/"
 cp out/retroarch-root/opt/retroarch/bin/retroarch "$T/opt/retroarch/bin/retroarch"
-mkdir -p "$T/usr/local/bin" "$T/etc"
+mkdir -p "$T/usr/local/bin" "$T/etc" "$T/usr/share/rgslide/autoconfig"
+cp rootfs/overlay/usr/share/rgslide/autoconfig/RG_Slide.cfg "$T/usr/share/rgslide/autoconfig/"
 cp rootfs/overlay/usr/local/bin/rgslide-retroarch "$T/usr/local/bin/"
 cp rootfs/overlay/etc/retroarch.cfg "$T/etc/"
 # OJO: sin la entrada '.' (extraerla sobre / le aplicaria el modo 0700 de mktemp y se pierde el SSH); --no-overwrite-dir por si acaso.
