@@ -1,7 +1,7 @@
 # PROGRESS
 
 ## Ahora
-- Camino completo Mali->ventana->panel verificado y visto (fakewin -d, ~160 fps de produccion, copia CPU 4 ms). Siguiente: emulador real sobre esto (hace falta un EGLNativeWindow real: libhybris o puente), sync con vblank, sin copia, entrada, arranque automatico.
+- Sin copia verificado y visto (ahbdrm): dma-buf de la Mali -> PRIME -> ADDFB2 AB24 -> SETCRTC, colores correctos. Siguiente: integrarlo en fakewin (flip por frame con los 3 buffers, vblank).
 
 ## Siguiente
 - Arreglar /dev (sin devtmpfs: /dev/null 660, dbus/resolved/wpa_supplicant fallan, systemd degraded)

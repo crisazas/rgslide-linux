@@ -182,3 +182,9 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
 - CONFIRMADO por el usuario a ojo: "todo perfecto" (imagen correcta y fluida).
 - Camino completo verificado: blob Arm GLES 3.2 -> EGLSurface de ventana (ANativeWindow propio + AHardwareBuffer por gralloc HIDL) -> fence -> CPU -> DRM -> panel.
 - Pendiente: presentar sin copia (importar el dma-buf del AHardwareBuffer como framebuffer de sprd-drm; sin probar), sincronizar con vblank, un emulador real, Vulkan, entrada, arranque automatico.
+
+## Presentacion SIN COPIA: dma-buf de la Mali -> DRM (2026-11-25) - `tools/ahbdrm`
+- `ahbdrm`: AHardwareBuffer 1280x960 RGBA8 (usage GPU_COLOR_OUTPUT | COMPOSER_OVERLAY, gralloc de Arm) -> `AHardwareBuffer_getNativeHandle` -> native_handle con 2 fds + 51 ints; `data[0]` es el dma-buf del plano (4915200 B = stride*alto*4, LINEAL; stride en pixeles 1280) -> `DRM_IOCTL_PRIME_FD_TO_HANDLE` en sprd-drm OK -> `ADDFB2` con `AB24` (ABGR8888, byte order R,G,B,A en memoria = el RGBA de GL) OK -> `SETCRTC` OK. El usuario ve las 8 barras en el orden correcto y marco blanco: CONFIRMADO (colores correctos, sin intercambio R/B).
+- El driver declara 10 planos; los 6 primeros solo en crtc 0 y los 4 ultimos en todos (0xff). Formatos de todos: XR24 XB24 AR24 AB24 RA24 BA24 RX24 BX24 RG16 BG16 NV12 NV21 NV16 NV61 YU12 (YV12/P010). Sin AFBC como modifier en ADDFB2 (se ha usado modifier 0 = lineal).
+- dmesg sin errores durante la prueba.
+- Pendiente: usarlo con la ventana (importar los 3 buffers de la cola una vez y alternar con PAGE_FLIP/SETCRTC por fotograma, esperando el fence de la Mali), sincronia con vblank.
