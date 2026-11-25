@@ -1,0 +1,25 @@
+#!/bin/sh
+# rgslide-clock load|save : equivalente a fake-hwclock + escritura al RTC (sc27xx-rtc).
+F=/var/lib/rgslide/lasttime
+case "$1" in
+load)
+	now=$(date -u +%s)
+	last=$(cat "$F" 2>/dev/null)
+	case "$last" in ''|*[!0-9]*) last=0;; esac
+	if [ "$now" -lt "$last" ]; then
+		date -u -s "@$last" >/dev/null && busybox hwclock -w -u
+		echo "rgslide-clock: hora restaurada a $(date -u) (era $now)"
+	else
+		echo "rgslide-clock: hora del sistema ok ($(date -u)), no se toca"
+	fi
+	;;
+save)
+	now=$(date -u +%s)
+	# no guardar horas anteriores a sep-2026 (reloj aun sin poner)
+	[ "$now" -ge 1790000000 ] || exit 0
+	mkdir -p /var/lib/rgslide
+	echo "$now" > "$F.tmp" && mv "$F.tmp" "$F"
+	busybox hwclock -w -u
+	;;
+*) echo "uso: $0 load|save" >&2; exit 2;;
+esac

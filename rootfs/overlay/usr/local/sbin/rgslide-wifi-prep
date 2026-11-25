@@ -1,0 +1,13 @@
+#!/bin/sh
+# Carga wcn_bsp (arrastra pcie-sprd-misc, pcie-sprd) y espera a wlan0. udev autocarga sprd_wlan_combo y sprd_fm al registrarse wcn_bsp.
+# Necesita /usr/lib/firmware/{wcnmodem.bin,gnssmodem.bin,wifi_board_config.xpe.ini} (out/wifi-fw/ en el PC). Idempotente; nunca hace rmmod.
+# wcn_bsp esta marcado arriesgado (docs/quirks.md): NO lanzar en el arranque temprano, solo con el sistema ya estable.
+# RGSLIDE_BT=1 carga ademas sprdbt_tty (solo para probar; no crea hci0, ver docs/wifi.md).
+[ -f /usr/lib/firmware/wcnmodem.bin ] || { echo "rgslide-wifi-prep: falta /usr/lib/firmware/wcnmodem.bin" >&2; exit 1; }
+grep -q '^wcn_bsp ' /proc/modules || modprobe wcn_bsp || exit 1
+grep -q '^sprd_wlan_combo ' /proc/modules || modprobe sprd_wlan_combo || exit 1
+i=0
+while [ $i -lt 40 ] && [ ! -e /sys/class/net/wlan0 ]; do sleep 1; i=$((i+1)); done
+[ "${RGSLIDE_BT:-0}" = 1 ] && { grep -q '^sprdbt_tty ' /proc/modules || modprobe sprdbt_tty; }
+[ -e /sys/class/net/wlan0 ] && { ip -br link show wlan0; exit 0; }
+echo "rgslide-wifi-prep: wlan0 no aparecio" >&2; exit 1

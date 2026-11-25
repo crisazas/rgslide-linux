@@ -1,0 +1,16 @@
+[Unit]
+Description=Restaura la hora guardada (el RTC de la Slide no conserva hora valida) y la guarda al apagar
+DefaultDependencies=no
+After=local-fs.target
+Before=sysinit.target time-set.target apt-daily.service
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/rgslide-clock load
+ExecStop=/usr/local/sbin/rgslide-clock save
+
+[Install]
+WantedBy=sysinit.target
