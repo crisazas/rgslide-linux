@@ -54,3 +54,9 @@ Todo probado a mano en la Slide por ssh. Entregables en `rootfs/overlay/`:
 
 ## No comprobado
 Giro fisico, IMU real, hall al cerrar, ruido del ventilador, `systemctl suspend`, power key, deep sleep, arranque en frio con los servicios nuevos.
+
+## Prueba de suspension que acabo en panic (2026-11-25, ~17:03 hora del PC)
+- Lanzada SIN avisar al usuario: `power/wakeup=disabled` en `/sys/devices/platform/soc/soc:ipa-apb/25220000.sipa` y luego `echo freeze > /sys/power/state` con `wakealarm` a +25 s (script `/tmp/susp-test.sh`, su log se perdio al reiniciar).
+- Resultado MEDIDO (`/var/lib/systemd/pstore/dmesg-ramoops-0/1`): a los 900 s de uptime `Unable to handle kernel NULL pointer dereference at virtual address 0x40`, `pc : sipa_recv_skb+0x7c [sipa_core]`, `Kernel panic - not syncing: Fatal exception in interrupt`; la Slide reinicio sola (arranque limpio, ES y wifi activos).
+- NO se sabe: si el panic ocurrio al suspender (el console-ramoops no tiene lineas `PM: suspend entry`) ni si lo causo desactivar el wakeup de sipa. Hipotesis sin comprobar.
+- Regla: no repetir pruebas de suspension sin que el usuario este delante y lo apruebe; la suspension sigue SIN funcionar.
