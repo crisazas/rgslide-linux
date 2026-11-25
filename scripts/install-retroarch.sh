@@ -14,5 +14,7 @@ cp rootfs/overlay/etc/retroarch.cfg "$T/etc/"
 # OJO: sin la entrada '.' (extraerla sobre / le aplicaria el modo 0700 de mktemp y se pierde el SSH); --no-overwrite-dir por si acaso.
 chmod 755 "$T"
 (cd "$T" && tar -cf - opt usr etc) | $SSH 'sudo tar -C / -xf - --no-same-owner --no-overwrite-dir && sudo chmod 755 /usr/local/bin/rgslide-retroarch && sudo chmod -R a+rwX /opt/retroarch/saves /opt/retroarch/states /opt/retroarch/system /opt/retroarch/config'
+# RetroArch (uid console, grupo input) reescribe .autoconfig_index al cargar un perfil: el directorio del autoconfig debe ser escribible por el grupo input.
+$SSH 'sudo chgrp input /usr/share/rgslide/autoconfig && sudo chmod 775 /usr/share/rgslide/autoconfig && sudo touch /usr/share/rgslide/autoconfig/.autoconfig_index && sudo chgrp input /usr/share/rgslide/autoconfig/.autoconfig_index && sudo chmod 664 /usr/share/rgslide/autoconfig/.autoconfig_index'
 rm -rf "$T"
 echo instalado
