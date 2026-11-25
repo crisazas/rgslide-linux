@@ -163,7 +163,14 @@ setup_gadget() {
 		ln -s "$G/functions/rndis.gs4" "$G/configs/c.1/f1"
 	fi
 	[ -d "$G/functions/gser.gs0" ]  && ln -s "$G/functions/gser.gs0"  "$G/configs/c.1/f2"
-	UDC=$(pick_udc) || { msg "gadget: sin UDC en /sys/class/udc"; return 1; }
+	# El UDC lo registra dwc3 de forma asincrona: en un arranque en frio llego 0,2 ms despues de esta busqueda (2026-11-25) y el gadget no se armo. Se espera hasta 10 s.
+	UDC=""; n=0
+	while [ $n -lt 50 ]; do
+		UDC=$(pick_udc) && break
+		UDC=""; n=$((n+1)); sleep 0.2
+	done
+	[ -n "$UDC" ] || { msg "gadget: sin UDC en /sys/class/udc tras 10 s"; return 1; }
+	[ $n -gt 0 ] && msg "gadget: UDC visible tras $n esperas"
 	echo "$UDC" > "$G/UDC" 2>&1 || { msg "gadget: no se pudo enlazar $UDC"; return 1; }
 	msg "gadget enlazado a $UDC"
 }
