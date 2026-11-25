@@ -94,6 +94,7 @@ msg "modulos en /lib/modules: $(ls /lib/modules | wc -l)"
   flush_marks
   sync
   reboot -f ) &
+WDOG_PID=$!
 
 mdev -d &
 sleep 1
@@ -211,16 +212,27 @@ find_userdata() {
 	return 1
 }
 
-case "$CMDLINE" in
-*rgslide.rootfs=1*)
+# rgslide.rootfs=1: monta userdata (ext4, por PARTNAME) y entrega el control a systemd. Si algo falla cae a la shell de rescate de abajo,
+# con consola serie y red, y SIN reinicio automatico (/run/keep) para poder entrar y mirar.
+boot_rootfs() {
 	touch /run/keep
-	PART=$(find_userdata) && msg "userdata en $PART" || msg "sin PARTNAME=userdata"
-	if [ -n "$PART" ] && mount -t ext4 -o rw,noatime "$PART" /mnt/root && [ -x /mnt/root/sbin/init ]; then
-		mount --move /proc /mnt/root/proc; mount --move /sys /mnt/root/sys
-		mount --move /dev /mnt/root/dev;   mount --move /run /mnt/root/run
-		exec switch_root /mnt/root /sbin/init
-	fi
-	msg "no se pudo arrancar el rootfs; shell de rescate" ;;
+	[ -n "$WDOG_PID" ] && kill "$WDOG_PID" 2>/dev/null
+	PART=$(find_userdata) || { msg "rootfs: sin PARTNAME=userdata"; return 1; }
+	[ -b "$PART" ] || { msg "rootfs: $PART no es un dispositivo de bloques"; return 1; }
+	msg "rootfs: userdata es $PART"
+	mkdir -p /mnt/root
+	mount -t ext4 -o rw,noatime "$PART" /mnt/root 2>/run/mounterr || { msg "rootfs: mount ext4 fallo: $(cat /run/mounterr)"; return 1; }
+	[ -x /mnt/root/sbin/init ] || { msg "rootfs: /mnt/root/sbin/init no existe"; umount /mnt/root; return 1; }
+	# El ext4 se crece despues, en caliente, con rgslide-resize.service (resize2fs es un binario dinamico de Debian: no corre desde aqui).
+	flush_marks
+	# los hilos de fondo del init (vigilante, getty, telnetd) viven en el initramfs: se paran antes de moverlo
+	for d in proc sys dev run; do mkdir -p /mnt/root/$d; done
+	mount --move /proc /mnt/root/proc; mount --move /sys /mnt/root/sys
+	mount --move /dev /mnt/root/dev;   mount --move /run /mnt/root/run
+	exec switch_root /mnt/root /sbin/init
+}
+case "$CMDLINE" in
+*rgslide.rootfs=1*) boot_rootfs; msg "rootfs: NO arranco; shell de rescate (sin reinicio automatico)" ;;
 esac
 
 msg "listo: telnet 10.55.0.2 (o ttyGS0). El USB configurado amplia el temporizador"

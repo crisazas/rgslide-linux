@@ -1,0 +1,16 @@
+# Diagnostico 3: estado real del watchdog del AP (sprd_wdt_fiq, 0x641e0000) dentro de mi init
+touch /run/keep
+cat /proc/uptime
+ls -l /sys/bus/platform/devices/641e0000.watchdog/driver
+ls /sys/class/watchdog/
+grep -i -E 'watchdog|misc' /proc/devices
+ls -l /dev/watchdog* /dev/misc/watchdog 2>&1
+grep -i -E 'wdt|watchdog' /proc/interrupts
+dmesg | grep -a -v 'Modules linked' | grep -a -i -E 'sprd_wdt|sprd wdt|wdt_fiq|watchdog' | head -12
+ps | grep -i -E 'watchdog|wdt'
+cat /sys/bus/platform/devices/641e0000.watchdog/uevent
+echo 641e0000.watchdog > /sys/bus/platform/drivers/sprd-wdt-fiq/unbind
+dmesg | tail -n 6
+echo 641e0000.watchdog > /sys/bus/platform/drivers/sprd-wdt-fiq/bind
+dmesg | grep -a -v 'Modules linked' | tail -n 8
+cat /proc/uptime
