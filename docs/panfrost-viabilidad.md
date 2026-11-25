@@ -33,3 +33,42 @@ Si la Mali-G57 del T820 (`gpu_id 0x9091`) la soporta Panfrost, ¿por que no ir p
 
 ## Rama
 NO se ha creado: la condicion era "de ser viable" y hoy no lo es. `master` sigue siendo el camino blob+hybris. Si se consiguen las fuentes del kernel de la Slide, se crea `panfrost-etapa2` desde `master` y el trabajo empieza ahi sin tocar la via actual.
+
+---
+
+# Anexo: ¿tendria Panfrost mas o menos rendimiento que el blob de Arm? (teoria, 2026-11-25)
+
+**Nada de esto esta medido en la Slide**: no tenemos Panfrost corriendo aqui. Las cifras ajenas vienen de otros chips y otras cargas, y se citan con su fuente. Lo medido por nosotros se marca MEDIDO.
+
+## Lo que tenemos MEDIDO con el blob (r40p0, 850 MHz, 4 cores segun kbase)
+- Sintetico offscreen 1280x960 (`tools/glbench`): ALU pesado 54,7 fps (201 Mpix/s); 1 M triangulos pequenos 18,4 fps (18,4 Mtri/s). x10-11 sobre llvmpipe.
+- `hybristest`: 59 fps (limitado por el vsync del panel, 60 Hz); RetroArch menu ~57 fps; SDL2 59,2 fps.
+- La presentacion YA es zero-copy: PRIME_FD_TO_HANDLE + ADDFB2 + page flip (`patches/libhybris/0002`), sin copia por CPU. (La nota antigua de `quirks.md` sobre "copia por CPU, sin rendimiento" era del prototipo `drmshow`; `fakewin` midio 4,0 ms de copia/conversion y el camino final ya no copia.)
+- Emulacion: GBA/NDS a 60 fps estables, CPU del emulador 33-86 % de UN nucleo. **Esa carga no depende de la GPU**: los nucleos usan renderizado por software y la GPU solo pinta el cuadro final y el menu.
+
+## Evidencia externa sobre Panfrost vs blob (todas de OTROS chips)
+- Phoronix 2019 (Midgard/Bifrost, GLES 2 sin FBO): "convergiendo con (y a veces superando) el blob" tras activar una ruta rapida del tiler. Es muy antiguo y de otra arquitectura.
+- Collabora, "Panfrost is now using Kraid", 2026-10-26 (RK3588, Valhall v10, Mesa 27): el compilador nuevo quita ~19 % de instrucciones y ~84 % de spills; en apps reales "el rendimiento es casi igual o unos pocos % mejor" (GLES: HalfLife 100 %, Manhattan 104 %, TRex 104 %, Aztec 111 %, CandyCrush 139 %). Dicen textualmente que las apps rara vez estan limitadas por la ejecucion de shaders en GPUs moviles, sino por ancho de banda de memoria. **Ojo**: Kraid va en Mesa 27.0; Debian trixie lleva Mesa 25.0.7 (la de la Slide), asi que ese avance no lo tendriamos sin Mesa propio.
+- Nota de `e5-linux` (UMS9621, G57): corre Phosh con `GL renderer: Mali-G57 (Panfrost)` y clientes en GPU. **No publican fps**, solo que funciona.
+- `panvk-kbase-android`: PanVK sobre kbase en G57 MC2 (Lenovo TB336FU) da PanPlay "1-9 pass" y DXVK a ~160-230 fps en escenas sencillas; es Vulkan sobre el MISMO kbase de Arm, no Panfrost sobre kernel libre.
+
+## Teoria por componente (de mayor a menor peso)
+1. **Aritmetica de shader (ALU)**: el hardware es el mismo (G57). El blob tiene un compilador maduro del propio fabricante; Panfrost con compilador "bifrost/valhall" de Mesa 25 estaba por debajo en instrucciones (Kraid recorta un 19 % mas). Estimacion: **igual o 5-20 % por debajo** en shaders pesados con Mesa 25; paridad con Mesa 27 (Kraid). Para ES (GLES 2, shaders triviales) y RetroArch (un quad con textura) esto es irrelevante.
+2. **Ancho de banda y tiler**: dominan en movil y dependen del kernel/MMU y de como se alloca la memoria (AFBC, comprimir framebuffers, cache coherence). El blob usa `system-coherency` y AFBC (Arm Frame Buffer Compression) en gralloc; **Panfrost en 5.4/5.15 usa U-interleaved por defecto y AFBC solo en algunos casos** (Mesa lo implementa, pero la tuberia a la pantalla de Unisoc `sprd_drm` no consume AFBC): posible perdida **0-30 %** en cargas limitadas por ancho de banda. Aqui el dato clave: nuestro `sprd_drm` presenta `ABGR8888` lineal, lo mismo que haria Panfrost, asi que no cambia nada en el flip final.
+3. **Reloj de la GPU (DVFS)**: el blob + kbase de Unisoc sube el reloj con carga (850 MHz medidos). `panfrost_sprd.c` de e5 **desactiva devfreq** (`no_devfreq`) y deja un indice fijo de DVFS ("DVFS index 3" en su arranque). Si nos quedamos con el indice por defecto, la GPU quedaria a **un reloj fijo y posiblemente menor que 850 MHz**: ahi puede estar la mayor diferencia, hasta **2x peor** en cargas de GPU, por una cuestion de configuracion y no de driver. Corregible, pero a mano (escribir el indice en el syscon).
+4. **Nucleos activos**: kbase ve `core_mask 0x50005` (4 cores) y e5 ve `shader_present=0x5` (2 shaders) con panfrost. Si Panfrost solo enciende 2 de los 4 nucleos (la mascara `0x5` es "no contigua", segun e5, igual que un G57 MC2 independiente), el pico de GPU seria **la mitad**. NO medido; es una discrepancia sin explicar y la mas importante de verificar.
+5. **Sobrecarga de CPU del driver**: Mesa/Panfrost corre en el mismo proceso, sin la capa de Android; el blob via libhybris pasa por la bionic parcheada y por binder/HIDL **solo al asignar buffers**, no por draw. Estimacion: **igual o ligeramente mejor con Panfrost** (menos capas), irrelevante para el emulador.
+6. **Latencia de presentacion**: hoy hay una espera de fence y un flip bloqueante (`waitFlip`) con 3 buffers. Con Panfrost y Wayland/DRM nativo podria ser algo mejor (page flip asincrono, 2 buffers), **ganancia de 0-1 fotograma**, no de fps.
+
+## Estimacion honesta para ESTE uso (frontend + emulacion 2D/GBA/NDS)
+- **Rendimiento visible**: **sin diferencia perceptible** (60 fps fijos por vsync; la GPU esta muy por debajo del limite; el cuello de botella es la CPU del emulador).
+- **Peor caso por config** (reloj fijo bajo, 2 de 4 nucleos): GPU ~25-50 % del blob. Cubre de sobra GBA/NDS/SNES y el menu. Se notaria en N64, PSP o juegos 3D reales.
+- **Mejor caso** (Mesa 27 con Kraid, 4 nucleos, reloj alto, AFBC): paridad con el blob, +/- 5 %.
+- **Ganancias que no son de fps**: sin libhybris/bionic/binder (5 servicios menos, ~100 MB menos de RAM, menos fallos de arranque), sin `libtlspad`, SDL2 y RetroArch estandar, Vulkan y GL ES 3.1 conformes, y juegos con contexto GL (N64) sin parches.
+
+## Para decidir con datos, no con teoria (cuando haya kernel)
+Medir en este orden, mismo `tools/glbench` que ya usamos (cambia solo el driver):
+1. `shader_present` y `core_mask` reales con panfrost (2 o 4 nucleos).
+2. Reloj de la GPU (`DVFS index` fijo) y si se puede subir al de kbase.
+3. `glbench` A (ALU) y B (triangulos) vs blob: 54,7 fps y 18,4 fps.
+4. Un nucleo con GL (N64) o `glmark2-es2` para ver texturas y ancho de banda.
