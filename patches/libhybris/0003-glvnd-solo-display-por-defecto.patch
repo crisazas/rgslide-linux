@@ -1,0 +1,44 @@
+diff --git a/hybris/egl/glvnd/eglglvnd.cpp b/hybris/egl/glvnd/eglglvnd.cpp
+index 68786cc..4a0ded6 100644
+--- a/hybris/egl/glvnd/eglglvnd.cpp
++++ b/hybris/egl/glvnd/eglglvnd.cpp
+@@ -33,6 +33,16 @@ extern "C" EGLDisplay __eglHybrisGetPlatformDisplayCommon(EGLenum platform,
+ 
+ static const __EGLapiExports *__eglGLVNDApiExports = NULL;
+ 
++/* rgslide: este vendor solo atiende el display por defecto (EGL_DEFAULT_DISPLAY / EGL_NONE) y deja GBM, X11, Wayland y surfaceless a Mesa.
++ * Cualquier otra plataforma devuelve EGL_NO_DISPLAY sin tocar hybris: glvnd pasa entonces al siguiente vendor (Mesa). */
++static EGLDisplay
++__eglGLVNDGetPlatformDisplay(EGLenum platform, void *nativeDisplay, const EGLAttrib *attrib_list)
++{
++    if (platform != EGL_NONE || nativeDisplay != NULL)
++        return EGL_NO_DISPLAY;
++    return __eglHybrisGetPlatformDisplayCommon(platform, nativeDisplay, attrib_list);
++}
++
+ /*
+  * According to Mesa, the normal eglQueryString shouldn't include platform
+  * extensions, so we use this to our advantage. We'll strip any platform
+@@ -96,12 +106,7 @@ static const char *
+ __eglGLVNDGetVendorString(int name)
+ {
+     if (name == __EGL_VENDOR_STRING_PLATFORM_EXTENSIONS) {
+-        return
+-            "EGL_KHR_platform_android"
+-#ifdef WANT_WAYLAND
+-            " EGL_EXT_platform_wayland EGL_KHR_platform_wayland"
+-#endif
+-            ;
++        return "";
+     }
+ 
+     return NULL;
+@@ -138,7 +143,7 @@ __egl_Main(uint32_t version, const __EGLapiExports *exports,
+     __eglGLVNDApiExports = exports;
+     __eglInitDispatchStubs(exports);
+ 
+-    imports->getPlatformDisplay = __eglHybrisGetPlatformDisplayCommon;
++    imports->getPlatformDisplay = __eglGLVNDGetPlatformDisplay;
+     imports->getSupportsAPI = __eglGLVNDgetSupportsAPI;
+     imports->getVendorString = __eglGLVNDGetVendorString;
+     imports->getProcAddress = __eglGLVNDGetProcAddress;

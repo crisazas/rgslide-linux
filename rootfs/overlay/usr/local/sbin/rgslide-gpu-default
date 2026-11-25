@@ -1,0 +1,29 @@
+#!/bin/sh
+# Interruptor del vendor EGL por defecto: on = libhybris (Mali) para todos los programas; off = Mesa (llvmpipe, CPU).
+# Uso: rgslide-gpu-default on|off|status        (root)
+# on  : /usr/share/glvnd/egl_vendor.d/10_libhybris.json (vendor 10, delante de Mesa 50) + /etc/ld.so.conf.d/rgslide-hybris.conf + /etc/profile.d (variables de hybris) + /etc/environment.d.
+# off : los quita (ld.so.cache y variables vuelven al estado normal; los programas nuevos usan Mesa).
+J=/usr/share/glvnd/egl_vendor.d/10_libhybris.json
+L=/etc/ld.so.conf.d/rgslide-hybris.conf
+P=/etc/profile.d/rgslide-hybris.sh
+E=/etc/environment.d/60-rgslide-hybris.conf
+S=/opt/hybris-glvnd/etc
+case "$1" in
+on)
+  [ -f /opt/hybris-glvnd/lib/libEGL_libhybris.so.0 ] || { echo "falta /opt/hybris-glvnd/lib/libEGL_libhybris.so.0"; exit 1; }
+  mkdir -p /usr/share/glvnd/egl_vendor.d /etc/ld.so.conf.d /etc/profile.d /etc/environment.d
+  cp "$S/10_libhybris.json" "$J"
+  cp "$S/rgslide-hybris.conf" "$L"
+  cp "$S/rgslide-hybris.sh" "$P"
+  cp "$S/60-rgslide-hybris.conf" "$E"
+  ldconfig
+  echo "vendor por defecto: libhybris (Mali). Los programas NUEVOS lo usan; los ya abiertos, no." ;;
+off)
+  rm -f "$J" "$L" "$P" "$E"
+  ldconfig
+  echo "vendor por defecto: Mesa (llvmpipe). Los programas NUEVOS lo usan." ;;
+status)
+  [ -f "$J" ] && echo "defecto: libhybris (on)" || echo "defecto: Mesa (off)"
+  ls /usr/share/glvnd/egl_vendor.d ;;
+*) echo "uso: rgslide-gpu-default on|off|status"; exit 2 ;;
+esac
