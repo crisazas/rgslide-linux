@@ -1,6 +1,6 @@
 [Unit]
 Description=WiFi de la Slide (Marlin3 Lite): carga wcn_bsp y sprd_wlan_combo y deja wlan0
-After=rgslide-dev.service rgslide-cm4.service local-fs.target
+After=rgslide-dev.service rgslide-cm4.service local-fs.target rgslide-android.service rgslide-gpu.service rgslide-input.service rgslide-clock.service
 Wants=rgslide-dev.service
 
 [Service]
@@ -9,5 +9,5 @@ RemainAfterExit=yes
 ExecStart=/usr/local/sbin/rgslide-wifi-prep
 
 [Install]
-# NO habilitado por defecto (push-overlay.sh no lo habilita): wcn_bsp esta marcado arriesgado y no se probo en un arranque en frio.
+# Habilitado a mano en la Slide (2026-11-25; push-overlay.sh no lo habilita). Va DESPUES de android/gpu/input/clock: wcn_bsp no debe cargarse en el arranque temprano (ver rgslide-wifi-prep).
 WantedBy=multi-user.target
