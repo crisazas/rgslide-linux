@@ -172,10 +172,10 @@ index 0000000..bf57cff
 +	$(top_builddir)/common/libhybris-common.la
 diff --git a/hybris/egl/platforms/drm/drm_window.cpp b/hybris/egl/platforms/drm/drm_window.cpp
 new file mode 100644
-index 0000000..6cd7811
+index 0000000..22af0eb
 --- /dev/null
 +++ b/hybris/egl/platforms/drm/drm_window.cpp
-@@ -0,0 +1,272 @@
+@@ -0,0 +1,278 @@
 +#include "drm_window.h"
 +
 +#include <errno.h>
@@ -259,7 +259,9 @@ index 0000000..6cd7811
 +
 +DrmNativeWindowBuffer::~DrmNativeWindowBuffer()
 +{
++	if (getenv("HYBRIS_DRM_DEBUG")) fprintf(stderr, "drm: ~buffer ahb=%p release=%p\n", (void *)m_ahb, (void *)p_release);
 +	if (m_ahb && p_release) p_release(m_ahb);
++	if (getenv("HYBRIS_DRM_DEBUG")) fprintf(stderr, "drm: ~buffer ok\n");
 +}
 +
 +/* ------------------------------------------------------------------ window */
@@ -277,9 +279,12 @@ index 0000000..6cd7811
 +
 +DrmNativeWindow::~DrmNativeWindow()
 +{
++	if (getenv("HYBRIS_DRM_DEBUG")) fprintf(stderr, "drm: ~window inicio\n");
 +	freeBuffers();
++	if (getenv("HYBRIS_DRM_DEBUG")) fprintf(stderr, "drm: ~window buffers libres\n");
 +	if (m_drm >= 0) close(m_drm);
 +	free(m_mode);
++	if (getenv("HYBRIS_DRM_DEBUG")) fprintf(stderr, "drm: ~window fin\n");
 +}
 +
 +bool DrmNativeWindow::openDrm()
@@ -326,8 +331,8 @@ index 0000000..6cd7811
 +void DrmNativeWindow::freeBuffers()
 +{
 +	for (auto *b : m_bufs) {
-+		if (b->m_fb) { uint32_t fb = b->m_fb; dx(m_drm, DRM_IOCTL_MODE_RMFB, &fb); }
-+		delete b;
++		if (b->m_fb) { uint32_t fb = b->m_fb; dx(m_drm, DRM_IOCTL_MODE_RMFB, &fb); b->m_fb = 0; }
++		b->common.decRef(&b->common);
 +	}
 +	m_bufs.clear();
 +	m_front = m_pending = nullptr;
@@ -375,6 +380,7 @@ index 0000000..6cd7811
 +		for (unsigned i = 0; i < m_count; i++) {
 +			DrmNativeWindowBuffer *b = new DrmNativeWindowBuffer(m_reqW, m_reqH, m_format, m_usage);
 +			if (!b->ok()) { fprintf(stderr, "hybris drm: AHardwareBuffer_allocate fallo (%ux%u)\n", m_reqW, m_reqH); delete b; freeBuffers(); return -1; }
++			b->common.incRef(&b->common);
 +			m_bufs.push_back(b);
 +		}
 +		m_w = m_reqW; m_h = m_reqH;
@@ -529,10 +535,10 @@ index 0000000..4f73088
 +#endif
 diff --git a/hybris/egl/platforms/drm/eglplatform_drm.cpp b/hybris/egl/platforms/drm/eglplatform_drm.cpp
 new file mode 100644
-index 0000000..8edcf4e
+index 0000000..f354a94
 --- /dev/null
 +++ b/hybris/egl/platforms/drm/eglplatform_drm.cpp
-@@ -0,0 +1,45 @@
+@@ -0,0 +1,49 @@
 +#include <android-config.h>
 +#include <ws.h>
 +#include <stdlib.h>
@@ -560,12 +566,16 @@ index 0000000..8edcf4e
 +	if (win != 0) return win;
 +	DrmNativeWindow *w = new DrmNativeWindow();
 +	if (!w->ok()) { delete w; return 0; }
-+	return (EGLNativeWindowType)static_cast<ANativeWindow *>(w);
++	ANativeWindow *aw = static_cast<ANativeWindow *>(w);
++	aw->common.incRef(&aw->common);
++	return (EGLNativeWindowType)aw;
 +}
 +
 +static void drmws_DestroyWindow(EGLNativeWindowType win)
 +{
-+	if (win) delete static_cast<DrmNativeWindow *>(reinterpret_cast<ANativeWindow *>(win));
++	if (!win) return;
++	ANativeWindow *w = reinterpret_cast<ANativeWindow *>(win);
++	w->common.decRef(&w->common);
 +}
 +
 +extern "C" struct ws_module ws_module_info = {

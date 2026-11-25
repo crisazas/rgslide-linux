@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <unistd.h>
 #include <time.h>
 
 static double now(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec + t.tv_nsec * 1e-9; }
@@ -56,6 +57,11 @@ int main(int argc, char **argv)
 		if (!eglSwapBuffers(d, s)) { printf("FALLO eglSwapBuffers 0x%x\n", eglGetError()); return 4; }
 		frames++;
 	}
-	printf("RESULTADO: %d frames en %.2f s = %.1f fps; glGetError=0x%x\nFIN\n", frames, tn - t0, frames / (tn - t0), glGetError());
+	printf("RESULTADO: %d frames en %.2f s = %.1f fps; glGetError=0x%x\nFIN\n", frames, tn - t0, frames / (tn - t0), glGetError()); fflush(stdout);
+	eglMakeCurrent(d, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT); printf("makecurrent none OK\n"); fflush(stdout);
+	eglDestroySurface(d, s); printf("destroysurface OK\n"); fflush(stdout);
+	eglDestroyContext(d, c); printf("destroycontext OK\n"); fflush(stdout);
+	eglTerminate(d); printf("terminate OK\n"); fflush(stdout);
+	if (getenv("HT_EXIT")) _exit(0);
 	return 0;
 }
