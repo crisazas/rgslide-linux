@@ -233,3 +233,9 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
 - TRAMPA descubierta: NO usar variables `__thread` en codigo de hybris llamado desde el blob: el canario de pila de bionic esta en `[tpidr_el0+40]`, en un proceso glibc cae en TLS de glibc/hybris y una __thread puede ocupar ese hueco ("stack corruption detected" en libc parcheada). Se uso `static` con mutex.
 - `/system/build.prop` (en la Slide: /opt/android/system/build.prop, generado por out/build.prop desde dump/android/getprop.txt) es obligatorio para hybris.
 - Panic de kernel observado (07:00): `__memset <- snd_pcm_common_ioctl <- snd_pcm_ioctl` por un ioctl ALSA PCM del agente de audio; NO repetir ioctl PCM hasta arrancar el AGDSP.
+
+## INCIDENTE (2026-11-25 ~07:10): / de la Slide quedo en 0700 y se perdio el SSH
+- Causa: `scripts/install-retroarch.sh` (subagente) extraia con `sudo tar -C / -xf -` un tar que incluia la entrada `.`; el tar partia de `mktemp -d` (modo 0700, dueño console) y se aplicaron esos permisos a `/` (y posiblemente 0775 a /etc, /usr, /usr/local, /usr/local/bin, /opt).
+- Efecto: sshd no puede leer authorized_keys; `sudo` dice Permission denied.
+- Regla: NUNCA extraer a `/` un tar que contenga la entrada `.`; generar con `tar -cf - ./opt ./etc ./usr` o usar `--no-overwrite-dir`.
+- Arreglo: `chmod 755 / /etc /usr /usr/local /usr/local/bin /opt` (y comprobar /home, /home/console 755/750, /home/console/.ssh 700). Sin shell en Debian solo queda reiniciar a la rootfs por otra via (BROM, o el init de rescate sin switch_root) o editar el ext4 desde el PC.
