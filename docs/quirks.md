@@ -82,3 +82,8 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
 - Cadena de fabrica ordenada por dependencias (scripts/gen-factory-order.py -> rgslide-factory.load): con insmod ya no falla ninguno (antes sdhci-sprd, sensorhub, slog_bridge). sprd_pmic_wdt.ko (dlkm) tambien carga.
 - **Reinicio espontaneo: SIGUE.** Corte a 279.6 s (ultimo uptime leido por telnet) con TODO cargado (sensorhub, sprd_pmic_wdt, cadena ordenada) y con red activa; ultima marca 284.56 s. No hay panico, ni thermal, ni mensaje en pstore: el log se corta en seco (SPRD_PDBG 283.9 s, luego nada). Descartado: mi temporizador, la red, sipa, sprd_pmic_wdt, el orden de modulos.
 - Candidatos que quedan sin probar: watchdog de hardware armado por el LK/BootROM que solo Android alimenta (nada en sprd_wdt_fiq lo hace en el init), el CM4 (sensorhub cargado pero sin su firmware/servicio), o un limite de energia/carga.
+
+## Dato del usuario (2026-11-25): los GSI en la RG Slide tambien se reinician cada ~5 min o menos, sin fin
+- Un GSI usa el kernel y el vendor de fabrica, como nosotros. Que reinicie igual apunta a algo que el Android de fabrica / GammaOS hace y un GSI o Linux no (no es de mi init ni de Debian).
+- Compatible con el corte medido a 279-285 s (4 min 44 s). Intervalo del usuario aproximado: no es una prueba.
+- Sin documentacion encontrada en la web ni en third_party/ (UnisocBypass, rg-rotate-linux, base618). Hipotesis principal: el CM4 (pm_sys cargado por modem_control en GammaOS a ~10 s, tras lo cual aparece `cm4 watchdog on/off` y `CM4 Version`).
