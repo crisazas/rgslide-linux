@@ -32,3 +32,10 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
 - Android no revierte `misc` mientras corre (reescrito despues y estable 60 s). Quien lo devolvio al original durante el reinicio NO se ha averiguado. Hipotesis sin comprobar: el apagado de Android o un paso previo al LK.
 - Lo que si funciono antes: `fastboot set_active b` (lo escribe el propio LK), con ~7 intentos de B.
 - Esta prueba no aporta datos sobre el init. pstore: solo pmsg-ramoops-0 de Android (sin cadenas rgslide).
+
+## Prueba 5 (00:26-00:43): ramdisk en LZ4 — el kernel YA ejecuta mi /init
+- Con la ramdisk en LZ4 legacy el kernel descomprime la cadena (vendor LZ4 + mia LZ4) y arranca `/init` (pstore: `Run /init as init process`, 3.15 s).
+- `/init` muere a los 20 ms: `Kernel panic - not syncing: Attempted to kill the init task!` (exit_group de PID 1). Causa: `exec </dev/console >/dev/console` falla porque el kernel no tiene ningun tty de consola registrado (`unable to open an initial console`; solo `ramoops-1` esta habilitada) y en ash un `exec` con redireccion fallida mata el shell. Reproducido con busybox bajo qemu.
+- Corregido: abre /dev/console solo si se puede; si no, cae a /dev/null.
+- `adb reboot bootloader` deja `bootonce-bootloader` en misc+0 si fastboot no llega a abrirse; hay que restaurar misc a mano. `fastboot fetch` NO esta soportado en este LK (no se puede leer boot_b desde fastboot).
+- `fastboot set_active b` hace reiniciar el LK por si solo: no hace falta que el usuario reinicie.
