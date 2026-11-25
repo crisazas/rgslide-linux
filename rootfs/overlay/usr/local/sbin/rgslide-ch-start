@@ -1,0 +1,28 @@
+#!/bin/sh
+# Segunda fase del CM4: arranca el CH (sensorhub, destino SIPC 9) DESPUES de que rgslide-cm4 haya cargado el PM (pm_sys). NUNCA sustituye al modem_control original.
+# modem_control_ch = modem_control con 2 instrucciones parcheadas (solo carga el CH, mascara 0x20; ver docs/agent-sensors.md y scripts/install-ch.sh).
+# Si el PM no arranca o falta algo, sale con 0 sin tocar nada: es opcional y no puede romper el arranque.
+DBG=/sys/kernel/debug/modem
+st() { sed -n 's/^.*run_state: *\([0-9]*\).*/\1/p' "$DBG/$1" 2>/dev/null | head -1; }
+i=0; while [ $i -lt 90 ] && [ "$(st pmsys)" != 1 ]; do sleep 1; i=$((i+1)); done
+[ "$(st pmsys)" = 1 ] || { echo "rgslide-ch: el PM no arranco en 90 s; no toco nada" >&2; exit 0; }
+sleep 8
+[ "$(st chsys)" = 1 ] && { echo "rgslide-ch: el CH ya estaba arrancado"; exit 0; }
+[ -x /opt/android/vendor/bin/modem_control_ch ] && [ -e /opt/android/vendor/etc-ch/modem_ch_info.xml ] || { echo "rgslide-ch: falta modem_control_ch o el xml" >&2; exit 0; }
+ln -sf /opt/android/vendor/etc-ch/modem_ch_info.xml /vendor/etc/modem_ch_info.xml
+chmod o+r /dev/block/by-name/ch_sys_a /dev/block/by-name/ch_sys_b 2>/dev/null
+echo "rgslide-ch: arrancando el CH (el PM ya esta cargado); paro rgslide-cm4 y lo restauro si algo falla"
+systemctl stop rgslide-cm4
+LD_PRELOAD=/opt/android/libpropshim.so /opt/android/vendor/bin/modem_control_ch &
+CH=$!
+i=0; while [ $i -lt 40 ] && [ "$(st chsys)" != 1 ]; do kill -0 $CH 2>/dev/null || break; sleep 1; i=$((i+1)); done
+if [ "$(st chsys)" != 1 ] || [ "$(st pmsys)" != 1 ] || ! kill -0 $CH 2>/dev/null; then
+  echo "rgslide-ch: FALLO (chsys=$(st chsys) pmsys=$(st pmsys)); restauro rgslide-cm4" >&2
+  kill $CH 2>/dev/null
+  systemctl start rgslide-cm4
+  exit 0
+fi
+echo "rgslide-ch: CH arrancado (chsys=1, pmsys=1)"
+wait $CH
+echo "rgslide-ch: modem_control_ch termino; restauro rgslide-cm4" >&2
+systemctl start rgslide-cm4

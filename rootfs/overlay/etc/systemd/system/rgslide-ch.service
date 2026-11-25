@@ -1,0 +1,14 @@
+[Unit]
+Description=CM4 ch (sensorhub de la Slide): segunda fase tras rgslide-cm4
+After=rgslide-cm4.service
+Wants=rgslide-cm4.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/rgslide-ch-start
+Restart=no
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
