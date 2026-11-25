@@ -1,0 +1,578 @@
+diff --git a/hybris/common/hooks.c b/hybris/common/hooks.c
+index 67bbf31..7ba859a 100644
+--- a/hybris/common/hooks.c
++++ b/hybris/common/hooks.c
+@@ -2225,11 +2225,28 @@ static long int _hybris_hook_strtol(const char* str, char** endptr, int base)
+     return strtol(str, endptr, base);
+ }
+ 
++/* rgslide: __system_property_find devuelve un handle opaco (struct rg_prop) con el par clave/valor; read y read_callback lo leen.
++ * La API de bionic de Android >= 8 las usa (p. ej. el blob de Mali lee ro.vendor.arm.egl.configs.*). */
++struct rg_prop { char name[160]; char value[PROP_VALUE_MAX]; };
++extern char *hybris_propcache_find(const char *key);
++
+ static int _hybris_hook___system_property_read(const void *pi, char *name, char *value)
+ {
+-    TRACE_HOOK("pi %p name '%s' value '%s'", pi, name, value);
++    const struct rg_prop *p = (const struct rg_prop *)pi;
++    TRACE_HOOK("pi %p", pi);
++    if (!p) return 0;
++    if (name) strcpy(name, p->name);
++    if (value) strcpy(value, p->value);
++    return (int)strlen(p->value);
++}
+ 
+-    return my_property_get(name, value, NULL);
++static void _hybris_hook___system_property_read_callback(const void *pi,
++        void (*callback)(void *cookie, const char *name, const char *value, uint32_t serial), void *cookie)
++{
++    const struct rg_prop *p = (const struct rg_prop *)pi;
++    TRACE_HOOK("pi %p cb %p", pi, callback);
++    if (getenv("HYBRIS_PROP_DEBUG")) fprintf(stderr, "hybris prop read_callback %p '%s'\n", pi, p ? p->name : "(null)");
++    if (p && callback) callback(cookie, p->name, p->value, 0);
+ }
+ 
+ static int _hybris_hook___system_property_foreach(void (*propfn)(const void *pi, void *cookie), void *cookie)
+@@ -2242,8 +2259,23 @@ static int _hybris_hook___system_property_foreach(void (*propfn)(const void *pi,
+ static const void *_hybris_hook___system_property_find(const char *name)
+ {
+     TRACE_HOOK("name '%s'", name);
+-
+-    return NULL;
++    /* OJO: sin __thread. El canario de pila de bionic esta en [tpidr_el0+40], que en un proceso glibc cae en TLS de glibc/hybris:
++     * una variable __thread aqui puede ocupar justo ese hueco y corromper el canario de las funciones del blob. */
++    static struct rg_prop slot[16];
++    static unsigned idx;
++    static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
++    const char *v;
++    struct rg_prop *p;
++    if (!name || strlen(name) >= sizeof(slot[0].name)) return NULL;
++    pthread_mutex_lock(&lock);
++    v = hybris_propcache_find(name);
++    if (getenv("HYBRIS_PROP_DEBUG")) fprintf(stderr, "hybris prop find '%s' -> '%s'\n", name, v ? v : "(no)");
++    if (!v || strlen(v) >= PROP_VALUE_MAX) { pthread_mutex_unlock(&lock); return NULL; }
++    p = &slot[idx++ & 15];
++    strcpy(p->name, name);
++    strcpy(p->value, v);
++    pthread_mutex_unlock(&lock);
++    return p;
+ }
+ 
+ static unsigned int _hybris_hook___system_property_serial(const void *pi)
+@@ -2299,6 +2331,7 @@ static const void *_hybris_hook___system_property_find_nth(unsigned n)
+ int _hybris_hook___system_property_get(const char *name, const char *value)
+ {
+     TRACE_HOOK("name '%s' value '%s'", name, value);
++    if (getenv("HYBRIS_PROP_DEBUG")) fprintf(stderr, "hybris prop get '%s'\n", name);
+ 
+     return my_property_get(name, (char*) value, NULL);
+ }
+@@ -2962,6 +2995,7 @@ static struct _hook hooks_properties[] = {
+     HOOK_INDIRECT(property_list),
+     HOOK_INDIRECT(__system_property_get),
+     HOOK_INDIRECT(__system_property_read),
++    HOOK_INDIRECT(__system_property_read_callback),
+     HOOK_TO(__system_property_set, _hybris_hook_property_set),
+     HOOK_INDIRECT(__system_property_foreach),
+     HOOK_INDIRECT(__system_property_find),
+@@ -3564,8 +3598,12 @@ static void* __hybris_get_hooked_symbol(const char *sym, const char *requester)
+     // make sure to skip the property hooks only when o.so is actually loaded
+     // since for testing and we sometimes set things like 99 as sdk version.
+     // The o linker is loaded when sdk_version >= 27 and exists.
+-    if (!found && sdk_version < 27)
++    /* rgslide: sin init de Android no hay /dev/__properties__; con SDK >= 27 tambien se desvian las funciones de bajo nivel
++     * __system_property_* (find/read/read_callback/get) hacia el almacen de hybris (/system/build.prop). */
++    if (!found && (sdk_version < 27 || !strncmp(sym, "__system_property_", 18)))
+         found = bsearch(&key, hooks_properties, HOOKS_SIZE(hooks_properties), sizeof(hooks_properties[0]), hook_cmp);
++    if (getenv("HYBRIS_PROP_DEBUG") && !strncmp(sym, "__system_property", 17))
++        fprintf(stderr, "hybris hooksym %s requester=%s sdk=%d found_in_properties=%d\n", sym, requester ? requester : "?", sdk_version, found != NULL);
+ 
+     if (!found)
+         found = bsearch(&key, hooks_common, HOOKS_SIZE(hooks_common), sizeof(hooks_common[0]), hook_cmp);
+diff --git a/hybris/common/legacy_properties/cache.c b/hybris/common/legacy_properties/cache.c
+index 019b7db..cab9d99 100644
+--- a/hybris/common/legacy_properties/cache.c
++++ b/hybris/common/legacy_properties/cache.c
+@@ -35,7 +35,7 @@ struct hybris_prop_value
+ };
+ 
+ /* surely enough for anyone */
+-#define MAX_PROPS 1000
++#define MAX_PROPS 4000
+ 
+ /* the sorted prop array */
+ static struct hybris_prop_value prop_array[MAX_PROPS];
+diff --git a/hybris/common/q/linker.cpp b/hybris/common/q/linker.cpp
+index bb43299..e72235f 100644
+--- a/hybris/common/q/linker.cpp
++++ b/hybris/common/q/linker.cpp
+@@ -1180,10 +1180,10 @@ static int open_library(android_namespace_t* ns,
+   }
+ 
+   // Otherwise we try LD_LIBRARY_PATH first, and fall back to the default library path
+-  TRACE("[ opening %s from namespace %s from %s]", name, ns->get_name(),ns->get_ld_library_paths());
++  TRACE("[ opening %s from namespace %s from %s]", name, ns->get_name(), "...");
+   int fd = open_library_on_paths(zip_archive_cache, name, file_offset, ns->get_ld_library_paths(), realpath);
+   if (fd == -1 && needed_by != nullptr) {
+-    TRACE("[ opening %s from namespace %s from %s]", name, ns->get_name(),needed_by->get_dt_runpath());
++    TRACE("[ opening %s from namespace %s from %s]", name, ns->get_name(), "...");
+     fd = open_library_on_paths(zip_archive_cache, name, file_offset, needed_by->get_dt_runpath(), realpath);
+     // Check if the library is accessible
+     if (fd != -1 && !ns->is_accessible(*realpath)) {
+@@ -1193,7 +1193,7 @@ static int open_library(android_namespace_t* ns,
+   }
+ 
+   if (fd == -1) {
+-    TRACE("[ opening %s from namespace %s from %s]", name, ns->get_name(),ns->get_default_library_paths());
++    TRACE("[ opening %s from namespace %s from %s]", name, ns->get_name(), "...");
+     fd = open_library_on_paths(zip_archive_cache, name, file_offset, ns->get_default_library_paths(), realpath);
+   }
+ 
+diff --git a/hybris/configure.ac b/hybris/configure.ac
+index 1f7a09e..15b0f95 100644
+--- a/hybris/configure.ac
++++ b/hybris/configure.ac
+@@ -314,6 +314,7 @@ AC_CONFIG_FILES([
+ 	egl/platforms/common/Makefile
+ 	egl/platforms/common/hybris-egl-platform.pc
+ 	egl/platforms/null/Makefile
++	egl/platforms/drm/Makefile
+ 	egl/platforms/fbdev/Makefile
+ 	egl/platforms/wayland/Makefile
+ 	egl/platforms/hwcomposer/Makefile
+diff --git a/hybris/egl/platforms/Makefile.am b/hybris/egl/platforms/Makefile.am
+index 4126752..0560022 100644
+--- a/hybris/egl/platforms/Makefile.am
++++ b/hybris/egl/platforms/Makefile.am
+@@ -1,5 +1,5 @@
+ 
+-SUBDIRS = common null fbdev
++SUBDIRS = common null fbdev drm
+ if HAS_ANDROID_4_2_0
+ SUBDIRS += hwcomposer
+ endif
+diff --git a/hybris/egl/platforms/drm/Makefile.am b/hybris/egl/platforms/drm/Makefile.am
+new file mode 100644
+index 0000000..bf57cff
+--- /dev/null
++++ b/hybris/egl/platforms/drm/Makefile.am
+@@ -0,0 +1,13 @@
++pkglib_LTLIBRARIES = eglplatform_drm.la
++eglplatform_drm_la_SOURCES = eglplatform_drm.cpp drm_window.cpp drm_window.h
++eglplatform_drm_la_CXXFLAGS = \
++	-I$(top_srcdir)/include \
++	-I$(top_srcdir)/common \
++	-I$(top_srcdir)/egl \
++	-I$(top_srcdir)/egl/platforms/common \
++	-I$(top_srcdir)/platforms/common \
++	$(ANDROID_HEADERS_CFLAGS)
++eglplatform_drm_la_LDFLAGS = \
++	-avoid-version -module -shared -export-dynamic \
++	$(top_builddir)/egl/platforms/common/libhybris-eglplatformcommon.la \
++	$(top_builddir)/common/libhybris-common.la
+diff --git a/hybris/egl/platforms/drm/drm_window.cpp b/hybris/egl/platforms/drm/drm_window.cpp
+new file mode 100644
+index 0000000..1449b1d
+--- /dev/null
++++ b/hybris/egl/platforms/drm/drm_window.cpp
+@@ -0,0 +1,270 @@
++#include "drm_window.h"
++
++#include <errno.h>
++#include <fcntl.h>
++#include <poll.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <unistd.h>
++#include <sys/ioctl.h>
++#include <drm/drm.h>
++#include <drm/drm_mode.h>
++#include <drm/drm_fourcc.h>
++
++#include <dlfcn.h>
++extern "C" {
++#include <hybris/common/binding.h>
++}
++#include "logging.h"
++
++namespace {
++struct RgAhbDesc { uint32_t width, height, layers, format; uint64_t usage; uint32_t stride, rfu0; uint64_t rfu1; };
++struct RgNativeHandle { int version, numFds, numInts; int data[1]; };
++typedef int (*ahb_alloc_t)(const RgAhbDesc *, AHardwareBuffer **);
++typedef void (*ahb_release_t)(AHardwareBuffer *);
++typedef void (*ahb_describe_t)(const AHardwareBuffer *, RgAhbDesc *);
++typedef const RgNativeHandle *(*ahb_handle_t)(const AHardwareBuffer *);
++ahb_alloc_t p_alloc; ahb_release_t p_release; ahb_describe_t p_describe; ahb_handle_t p_handle;
++bool ahb_ready = false;
++
++bool ahb_init()
++{
++	if (ahb_ready) return p_alloc && p_release && p_describe && p_handle;
++	ahb_ready = true;
++	void *h = android_dlopen("libnativewindow.so", RTLD_LAZY);
++	if (!h) { fprintf(stderr, "hybris drm: no abro libnativewindow.so\n"); return false; }
++	p_alloc = (ahb_alloc_t)android_dlsym(h, "AHardwareBuffer_allocate");
++	p_release = (ahb_release_t)android_dlsym(h, "AHardwareBuffer_release");
++	p_describe = (ahb_describe_t)android_dlsym(h, "AHardwareBuffer_describe");
++	p_handle = (ahb_handle_t)android_dlsym(h, "AHardwareBuffer_getNativeHandle");
++	if (!p_alloc || !p_release || !p_describe || !p_handle) { fprintf(stderr, "hybris drm: faltan simbolos AHardwareBuffer_*\n"); return false; }
++	return true;
++}
++}
++
++#define U64(p) ((uint64_t)(uintptr_t)(p))
++#define AHB_USAGE_GPU_COLOR_OUTPUT (1ULL << 9)
++#define AHB_USAGE_GPU_SAMPLED      (1ULL << 8)
++#define AHB_USAGE_COMPOSER_OVERLAY (1ULL << 11)
++
++static int dx(int fd, unsigned long r, void *a)
++{
++	int rc;
++	do rc = ioctl(fd, r, a); while (rc < 0 && (errno == EINTR || errno == EAGAIN));
++	return rc;
++}
++
++/* ------------------------------------------------------------------ buffer */
++
++DrmNativeWindowBuffer::DrmNativeWindowBuffer(unsigned w, unsigned h, unsigned fmt, uint64_t usage)
++{
++	RgAhbDesc d, o;
++	if (!ahb_init()) return;
++	memset(&d, 0, sizeof d);
++	d.width = w; d.height = h; d.layers = 1; d.format = fmt ? fmt : 1;
++	d.usage = usage | AHB_USAGE_GPU_COLOR_OUTPUT | AHB_USAGE_GPU_SAMPLED | AHB_USAGE_COMPOSER_OVERLAY;
++	if (p_alloc(&d, &m_ahb) != 0 || !m_ahb) { m_ahb = nullptr; return; }
++	memset(&o, 0, sizeof o);
++	p_describe(m_ahb, &o);
++	const RgNativeHandle *h2 = p_handle(m_ahb);
++	ANativeWindowBuffer::width = o.width;
++	ANativeWindowBuffer::height = o.height;
++	ANativeWindowBuffer::stride = o.stride;
++	ANativeWindowBuffer::format = o.format;
++	ANativeWindowBuffer::usage = (int)o.usage;
++	ANativeWindowBuffer::handle = (buffer_handle_t)h2;
++	m_dmabuf = (h2 && h2->numFds > 0) ? h2->data[0] : -1;
++}
++
++DrmNativeWindowBuffer::~DrmNativeWindowBuffer()
++{
++	if (m_ahb && p_release) p_release(m_ahb);
++}
++
++/* ------------------------------------------------------------------ window */
++
++DrmNativeWindow::DrmNativeWindow()
++{
++	m_mode = calloc(1, sizeof(struct drm_mode_modeinfo));
++	if (!openDrm()) {
++		fprintf(stderr, "hybris drm: no pude abrir el panel\n");
++		return;
++	}
++	m_w = m_reqW = ((struct drm_mode_modeinfo *)m_mode)->hdisplay;
++	m_h = m_reqH = ((struct drm_mode_modeinfo *)m_mode)->vdisplay;
++}
++
++DrmNativeWindow::~DrmNativeWindow()
++{
++	freeBuffers();
++	if (m_drm >= 0) close(m_drm);
++	free(m_mode);
++}
++
++bool DrmNativeWindow::openDrm()
++{
++	struct drm_mode_card_res res;
++	uint32_t *crtcs, *conns, *encs;
++	const char *dev = getenv("HYBRIS_DRM_DEVICE");
++	struct drm_mode_modeinfo *modes = nullptr, *mode = (struct drm_mode_modeinfo *)m_mode;
++	uint32_t enc_id = 0, i;
++	int pick = -1;
++
++	m_drm = open(dev ? dev : "/dev/dri/card0", O_RDWR | O_CLOEXEC);
++	if (m_drm < 0) return false;
++	ioctl(m_drm, DRM_IOCTL_SET_MASTER, 0);
++	memset(&res, 0, sizeof res);
++	if (dx(m_drm, DRM_IOCTL_MODE_GETRESOURCES, &res) < 0) return false;
++	crtcs = (uint32_t *)calloc(res.count_crtcs + 1, 4); conns = (uint32_t *)calloc(res.count_connectors + 1, 4); encs = (uint32_t *)calloc(res.count_encoders + 1, 4);
++	res.crtc_id_ptr = U64(crtcs); res.connector_id_ptr = U64(conns); res.encoder_id_ptr = U64(encs); res.count_fbs = 0; res.fb_id_ptr = 0;
++	if (dx(m_drm, DRM_IOCTL_MODE_GETRESOURCES, &res) < 0) return false;
++	for (i = 0; i < res.count_connectors && !m_conn; i++) {
++		struct drm_mode_get_connector c;
++		memset(&c, 0, sizeof c); c.connector_id = conns[i];
++		if (dx(m_drm, DRM_IOCTL_MODE_GETCONNECTOR, &c) < 0 || c.connection != 1 || !c.count_modes) continue;
++		modes = (struct drm_mode_modeinfo *)calloc(c.count_modes, sizeof *modes);
++		c.modes_ptr = U64(modes); c.count_props = 0; c.count_encoders = 0; c.props_ptr = c.prop_values_ptr = c.encoders_ptr = 0;
++		if (dx(m_drm, DRM_IOCTL_MODE_GETCONNECTOR, &c) < 0) { free(modes); modes = nullptr; continue; }
++		m_conn = conns[i]; enc_id = c.encoder_id;
++		for (unsigned k = 0; k < c.count_modes; k++) if (modes[k].vrefresh == 60 && pick < 0) pick = (int)k;
++		if (pick < 0) pick = 0;
++		*mode = modes[pick];
++	}
++	if (!m_conn) return false;
++	if (enc_id) {
++		struct drm_mode_get_encoder e; memset(&e, 0, sizeof e); e.encoder_id = enc_id;
++		if (dx(m_drm, DRM_IOCTL_MODE_GETENCODER, &e) == 0) m_crtc = e.crtc_id;
++	}
++	if (!m_crtc) m_crtc = crtcs[0];
++	m_hz = mode->vrefresh;
++	free(crtcs); free(conns); free(encs); free(modes);
++	fprintf(stderr, "hybris drm: panel %ux%u@%u crtc %u conn %u\n", mode->hdisplay, mode->vdisplay, mode->vrefresh, m_crtc, m_conn);
++	return true;
++}
++
++void DrmNativeWindow::freeBuffers()
++{
++	for (auto *b : m_bufs) {
++		if (b->m_fb) { uint32_t fb = b->m_fb; dx(m_drm, DRM_IOCTL_MODE_RMFB, &fb); }
++		delete b;
++	}
++	m_bufs.clear();
++	m_front = m_pending = nullptr;
++}
++
++bool DrmNativeWindow::importFb(DrmNativeWindowBuffer *b)
++{
++	struct drm_prime_handle ph;
++	struct drm_mode_fb_cmd2 f2;
++	if (b->m_fb) return true;
++	if (b->m_dmabuf < 0) return false;
++	memset(&ph, 0, sizeof ph); ph.fd = b->m_dmabuf;
++	if (dx(m_drm, DRM_IOCTL_PRIME_FD_TO_HANDLE, &ph) < 0) { fprintf(stderr, "hybris drm: PRIME_FD_TO_HANDLE: %s\n", strerror(errno)); return false; }
++	memset(&f2, 0, sizeof f2);
++	f2.width = b->width; f2.height = b->height; f2.pixel_format = DRM_FORMAT_ABGR8888;
++	f2.handles[0] = ph.handle; f2.pitches[0] = b->stride * 4;
++	if (dx(m_drm, DRM_IOCTL_MODE_ADDFB2, &f2) < 0) { fprintf(stderr, "hybris drm: ADDFB2: %s\n", strerror(errno)); return false; }
++	b->m_fb = f2.fb_id;
++	return true;
++}
++
++int DrmNativeWindow::waitFlip()
++{
++	struct pollfd pf;
++	char ev[256];
++	pf.fd = m_drm; pf.events = POLLIN;
++	for (;;) {
++		int r = poll(&pf, 1, 300);
++		if (r <= 0) return -1;
++		r = (int)read(m_drm, ev, sizeof ev);
++		for (int o = 0; r > 0 && o + 8 <= r;) {
++			struct drm_event *e = (struct drm_event *)(ev + o);
++			if (e->type == DRM_EVENT_FLIP_COMPLETE) return 0;
++			if (e->length < 8) break;
++			o += e->length;
++		}
++	}
++}
++
++int DrmNativeWindow::setSwapInterval(int interval) { m_interval = interval; return 0; }
++
++int DrmNativeWindow::dequeueBuffer(BaseNativeWindowBuffer **buffer, int *fenceFd)
++{
++	if (m_bufs.empty()) {
++		for (unsigned i = 0; i < m_count; i++) {
++			DrmNativeWindowBuffer *b = new DrmNativeWindowBuffer(m_reqW, m_reqH, m_format, m_usage);
++			if (!b->ok()) { fprintf(stderr, "hybris drm: AHardwareBuffer_allocate fallo (%ux%u)\n", m_reqW, m_reqH); delete b; freeBuffers(); return -1; }
++			m_bufs.push_back(b);
++		}
++		m_w = m_reqW; m_h = m_reqH;
++	}
++	for (auto *b : m_bufs) {
++		if (!b->m_busy) {
++			b->m_busy = true;
++			*buffer = b;
++			*fenceFd = -1;
++			return NO_ERROR;
++		}
++	}
++	return -1;
++}
++
++int DrmNativeWindow::queueBuffer(BaseNativeWindowBuffer *buffer, int fenceFd)
++{
++	DrmNativeWindowBuffer *b = static_cast<DrmNativeWindowBuffer *>(buffer);
++	struct drm_mode_modeinfo *mode = (struct drm_mode_modeinfo *)m_mode;
++	if (fenceFd >= 0) { struct pollfd p; p.fd = fenceFd; p.events = POLLIN; poll(&p, 1, 1000); close(fenceFd); }
++	if (!importFb(b)) { b->m_busy = false; return -1; }
++	if (!m_modeset) {
++		struct drm_mode_crtc sc;
++		memset(&sc, 0, sizeof sc);
++		sc.crtc_id = m_crtc; sc.fb_id = b->m_fb; sc.set_connectors_ptr = U64(&m_conn); sc.count_connectors = 1; sc.mode_valid = 1; sc.mode = *mode;
++		if (dx(m_drm, DRM_IOCTL_MODE_SETCRTC, &sc) < 0) { fprintf(stderr, "hybris drm: SETCRTC: %s\n", strerror(errno)); b->m_busy = false; return -1; }
++		m_modeset = true; m_front = b;
++		return NO_ERROR;
++	}
++	if (m_pending) {
++		waitFlip();
++		if (m_front) m_front->m_busy = false;
++		m_front = m_pending; m_pending = nullptr;
++	}
++	{
++		struct drm_mode_crtc_page_flip pf;
++		memset(&pf, 0, sizeof pf);
++		pf.crtc_id = m_crtc; pf.fb_id = b->m_fb; pf.flags = DRM_MODE_PAGE_FLIP_EVENT;
++		if (dx(m_drm, DRM_IOCTL_MODE_PAGE_FLIP, &pf) < 0) { fprintf(stderr, "hybris drm: PAGE_FLIP: %s\n", strerror(errno)); b->m_busy = false; return -1; }
++		m_pending = b;
++	}
++	return NO_ERROR;
++}
++
++int DrmNativeWindow::cancelBuffer(BaseNativeWindowBuffer *buffer, int fenceFd)
++{
++	if (fenceFd >= 0) close(fenceFd);
++	static_cast<DrmNativeWindowBuffer *>(buffer)->m_busy = false;
++	return NO_ERROR;
++}
++
++int DrmNativeWindow::lockBuffer(BaseNativeWindowBuffer *) { return NO_ERROR; }
++unsigned int DrmNativeWindow::type() const { return NATIVE_WINDOW_SURFACE; }
++unsigned int DrmNativeWindow::width() const { return m_reqW; }
++unsigned int DrmNativeWindow::height() const { return m_reqH; }
++unsigned int DrmNativeWindow::format() const { return m_format; }
++unsigned int DrmNativeWindow::defaultWidth() const { return m_w; }
++unsigned int DrmNativeWindow::defaultHeight() const { return m_h; }
++unsigned int DrmNativeWindow::queueLength() const { return 1; }
++unsigned int DrmNativeWindow::transformHint() const { return 0; }
++unsigned int DrmNativeWindow::getUsage() const { return (unsigned)m_usage; }
++int DrmNativeWindow::setUsage(uint64_t usage) { m_usage = usage; return NO_ERROR; }
++int DrmNativeWindow::setBuffersFormat(int format) { m_format = format; return NO_ERROR; }
++int DrmNativeWindow::setBufferCount(int cnt) { if (cnt >= 2 && cnt <= 6) m_count = cnt; return NO_ERROR; }
++int DrmNativeWindow::setBuffersDimensions(int width, int height)
++{
++	if (width <= 0 || height <= 0) return NO_ERROR;
++	if ((unsigned)width != m_reqW || (unsigned)height != m_reqH) {
++		m_reqW = width; m_reqH = height;
++		if (!m_bufs.empty()) { m_pending = nullptr; freeBuffers(); m_modeset = false; }
++	}
++	return NO_ERROR;
++}
+diff --git a/hybris/egl/platforms/drm/drm_window.h b/hybris/egl/platforms/drm/drm_window.h
+new file mode 100644
+index 0000000..4f73088
+--- /dev/null
++++ b/hybris/egl/platforms/drm/drm_window.h
+@@ -0,0 +1,73 @@
++/*
++ * Plataforma EGL de libhybris para Linux sin servidor grafico: buffers AHardwareBuffer (gralloc de Android 13 por libnativewindow)
++ * presentados directamente en un CRTC DRM con PAGE_FLIP (sin copia). Pensada para la Anbernic RG Slide (sprd-drm).
++ */
++#ifndef DRM_WINDOW_H
++#define DRM_WINDOW_H
++
++#include <android-config.h>
++#include <stdint.h>
++#include <vector>
++#include <eglnativewindowbase.h>
++#include <system/window.h>
++
++struct AHardwareBuffer;
++
++class DrmNativeWindowBuffer : public BaseNativeWindowBuffer {
++public:
++	DrmNativeWindowBuffer(unsigned width, unsigned height, unsigned format, uint64_t usage);
++	~DrmNativeWindowBuffer();
++	bool ok() const { return m_ahb != nullptr; }
++	AHardwareBuffer *m_ahb = nullptr;
++	int m_dmabuf = -1;
++	uint32_t m_fb = 0;
++	bool m_busy = false;
++};
++
++class DrmNativeWindow : public EGLBaseNativeWindow {
++public:
++	DrmNativeWindow();
++	virtual ~DrmNativeWindow();
++	bool ok() const { return m_drm >= 0; }
++
++protected:
++	virtual int setSwapInterval(int interval);
++	virtual int dequeueBuffer(BaseNativeWindowBuffer **buffer, int *fenceFd);
++	virtual int queueBuffer(BaseNativeWindowBuffer *buffer, int fenceFd);
++	virtual int cancelBuffer(BaseNativeWindowBuffer *buffer, int fenceFd);
++	virtual int lockBuffer(BaseNativeWindowBuffer *buffer);
++	virtual unsigned int type() const;
++	virtual unsigned int width() const;
++	virtual unsigned int height() const;
++	virtual unsigned int format() const;
++	virtual unsigned int defaultWidth() const;
++	virtual unsigned int defaultHeight() const;
++	virtual unsigned int queueLength() const;
++	virtual unsigned int transformHint() const;
++	virtual unsigned int getUsage() const;
++	virtual int setUsage(uint64_t usage);
++	virtual int setBuffersFormat(int format);
++	virtual int setBuffersDimensions(int width, int height);
++	virtual int setBufferCount(int cnt);
++
++private:
++	bool openDrm();
++	bool importFb(DrmNativeWindowBuffer *b);
++	void freeBuffers();
++	int waitFlip();
++
++	int m_drm = -1;
++	uint32_t m_crtc = 0, m_conn = 0;
++	unsigned m_w = 0, m_h = 0, m_hz = 60;
++	unsigned m_reqW = 0, m_reqH = 0;
++	int m_format = 1;
++	uint64_t m_usage = 0;
++	unsigned m_count = 3;
++	int m_interval = 1;
++	std::vector<DrmNativeWindowBuffer *> m_bufs;
++	DrmNativeWindowBuffer *m_front = nullptr, *m_pending = nullptr;
++	bool m_modeset = false;
++	void *m_mode = nullptr;
++};
++
++#endif
+diff --git a/hybris/egl/platforms/drm/eglplatform_drm.cpp b/hybris/egl/platforms/drm/eglplatform_drm.cpp
+new file mode 100644
+index 0000000..8edcf4e
+--- /dev/null
++++ b/hybris/egl/platforms/drm/eglplatform_drm.cpp
+@@ -0,0 +1,45 @@
++#include <android-config.h>
++#include <ws.h>
++#include <stdlib.h>
++#include <hybris/common/binding.h>
++extern "C" {
++#include <eglplatformcommon.h>
++}
++#include "drm_window.h"
++
++
++static void drmws_init_module(struct ws_egl_interface *egl_iface)
++{
++	eglplatformcommon_init(egl_iface);
++}
++
++static struct _EGLDisplay *drmws_GetDisplay(EGLNativeDisplayType)
++{
++	return (struct _EGLDisplay *)calloc(1, sizeof(struct _EGLDisplay));
++}
++
++static void drmws_Terminate(struct _EGLDisplay *dpy) { free(dpy); }
++
++static EGLNativeWindowType drmws_CreateWindow(EGLNativeWindowType win, struct _EGLDisplay *)
++{
++	if (win != 0) return win;
++	DrmNativeWindow *w = new DrmNativeWindow();
++	if (!w->ok()) { delete w; return 0; }
++	return (EGLNativeWindowType)static_cast<ANativeWindow *>(w);
++}
++
++static void drmws_DestroyWindow(EGLNativeWindowType win)
++{
++	if (win) delete static_cast<DrmNativeWindow *>(reinterpret_cast<ANativeWindow *>(win));
++}
++
++extern "C" struct ws_module ws_module_info = {
++	drmws_init_module,
++	drmws_GetDisplay,
++	drmws_Terminate,
++	drmws_CreateWindow,
++	drmws_DestroyWindow,
++	eglplatformcommon_eglGetProcAddress,
++	eglplatformcommon_passthroughImageKHR,
++	eglplatformcommon_eglQueryString
++};
