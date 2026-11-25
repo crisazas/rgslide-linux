@@ -7,6 +7,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <poll.h>
+#include <time.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <drm/drm.h>
+#include <drm/drm_mode.h>
+#include <drm/drm_fourcc.h>
 #include <EGL/egl.h>
 #include <GLES3/gl3.h>
 
@@ -44,6 +54,88 @@ static AHardwareBuffer *ahb[NBUF];
 static int busy[NBUF], nq = 0, nd = 0, ncall = 0, next_buf = 0;
 static int qlog[64], qfence[64], dlog[64], nfence = 0;
 static int log_perform = 1;
+
+
+/* ---------------- salida al panel por DRM (legacy SETCRTC + dumb buffer), igual que tools/drmshow ---------------- */
+static int dfd = -1, dpresent = 0;
+static uint32_t d_fb, d_crtc, d_conn, d_pitch;
+static unsigned char *d_map;
+static unsigned d_w, d_h;
+static double d_wait_fence = 0, d_copy = 0;
+static int d_frames = 0;
+static double now_s(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec + t.tv_nsec * 1e-9; }
+#define U64(p) ((uint64_t)(uintptr_t)(p))
+static int dx(unsigned long r, void *a) { int rc; do rc = ioctl(dfd, r, a); while (rc < 0 && (errno == EINTR || errno == EAGAIN)); return rc; }
+
+static int drm_open(const char *dev)
+{
+	struct drm_mode_card_res res; uint32_t *crtcs, *conns, *encs, i, nconn;
+	struct drm_mode_modeinfo *modes = 0; uint32_t nmodes = 0, enc_id = 0;
+	struct drm_mode_create_dumb cd; struct drm_mode_map_dumb md; struct drm_mode_fb_cmd2 f2;
+	struct drm_mode_crtc sc; struct drm_mode_modeinfo mode; int pick = -1;
+	dfd = open(dev, O_RDWR | O_CLOEXEC);
+	if (dfd < 0) { printf("DRM: open %s: %s\n", dev, strerror(errno)); return -1; }
+	ioctl(dfd, DRM_IOCTL_SET_MASTER, 0);
+	memset(&res, 0, sizeof res);
+	if (dx(DRM_IOCTL_MODE_GETRESOURCES, &res) < 0) return -1;
+	crtcs = calloc(res.count_crtcs, 4); conns = calloc(res.count_connectors, 4); encs = calloc(res.count_encoders, 4);
+	nconn = res.count_connectors;
+	res.crtc_id_ptr = U64(crtcs); res.connector_id_ptr = U64(conns); res.encoder_id_ptr = U64(encs); res.count_fbs = 0; res.fb_id_ptr = 0;
+	if (dx(DRM_IOCTL_MODE_GETRESOURCES, &res) < 0) return -1;
+	for (i = 0; i < nconn && !d_conn; i++) {
+		struct drm_mode_get_connector c; memset(&c, 0, sizeof c); c.connector_id = conns[i];
+		if (dx(DRM_IOCTL_MODE_GETCONNECTOR, &c) < 0 || c.connection != 1 || !c.count_modes) continue;
+		nmodes = c.count_modes; modes = calloc(nmodes, sizeof *modes); c.modes_ptr = U64(modes);
+		c.count_props = 0; c.count_encoders = 0; c.props_ptr = c.prop_values_ptr = c.encoders_ptr = 0;
+		if (dx(DRM_IOCTL_MODE_GETCONNECTOR, &c) < 0) { free(modes); modes = 0; continue; }
+		d_conn = conns[i]; enc_id = c.encoder_id;
+	}
+	if (!d_conn) { printf("DRM: sin conector conectado\n"); return -1; }
+	for (i = 0; i < nmodes; i++) if (modes[i].vrefresh == 60 && pick < 0) pick = (int)i;
+	if (pick < 0) pick = 0;
+	mode = modes[pick];
+	if (enc_id) { struct drm_mode_get_encoder e; memset(&e, 0, sizeof e); e.encoder_id = enc_id; if (dx(DRM_IOCTL_MODE_GETENCODER, &e) == 0) d_crtc = e.crtc_id; }
+	if (!d_crtc) d_crtc = crtcs[0];
+	memset(&cd, 0, sizeof cd); cd.width = mode.hdisplay; cd.height = mode.vdisplay; cd.bpp = 32;
+	if (dx(DRM_IOCTL_MODE_CREATE_DUMB, &cd) < 0) { printf("DRM: CREATE_DUMB: %s\n", strerror(errno)); return -1; }
+	memset(&md, 0, sizeof md); md.handle = cd.handle;
+	if (dx(DRM_IOCTL_MODE_MAP_DUMB, &md) < 0) return -1;
+	d_map = mmap(0, cd.size, PROT_READ | PROT_WRITE, MAP_SHARED, dfd, md.offset);
+	if (d_map == MAP_FAILED) return -1;
+	memset(d_map, 0, cd.size);
+	d_w = mode.hdisplay; d_h = mode.vdisplay; d_pitch = cd.pitch;
+	memset(&f2, 0, sizeof f2); f2.width = d_w; f2.height = d_h; f2.pixel_format = DRM_FORMAT_XRGB8888; f2.handles[0] = cd.handle; f2.pitches[0] = cd.pitch;
+	if (dx(DRM_IOCTL_MODE_ADDFB2, &f2) < 0) { printf("DRM: ADDFB2: %s\n", strerror(errno)); return -1; }
+	d_fb = f2.fb_id;
+	memset(&sc, 0, sizeof sc); sc.crtc_id = d_crtc; sc.fb_id = d_fb; sc.set_connectors_ptr = U64(&d_conn); sc.count_connectors = 1; sc.mode_valid = 1; sc.mode = mode;
+	if (dx(DRM_IOCTL_MODE_SETCRTC, &sc) < 0) { printf("DRM: SETCRTC: %s\n", strerror(errno)); return -1; }
+	printf("DRM: panel %ux%u@%u (crtc %u, conector %u, fb %u, pitch %u)\n", d_w, d_h, mode.vrefresh, d_crtc, d_conn, d_fb, d_pitch);
+	dpresent = 1;
+	return 0;
+}
+
+/* copia el buffer de la Mali (RGBA8888) al dumb XRGB8888 (B,G,R,X en memoria) escalando por vecino mas cercano si no coincide */
+static void drm_show(wbuf_t *b, int idx, int fence)
+{
+	void *p = 0; unsigned y, x; double t0 = now_s(), t1, t2;
+	if (!dpresent) { if (fence >= 0) close(fence); return; }
+	if (fence >= 0) { struct pollfd pf = { .fd = fence, .events = POLLIN }; poll(&pf, 1, 1000); close(fence); }
+	t1 = now_s(); d_wait_fence += t1 - t0;
+	if (AHardwareBuffer_lock(ahb[idx], AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN, -1, 0, &p) || !p) return;
+	for (y = 0; y < d_h; y++) {
+		unsigned sy = (unsigned)((unsigned long)y * b->height / d_h);
+		const unsigned char *s = (const unsigned char *)p + (size_t)sy * b->stride * 4;
+		unsigned char *d = d_map + (size_t)y * d_pitch;
+		if ((unsigned)b->width == d_w) {
+			for (x = 0; x < d_w; x++) { d[x * 4] = s[x * 4 + 2]; d[x * 4 + 1] = s[x * 4 + 1]; d[x * 4 + 2] = s[x * 4]; d[x * 4 + 3] = 0; }
+		} else {
+			for (x = 0; x < d_w; x++) { unsigned sx = (unsigned)((unsigned long)x * b->width / d_w); d[x * 4] = s[sx * 4 + 2]; d[x * 4 + 1] = s[sx * 4 + 1]; d[x * 4 + 2] = s[sx * 4]; d[x * 4 + 3] = 0; }
+		}
+	}
+	AHardwareBuffer_unlock(ahb[idx], 0);
+	t2 = now_s(); d_copy += t2 - t1;
+	d_frames++;
+}
 
 static void inc(void *b) { (void)b; }
 static void dec(void *b) { (void)b; }
@@ -140,6 +232,7 @@ static int f_queue(fw_t *w, wbuf_t *b, int fence)
 	if (nq < 64) { qlog[nq] = idx; qfence[nq] = fence; }
 	if (fence >= 0) nfence++;
 	nq++;
+	if (dpresent && idx >= 0) drm_show(b, idx, fence); else if (fence >= 0) close(fence);
 	return 0;
 }
 static int f_cancel(fw_t *w, wbuf_t *b, int fence)
@@ -163,7 +256,12 @@ int main(int argc, char **argv)
 	EGLint maj, min, n = 0, id = 0, fr;
 	int i;
 
-	if (argc > 2) { W = atoi(argv[1]); H = atoi(argv[2]); }
+	int show = 0, show_secs = 10, ai;
+	for (ai = 1; ai < argc; ai++) {
+		if (!strcmp(argv[ai], "-d")) { show = 1; if (ai + 1 < argc && argv[ai + 1][0] != '-') show_secs = atoi(argv[++ai]); }
+		else if (ai + 1 < argc && argv[ai + 1][0] != '-' && atoi(argv[ai]) > 0) { W = atoi(argv[ai]); H = atoi(argv[ai + 1]); ai++; }
+	}
+	if (show) { W = 1280; H = 960; }
 	lib = dlopen(BLOB, RTLD_NOW);
 	if (!lib) { printf("FALLO dlopen: %s\n", dlerror()); return 2; }
 	LD(eglGetDisplay, EGLDisplay, (EGLNativeDisplayType));
@@ -181,6 +279,8 @@ int main(int argc, char **argv)
 	LD(glClear, void, (GLbitfield));
 	LD(glViewport, void, (GLint, GLint, GLsizei, GLsizei));
 	LD(glFinish, void, (void));
+	LD(glEnable, void, (GLenum));
+	LD(glScissor, void, (GLint, GLint, GLsizei, GLsizei));
 	LD(glReadPixels, void, (GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void *));
 
 	memset(&win, 0, sizeof win);
@@ -212,6 +312,31 @@ int main(int argc, char **argv)
 		if (!eglMakeCurrent(dpy, surf, surf, ctx)) { printf("FALLO eglMakeCurrent 0x%x\n", eglGetError()); return 3; }
 	}
 	printf("OK: contexto con la ventana. GL_RENDERER=%s\n", glGetString(GL_RENDERER)); fflush(stdout);
+	if (show) {
+		double t0, tn, dt; int nf = 0; unsigned char px[4] = { 0 };
+		if (drm_open("/dev/dri/card0")) { printf("FALLO: no pude abrir el panel\n"); return 5; }
+		fflush(stdout);
+		glEnable(GL_SCISSOR_TEST);
+		t0 = now_s();
+		while ((tn = now_s()) - t0 < show_secs) {
+			float ph = (float)(tn - t0);
+			int bw = 160, bh = 160, x = (int)((W - bw) * (0.5f + 0.5f * __builtin_sinf(ph * 1.7f))), y = (int)((H - bh) * (0.5f + 0.5f * __builtin_sinf(ph * 2.3f)));
+			glViewport(0, 0, W, H);
+			glScissor(0, 0, W, H);
+			glClearColor(0.05f, 0.05f, 0.25f, 1); glClear(GL_COLOR_BUFFER_BIT);
+			glScissor(0, H - 24, (int)(W * ph / show_secs), 24); glClearColor(0.1f, 0.9f, 0.2f, 1); glClear(GL_COLOR_BUFFER_BIT);
+			glScissor(x, y, bw, bh); glClearColor(1.0f, 0.5f + 0.5f * __builtin_sinf(ph * 5.0f), 0.1f, 1); glClear(GL_COLOR_BUFFER_BIT);
+			glScissor(0, 0, W, H);
+			if (!eglSwapBuffers(dpy, surf)) { printf("FALLO eglSwapBuffers err=0x%x\n", eglGetError()); return 4; }
+			nf++;
+		}
+		dt = now_s() - t0;
+		glReadPixels(W / 2, H / 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
+		printf("PRESENTADO: %d frames en %.2f s = %.1f fps (queue=%d dequeue=%d, mostrados=%d)\n", nf, dt, nf / dt, nq, nd, d_frames);
+		printf("  tiempo medio por frame: esperar fence %.2f ms, copiar+convertir %.2f ms\n", 1000 * d_wait_fence / (d_frames ? d_frames : 1), 1000 * d_copy / (d_frames ? d_frames : 1));
+		printf("FIN\n");
+		return 0;
+	}
 	fflush(stdout);
 	log_perform = 0;
 	{

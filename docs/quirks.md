@@ -175,3 +175,10 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
 - El blob pasa un fence en cada `queueBuffer` (30/30 con fd >= 0). `fakewin` no lo espera ni lo cierra: al presentar a DRM habra que hacer `sync_wait` sobre el fence antes de mostrar el buffer (y cerrar el fd).
 - Nota de operacion: al borrar los servicios y relanzar con `android-services start` el `ssh` cerro (exit 255) una vez; la Slide no se reinicio.
 - Pendiente: sacar los buffers a DRM (presentar), reparto correcto de los 3 buffers, un emulador real, y Vulkan.
+
+## Ventanas, paso 3: Mali -> ventana falsa -> panel (2026-11-25) - `fakewin -d N`, `scripts/build-fakewin.sh`
+- `fakewin -d 20` (en la Slide, uid 1000 bajo linker64, 4 servicios Android arriba): abre /dev/dri/card0 (SETCRTC legacy + dumb buffer XRGB8888 1280x960@60), anima con la Mali (fondo, barra de progreso, cuadrado rebotando) a traves de eglSwapBuffers. En cada queueBuffer espera el fence con poll (cierra el fd), hace lock del AHardwareBuffer, convierte RGBA->XRGB (B,G,R,X) por CPU y escribe en el dumb buffer.
+- Medido (10 s): 1598 frames = 159.8 fps entregados; fence 0.29 ms/frame; copia+conversion CPU 4.04 ms/frame. El panel va a 60 Hz y NO hay sincronizacion con vblank: los fps son de produccion, no de presentacion.
+- CONFIRMADO por el usuario a ojo: "todo perfecto" (imagen correcta y fluida).
+- Camino completo verificado: blob Arm GLES 3.2 -> EGLSurface de ventana (ANativeWindow propio + AHardwareBuffer por gralloc HIDL) -> fence -> CPU -> DRM -> panel.
+- Pendiente: presentar sin copia (importar el dma-buf del AHardwareBuffer como framebuffer de sprd-drm; sin probar), sincronizar con vblank, un emulador real, Vulkan, entrada, arranque automatico.
