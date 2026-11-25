@@ -147,11 +147,14 @@ setup_gadget() {
 }
 
 setup_net() {
+	# La interfaz RNDIS la crea el gadget y es la unica cuyo uevent trae DEVTYPE=gadget (o su nombre empieza por rndis/usb).
 	i=0
 	while [ $i -lt 50 ]; do
-		for n in /sys/class/net/*; do
-			n=${n##*/}
-			case "$n" in lo|dummy*|sit*|ip6*|tunl*|ifb*|bond*|ccmni*|seth*|sipa*) continue ;; esac
+		for p in /sys/class/net/*; do
+			n=${p##*/}
+			# sipa_usb0 tambien es DEVTYPE=gadget pero es del modem (sipa_usb.ko): no es el RNDIS del PC.
+			case "$n" in sipa*|dummy*|lo|gre*|gretap*|erspan*|ifb*|ip6*|ip_vti*|sit*|tunl*|bond*|ccmni*|seth*) continue ;; esac
+			grep -qx 'DEVTYPE=gadget' "$p/uevent" 2>/dev/null || case "$n" in rndis*|usb[0-9]*|eth[0-9]*) ;; *) continue ;; esac
 			ip link set "$n" up 2>/dev/null
 			ip addr add 10.55.0.2/24 dev "$n" 2>/dev/null
 			msg "red: $n -> 10.55.0.2/24"
@@ -160,7 +163,7 @@ setup_net() {
 		done
 		i=$((i+1)); sleep 0.2
 	done
-	msg "red: no aparece interfaz USB"
+	msg "red: no aparece interfaz USB (hay: $(ls /sys/class/net | tr '\n' ' '))"
 	return 1
 }
 
