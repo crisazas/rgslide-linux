@@ -111,4 +111,4 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
 - Pendiente: `status` de DSI/DP en `unknown`/`disabled` (no hay modo ni imagen aun); falta un cliente DRM (modetest/kmscube) y el driver de usuario de Mali con kbase.
 - Nodos a mano: `mknod -m 666 /dev/dri/card0 c 226 0` y `mknod -m 666 /dev/mali0 c 10 113`. Con ellos `kmscube -D /dev/dri/card0` (Mesa 25.0.7) hace modeset 1280x960@60 en DSI-1 (`status=connected`, luego `enabled`; `dsi is initialized`).
 - Mesa usa `llvmpipe` (software), no Mali: falta driver de usuario para kbase. `Modifiers failed!` en kmscube.
-- Imagen en el panel: sin confirmar por persona.
+- Imagen en el panel: CONFIRMADA por el usuario (ve el cubo de kmscube, renderizado en CPU con llvmpipe).

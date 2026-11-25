@@ -1,7 +1,7 @@
 # PROGRESS
 
 ## Ahora
-- Modeset DSI funciona con kmscube (card0 por mknod, 1280x960@60) pero Mesa va por llvmpipe. Pendiente: confirmar imagen en el panel (usuario), driver de usuario Mali para kbase, mknod en arranque.
+- Pantalla CONFIRMADA (el usuario ve el cubo de kmscube, via llvmpipe). Siguiente: GPU por hardware (driver de usuario Mali para kbase), mknod y carga de modulos en el arranque.
 
 ## Siguiente
 - Arreglar /dev (sin devtmpfs: /dev/null 660, dbus/resolved/wpa_supplicant fallan, systemd degraded)
