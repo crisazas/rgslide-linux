@@ -1,7 +1,7 @@
 # PROGRESS
 
 ## Ahora
-- Sin copia verificado y visto (ahbdrm): dma-buf de la Mali -> PRIME -> ADDFB2 AB24 -> SETCRTC, colores correctos. Siguiente: integrarlo en fakewin (flip por frame con los 3 buffers, vblank).
+- SIN COPIA integrado y visto (fakewin -z): PAGE_FLIP+vblank, 59.4 fps = 60 Hz, 0 errores, usuario ve fluido. Siguiente: emulador real sobre esta ventana (nucleo libretro arm64 Android + frontend minimo), entrada, arranque automatico.
 
 ## Siguiente
 - Arreglar /dev (sin devtmpfs: /dev/null 660, dbus/resolved/wpa_supplicant fallan, systemd degraded)

@@ -188,3 +188,9 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
 - El driver declara 10 planos; los 6 primeros solo en crtc 0 y los 4 ultimos en todos (0xff). Formatos de todos: XR24 XB24 AR24 AB24 RA24 BA24 RX24 BX24 RG16 BG16 NV12 NV21 NV16 NV61 YU12 (YV12/P010). Sin AFBC como modifier en ADDFB2 (se ha usado modifier 0 = lineal).
 - dmesg sin errores durante la prueba.
 - Pendiente: usarlo con la ventana (importar los 3 buffers de la cola una vez y alternar con PAGE_FLIP/SETCRTC por fotograma, esperando el fence de la Mali), sincronia con vblank.
+
+## Presentacion sin copia integrada en la ventana (2026-11-25) - `fakewin -z N`
+- `fakewin -z 15`: los 3 AHardwareBuffer de la cola se importan UNA vez (PRIME_FD_TO_HANDLE + ADDFB2 ABGR8888 -> fb 181/184/185) y se presentan con `DRM_IOCTL_MODE_PAGE_FLIP` + `DRM_MODE_PAGE_FLIP_EVENT`, esperando el fence de la Mali (poll) antes del flip y el evento FLIP_COMPLETE (vblank) antes de liberar el buffer anterior. La Mali dibuja el siguiente mientras el panel muestra el actual (cola de 3).
+- Resultado: 891 frames en 15.01 s = 59.4 fps (= refresco del panel, 60 Hz), 890 flips, 0 errores, 0 timeouts de evento; espera media de vblank 14.68 ms/frame. Sin copia de CPU. dmesg sin errores. El usuario ve la animacion "perfecta y fluida".
+- Gotcha: el primer PAGE_FLIP devuelve EINVAL porque el CRTC estaba con un fb XRGB8888 (el del arranque / SETCRTC previo) y el nuevo es ABGR8888 (otro formato); hay que hacer un SETCRTC inicial con el primer buffer importado y despues ya funcionan los PAGE_FLIP. (El modo copia CPU, `fakewin -d`, va a 160-383 fps de produccion porque no sincroniza con vblank.)
+- Es el camino a usar para el emulador: sin copia, con vsync, con la GPU y la pantalla compartiendo dma-bufs.

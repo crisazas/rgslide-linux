@@ -61,6 +61,7 @@ static int dfd = -1, dpresent = 0;
 static uint32_t d_fb, d_crtc, d_conn, d_pitch;
 static unsigned char *d_map;
 static unsigned d_w, d_h;
+static struct drm_mode_modeinfo d_mode;
 static double d_wait_fence = 0, d_copy = 0;
 static int d_frames = 0;
 static double now_s(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec + t.tv_nsec * 1e-9; }
@@ -94,6 +95,7 @@ static int drm_open(const char *dev)
 	for (i = 0; i < nmodes; i++) if (modes[i].vrefresh == 60 && pick < 0) pick = (int)i;
 	if (pick < 0) pick = 0;
 	mode = modes[pick];
+	d_mode = mode;
 	if (enc_id) { struct drm_mode_get_encoder e; memset(&e, 0, sizeof e); e.encoder_id = enc_id; if (dx(DRM_IOCTL_MODE_GETENCODER, &e) == 0) d_crtc = e.crtc_id; }
 	if (!d_crtc) d_crtc = crtcs[0];
 	memset(&cd, 0, sizeof cd); cd.width = mode.hdisplay; cd.height = mode.vdisplay; cd.bpp = 32;
@@ -135,6 +137,79 @@ static void drm_show(wbuf_t *b, int idx, int fence)
 	AHardwareBuffer_unlock(ahb[idx], 0);
 	t2 = now_s(); d_copy += t2 - t1;
 	d_frames++;
+}
+
+
+/* ---------------- presentacion SIN copia: dma-buf del AHardwareBuffer -> framebuffer DRM -> PAGE_FLIP con evento de vblank ---------------- */
+typedef struct { int version, numFds, numInts; int data[1]; } nh_t;
+static int d_modeset = 0;
+static int zero = 0, d_front = -1, d_pend = -1, d_flips = 0, d_fliperr = 0, d_evto = 0;
+static uint32_t d_fbid[NBUF];
+static double d_flipwait = 0;
+
+static int drm_fb_for(int idx)
+{
+	const nh_t *h; struct drm_prime_handle ph; struct drm_mode_fb_cmd2 f2;
+	if (d_fbid[idx]) return 0;
+	if (!p_getNativeHandle) p_getNativeHandle = dlsym(RTLD_DEFAULT, "AHardwareBuffer_getNativeHandle");
+	h = p_getNativeHandle ? p_getNativeHandle(ahb[idx]) : 0;
+	if (!h || h->numFds < 1) return -1;
+	memset(&ph, 0, sizeof ph); ph.fd = h->data[0];
+	if (dx(DRM_IOCTL_PRIME_FD_TO_HANDLE, &ph) < 0) { printf("FALLO PRIME_FD_TO_HANDLE buf %d: %s\n", idx, strerror(errno)); return -1; }
+	memset(&f2, 0, sizeof f2);
+	f2.width = bufs[idx]->width; f2.height = bufs[idx]->height; f2.pixel_format = DRM_FORMAT_ABGR8888;
+	f2.handles[0] = ph.handle; f2.pitches[0] = bufs[idx]->stride * 4;
+	if (dx(DRM_IOCTL_MODE_ADDFB2, &f2) < 0) { printf("FALLO ADDFB2 buf %d: %s\n", idx, strerror(errno)); return -1; }
+	d_fbid[idx] = f2.fb_id;
+	printf("  zero-copia: buffer %d -> fb %u\n", idx, f2.fb_id);
+	return 0;
+}
+
+static int drm_wait_flip(void)
+{
+	struct pollfd pf = { .fd = dfd, .events = POLLIN };
+	char ev[256];
+	for (;;) {
+		int r = poll(&pf, 1, 200);
+		if (r <= 0) { d_evto++; return -1; }
+		r = (int)read(dfd, ev, sizeof ev);
+		if (r > 0) {
+			int o = 0;
+			while (o + 8 <= r) {
+				struct drm_event *e = (struct drm_event *)(ev + o);
+				if (e->type == DRM_EVENT_FLIP_COMPLETE) return 0;
+				if (e->length < 8) break;
+				o += e->length;
+			}
+		}
+	}
+}
+
+static void drm_flip(int idx, int fence)
+{
+	struct drm_mode_crtc_page_flip pf; double t0;
+	if (fence >= 0) { struct pollfd p = { .fd = fence, .events = POLLIN }; poll(&p, 1, 1000); close(fence); }
+	if (!dpresent || drm_fb_for(idx)) { busy[idx] = 0; return; }
+	if (!d_modeset) {
+		struct drm_mode_crtc sc;
+		memset(&sc, 0, sizeof sc);
+		sc.crtc_id = d_crtc; sc.fb_id = d_fbid[idx]; sc.set_connectors_ptr = U64(&d_conn); sc.count_connectors = 1; sc.mode_valid = 1; sc.mode = d_mode;
+		if (dx(DRM_IOCTL_MODE_SETCRTC, &sc) < 0) { printf("FALLO SETCRTC inicial (cambio de formato a ABGR8888): %s\n", strerror(errno)); busy[idx] = 0; return; }
+		d_modeset = 1; d_front = idx;
+		printf("  zero-copia: SETCRTC inicial con ABGR8888 ok (a partir de aqui, PAGE_FLIP)\n");
+		return;
+	}
+	t0 = now_s();
+	if (d_pend >= 0) {
+		drm_wait_flip();
+		if (d_front >= 0) busy[d_front] = 0;
+		d_front = d_pend; d_pend = -1;
+	}
+	d_flipwait += now_s() - t0;
+	memset(&pf, 0, sizeof pf);
+	pf.crtc_id = d_crtc; pf.fb_id = d_fbid[idx]; pf.flags = DRM_MODE_PAGE_FLIP_EVENT;
+	if (dx(DRM_IOCTL_MODE_PAGE_FLIP, &pf) < 0) { d_fliperr++; if (d_fliperr <= 3) printf("PAGE_FLIP: %s\n", strerror(errno)); busy[idx] = 0; return; }
+	d_pend = idx; d_flips++;
 }
 
 static void inc(void *b) { (void)b; }
@@ -194,7 +269,7 @@ static int alloc_all(void)
 		memset(&d, 0, sizeof d);
 		d.width = W; d.height = H; d.layers = 1;
 		d.format = FMT ? FMT : AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM;
-		d.usage = USAGE | AHARDWAREBUFFER_USAGE_GPU_COLOR_OUTPUT | AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN | AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE;
+		d.usage = USAGE | AHARDWAREBUFFER_USAGE_GPU_COLOR_OUTPUT | AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN | AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE | (zero ? AHARDWAREBUFFER_USAGE_COMPOSER_OVERLAY : 0);
 		if (AHardwareBuffer_allocate(&d, &ahb[i])) { printf("FALLO AHardwareBuffer_allocate %d (%dx%d fmt=%d usage=0x%llx)\n", i, W, H, FMT, (unsigned long long)d.usage); return -1; }
 		AHardwareBuffer_describe(ahb[i], &o);
 		bufs[i] = calloc(1, sizeof(wbuf_t));
@@ -228,11 +303,11 @@ static int f_queue(fw_t *w, wbuf_t *b, int fence)
 {
 	int i, idx = -1;
 	(void)w;
-	for (i = 0; i < NBUF; i++) if (bufs[i] == b) { busy[i] = 0; idx = i; }
+	for (i = 0; i < NBUF; i++) if (bufs[i] == b) { if (!zero) busy[i] = 0; idx = i; }
 	if (nq < 64) { qlog[nq] = idx; qfence[nq] = fence; }
 	if (fence >= 0) nfence++;
 	nq++;
-	if (dpresent && idx >= 0) drm_show(b, idx, fence); else if (fence >= 0) close(fence);
+	if (zero && dpresent && idx >= 0) drm_flip(idx, fence); else if (dpresent && idx >= 0) drm_show(b, idx, fence); else if (fence >= 0) close(fence);
 	return 0;
 }
 static int f_cancel(fw_t *w, wbuf_t *b, int fence)
@@ -258,7 +333,8 @@ int main(int argc, char **argv)
 
 	int show = 0, show_secs = 10, ai;
 	for (ai = 1; ai < argc; ai++) {
-		if (!strcmp(argv[ai], "-d")) { show = 1; if (ai + 1 < argc && argv[ai + 1][0] != '-') show_secs = atoi(argv[++ai]); }
+		if (!strcmp(argv[ai], "-z")) { zero = 1; }
+		if (!strcmp(argv[ai], "-d") || !strcmp(argv[ai], "-z")) { show = 1; if (ai + 1 < argc && argv[ai + 1][0] != '-') show_secs = atoi(argv[++ai]); }
 		else if (ai + 1 < argc && argv[ai + 1][0] != '-' && atoi(argv[ai]) > 0) { W = atoi(argv[ai]); H = atoi(argv[ai + 1]); ai++; }
 	}
 	if (show) { W = 1280; H = 960; }
@@ -333,6 +409,7 @@ int main(int argc, char **argv)
 		dt = now_s() - t0;
 		glReadPixels(W / 2, H / 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, px);
 		printf("PRESENTADO: %d frames en %.2f s = %.1f fps (queue=%d dequeue=%d, mostrados=%d)\n", nf, dt, nf / dt, nq, nd, d_frames);
+		if (zero) printf("  ZERO-COPIA: flips=%d errores=%d timeouts_de_evento=%d; espera media de vblank/flip %.2f ms por frame\n", d_flips, d_fliperr, d_evto, 1000 * d_flipwait / (d_flips ? d_flips : 1));
 		printf("  tiempo medio por frame: esperar fence %.2f ms, copiar+convertir %.2f ms\n", 1000 * d_wait_fence / (d_frames ? d_frames : 1), 1000 * d_copy / (d_frames ? d_frames : 1));
 		printf("FIN\n");
 		return 0;
