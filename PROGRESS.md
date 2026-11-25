@@ -1,7 +1,7 @@
 # PROGRESS
 
 ## Ahora
-- RIESGO: reinicio en frio puede dar bucle de ~40 s (panic de probe en arranque temprano, singleadcjoy/unisoc_mailbox; ver docs/quirks.md INCIDENTE). No reiniciar sin necesidad. GPU+RetroArch OK; autoarranque gpu/android OK; falta audio.
+- Suspension: la prueba de freeze con sipa wakeup=disabled acabo en panic sipa_recv_skb (ver docs/power-sensors.md); no repetir sin el usuario delante. ES+wifi+USB OK en frio; GBA/NDS libres a 60 fps; falta audio, sensores, BT, ventilador por persona
 
 ## Siguiente
 - /dev/sctl_ch da ENODEV en bucle (mayor dinamico 498); CM4 Version no visto
