@@ -19,3 +19,9 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
 ## BROM / spd_dump
 - Direcciones de carga de los FDL de la Slide, del XML del .pac: **FDL1 0x65000800, FDL2 0xb4fffe00** (no las 0x5500/0x9efffe00 de la T618).
 - `scripts/brom-restore-misc.sh` esta preparado pero **spd_dump nunca ha conectado con la Slide** (el equipo volvio solo antes de entrar en BROM). Sin probar.
+
+## Prueba con init que escribe marcas en boot_b (2026-11-24 23:33-23:55)
+- boot_b = out/boot-rescue.img (init completo con flush_marks). El LK lo cargo 3 veces (`ramdisk size is 1350563`); el usuario vio ~90 s de pantalla del LK y reinicio (coincide con RESCUE_TIMEOUT=90 del init, pero tambien podria ser el watchdog que arma el LK: `wdt was enabled by miscdata`).
+- Marcas: NINGUNA (zona boot_b+48 MiB a ceros). **Inconcluso**: flush_marks necesita /sys/class/block/sda37 y el UFS solo existe tras cargar ufs-sprd-qogirn6pro.ko (linea 15 de modules.load); si el init o ese insmod se quedaron antes, no hay marca posible. pstore tambien vacio al volver.
+- Siguiente diseno: marcar ANTES de cargar modulos y en un medio que no dependa del UFS (ramoops en 0xfff80000, que el LK/Android pueden limpiar) o cargar primero solo la cadena minima hasta el UFS y marcar tras cada modulo.
+- misc volvio a suffix _b / prio b=15 tras la prueba; restaurado con dd (md5 534e94b7).

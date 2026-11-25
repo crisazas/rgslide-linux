@@ -8,7 +8,7 @@
 export PATH=/sbin:/bin:/usr/sbin:/usr/bin
 export HOME=/root TERM=linux
 umask 022
-RESCUE_TIMEOUT=${RESCUE_TIMEOUT:-240}
+RESCUE_TIMEOUT=${RESCUE_TIMEOUT:-90}
 
 mount -t proc proc /proc 2>/dev/null
 mount -t sysfs sysfs /sys 2>/dev/null
@@ -19,7 +19,31 @@ mknod -m 600 /dev/kmsg c 1 11 2>/dev/null
 mknod -m 666 /dev/tty c 5 0 2>/dev/null
 exec </dev/console >/dev/console 2>&1
 
-msg() { echo "[rgslide] $*" > /dev/kmsg 2>/dev/null; echo "[rgslide] $*"; }
+BLK=""
+MARKOFF=12288
+msg() {
+	echo "[rgslide] $*" > /dev/kmsg 2>/dev/null; echo "[rgslide] $*"
+	echo "$(cut -d' ' -f1 /proc/uptime) $*" >> /run/marklog 2>/dev/null
+}
+# Marcas persistentes: el log se acumula en /run/marklog y se vuelca a boot_b + 48 MiB (cola libre de la particion de prueba).
+setup_blk() {
+	[ -n "$BLK" ] && return 0
+	for u in /sys/class/block/*/uevent; do
+		[ -r "$u" ] || continue
+		grep -qx 'PARTNAME=boot_b' "$u" 2>/dev/null || continue
+		mm=$(sed -n 's/^MAJOR=//p;s/^MINOR=//p' "$u" | tr '\n' ' ')
+		set -- $mm
+		[ -n "$2" ] || continue
+		mknod -m 600 /dev/bootb b "$1" "$2" 2>/dev/null && BLK=/dev/bootb && return 0
+	done
+	return 1
+}
+flush_marks() {
+	setup_blk || return 1
+	{ echo "RGSLIDE-MARK v1 $(cut -d' ' -f1 /proc/uptime)"; cat /run/marklog 2>/dev/null; echo "--- dmesg (cola)"; dmesg 2>/dev/null | tail -n 120; } > /run/marksnap 2>/dev/null
+	truncate -s 262144 /run/marksnap 2>/dev/null
+	dd if=/run/marksnap of="$BLK" bs=4096 seek=$MARKOFF count=64 conv=notrunc,fsync 2>/dev/null
+}
 
 mkdir -p /dev/pts /run /tmp /mnt/root
 mount -t devpts devpts /dev/pts 2>/dev/null
@@ -28,10 +52,13 @@ mount -t configfs none /sys/kernel/config 2>/dev/null || msg "configfs: fallo"
 
 CMDLINE=$(cat /proc/cmdline)
 msg "init de rescate, kernel $(uname -r), timeout ${RESCUE_TIMEOUT}s"
+msg "cmdline: $CMDLINE"
+msg "modulos en /lib/modules: $(ls /lib/modules | wc -l)"
 
 ( sleep "$RESCUE_TIMEOUT"
   [ -e /run/keep ] && exit 0
   msg "timeout de rescate: reiniciando"
+  flush_marks
   sync
   reboot -f ) &
 
@@ -45,6 +72,7 @@ load_list() {
 		f=/lib/modules/$mod
 		[ -f "$f" ] || { msg "falta $mod"; continue; }
 		out=$(insmod "$f" 2>&1) && msg "ok $mod" || msg "insmod $mod: $out"
+		flush_marks
 	done < "$1"
 }
 
@@ -128,4 +156,5 @@ case "$CMDLINE" in
 esac
 
 msg "listo: telnet 10.55.0.2 (o ttyGS0). touch /run/keep evita el reinicio"
+flush_marks
 while :; do sleep 5; done
