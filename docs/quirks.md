@@ -178,7 +178,7 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
 
 ## Ventanas, paso 3: Mali -> ventana falsa -> panel (2026-11-25) - `fakewin -d N`, `scripts/build-fakewin.sh`
 - `fakewin -d 20` (en la Slide, uid 1000 bajo linker64, 4 servicios Android arriba): abre /dev/dri/card0 (SETCRTC legacy + dumb buffer XRGB8888 1280x960@60), anima con la Mali (fondo, barra de progreso, cuadrado rebotando) a traves de eglSwapBuffers. En cada queueBuffer espera el fence con poll (cierra el fd), hace lock del AHardwareBuffer, convierte RGBA->XRGB (B,G,R,X) por CPU y escribe en el dumb buffer.
-- Medido (10 s): 1598 frames = 159.8 fps entregados; fence 0.29 ms/frame; copia+conversion CPU 4.04 ms/frame. El panel va a 60 Hz y NO hay sincronizacion con vblank: los fps son de produccion, no de presentacion.
+- Medido, dos pasadas: (10 s) 1598 frames = 159.8 fps, fence 0.29 ms, copia+conversion CPU 4.04 ms; (20 s) 7662 frames = 383.0 fps, fence 0.27 ms, copia 1.54 ms. La copia varia x2.6 entre pasadas (probablemente frecuencia de CPU/cache; sin investigar). Las dos con imagen correcta. El panel va a 60 Hz y NO hay sincronizacion con vblank: los fps son de produccion, no de presentacion.
 - CONFIRMADO por el usuario a ojo: "todo perfecto" (imagen correcta y fluida).
 - Camino completo verificado: blob Arm GLES 3.2 -> EGLSurface de ventana (ANativeWindow propio + AHardwareBuffer por gralloc HIDL) -> fence -> CPU -> DRM -> panel.
 - Pendiente: presentar sin copia (importar el dma-buf del AHardwareBuffer como framebuffer de sprd-drm; sin probar), sincronizar con vblank, un emulador real, Vulkan, entrada, arranque automatico.
