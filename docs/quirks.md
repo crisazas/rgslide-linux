@@ -153,3 +153,11 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
 - `drmshow -p`: patron de prueba en el panel DSI (1280x960@60); el usuario ve "varios colores y franjas". CREATE_DUMB funciona (DRM_CAP_DUMB_BUFFER=1), ADDFB2 y SETCRTC legacy OK; no hizo falta el camino atomico.
 - Restaurar el CRTC original da ENOENT: el driver libera la memoria del logo de arranque (fb 183) en el primer modeset. El panel conserva el ultimo patron.
 - `drmshow /tmp/gltest.ppm` muestra la imagen renderizada por la Mali (256x256 escalada): CONFIRMADO por el usuario (ve el triangulo). Camino completo: Mali (GLES 3.2) -> glReadPixels -> ppm -> dumb buffer -> DSI. Es una copia por CPU, sin rendimiento.
+
+## Rendimiento: Mali-G57 (blob de Arm) vs llvmpipe (2026-11-25) - `tools/glbench`, `scripts/build-glbench.sh`
+- Mismo fuente, 1280x960, FBO offscreen RGBA8, 4 s por prueba tras 1 s de calentamiento, `glFinish` por frame, sin presentar. Slide con 8 nucleos; Mali a 850 MHz (`cur_freq`).
+| prueba | llvmpipe (Mesa 25.0.7, CPU) | Mali-G57 (r40p0) | relacion |
+|---|---|---|---|
+| A: shader ALU pesado, 3 pasadas de pantalla/frame | 5.37 fps, 19.8 Mpix/s | 54.66 fps, 201.5 Mpix/s | x10.2 |
+| B: 1M triangulos pequenos/frame | 1.65 fps, 1.7 Mtri/s | 18.45 fps, 18.4 Mtri/s | x11.2 |
+- Limites de la medida: es sintetica; no mide texturas, ancho de banda de memoria, ni la presentacion al panel. El pixel central difiere entre las dos (226,39,129 vs 196,254,78) porque el shader A itera sin/cos de forma caotica y la precision float difiere; no es un fallo de render. Solo se ha medido una vez.

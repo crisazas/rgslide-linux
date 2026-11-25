@@ -1,7 +1,7 @@
 # PROGRESS
 
 ## Ahora
-- HITO 2 HECHO: imagen renderizada por la Mali visible en el panel (via ppm + drmshow, copia por CPU). Siguiente: render en bucle presentando sin ppm, medir rendimiento Mali vs llvmpipe, y ventana (binder/gralloc) para emuladores.
+- Rendimiento medido: Mali-G57 ~x10 sobre llvmpipe (shader x10.2, geometria x11.2). Siguiente: presentar en bucle al panel sin ppm, y ventana (binder/gralloc/AIDL) para emuladores.
 
 ## Siguiente
 - Arreglar /dev (sin devtmpfs: /dev/null 660, dbus/resolved/wpa_supplicant fallan, systemd degraded)
