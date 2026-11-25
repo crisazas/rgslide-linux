@@ -47,3 +47,9 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
 - Otros insmod fallidos de la cadena de fabrica: `sdhci-sprd`, `sensorhub`, `slog_bridge` (unknown symbol): no se investigaron.
 - `ptn38003a: probe of 6-0030 failed with error -5` (conmutador USB-C por I2C).
 - OJO: `dmesg-ramoops-0` del pstore puede ser de un arranque ANTERIOR; comparar con cmp antes de leerlo.
+
+## Prueba 7 (01:03-01:05): restore_misc FUNCIONA; el UDC no aparece
+- `MARCA-3 boot_b visible tras 0 esperas` (UFS listo a los 18.9 s, al terminar la cadena de fabrica) y `MARCA-4 misc restaurado a slot A (verificado)` a los 19.0 s. El LK arranca A en el reinicio siguiente: GammaOS vuelve en ~2.5 min, sin agotar los 7 intentos.
+- Cadena USB sin errores de simbolos; `sprd-hsphy`/`sprd-ssphy` hacen probe; `sc27xx-typec ... works as DRP`. PERO no aparece ninguna linea de `dwc3` y `/sys/class/udc` queda vacio.
+- Comparacion con el dmesg de GammaOS (dump/live/dmesg-gamma-now.txt): el dwc3 hace probe a los 4.58 s, JUSTO DESPUES de `aw32257-charger 6-006a: driver registered` (4.52 s). El overlay (dtbo id 0x2100) define el regulador `vddvbus` como `otg-vbus` dentro de `charger@6a` (i2c6), y `dwc3-sprd.ko` contiene `unable to get vbus supply`. `aw32257_charger.ko` (y `sprd-charger-manager`, `sprd_battery_info`) NO estaban en mi lista: hipotesis para el UDC ausente. En el recovery de fabrica (`modules.load.recovery`) van despues de dwc3-sprd, pero los carga antes de que el dwc3 reintente su probe diferido.
+- Hipotesis sin confirmar.
