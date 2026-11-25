@@ -100,3 +100,8 @@ Aviso: el struct `ff_effect` está empaquetado a mano (48 bytes, aarch64/x86_64)
 1. Con `rgslide-fan mode off|128|max` (5 s cada uno): ¿gira? ¿suena? ¿255 es el máximo y no el parado?
 2. `rgslide-rumble -i 10` frente a `-i 100`, `-w 0`: ¿se siente?, ¿varía la intensidad o solo on/off?
 3. Comprobar a mano la curva real con carga sostenida (> 70 C) en una sesión larga; en esta sesión el máximo fue 71 C.
+
+## Intensidad de la vibracion: SOLO ON/OFF (2026-11-25, verificado con el usuario y con el codigo fuente)
+- Prueba con persona: rampa 0/10/25/50/75/100 % con `rgslide-rumble -d 1200 -i N -v`; el usuario: "todos se sienten igual". El regulador `vddvib` pasa a `enabled` desde el 10 % y `disabled` al 0 %, igual de ancho en todos.
+- Codigo mainline de `drivers/input/misc/sc27xx-vibra.c` (Linux 6.6, tambien en 5.4): `sc27xx_vibra_play` guarda `weak_magnitude` en `info->strength`; `sc27xx_vibra_play_work` solo distingue `strength == 0` de `!= 0` y enciende/apaga el LDO (`LDO_VIBR_PD`, `SLP_LDOVIBR_PD_EN`). No hay PWM ni tabla de niveles. NO se ha podido comparar con el `.ko` de fabrica de la Slide (no esta en `dump/`): la conclusion se apoya en el codigo mainline y en lo medido.
+- Consecuencia: `-i` y `-w` de `rgslide-rumble` solo importan como 0 / distinto de 0. Lo que se puede variar es duracion y patron. Una "intensidad" aproximada se podria simular con pulsos cortos repetidos (ej. 20 ms on / 20 ms off): NO probado.
