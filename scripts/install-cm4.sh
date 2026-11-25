@@ -7,6 +7,7 @@ H=${1:-console@10.55.0.2}
 SSH="ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/tmp/opencode/kh -o ConnectTimeout=8"
 SRC=dump/android/root
 [ -f "$SRC/vendor/bin/modem_control" ] || { echo "falta $SRC (scripts/extract-android-bits.sh)"; exit 1; }
+cp tools/propshim/libpropshim.so "$SRC/libpropshim.so"
 tar -C "$SRC" -cf - . | $SSH "$H" 'sudo mkdir -p /opt/android && sudo tar -C /opt/android -xf - && sudo chmod -R a+rX /opt/android && sudo chmod 755 /opt/android/vendor/bin/modem_control /opt/android/apex/com.android.runtime/bin/linker64'
 $SSH "$H" 'sudo sh -s' <<'EOS'
 # bionic busca su linker en /system/bin/linker64 y las libs en /system/lib64 y /apex/com.android.runtime/lib64/bionic

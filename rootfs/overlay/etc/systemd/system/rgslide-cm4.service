@@ -1,5 +1,5 @@
 [Unit]
-Description=Arranca el CM4 de la Slide (modem_control de Android carga pm_sys)
+Description=Arranca el CM4 de la Slide (modem_control de Android carga pm_sys; sin el CM4 la Slide se reinicia a ~284 s)
 After=local-fs.target systemd-udevd.service
 DefaultDependencies=no
 Before=network-pre.target
@@ -7,6 +7,7 @@ Before=network-pre.target
 [Service]
 Type=simple
 ExecStartPre=/usr/local/sbin/rgslide-cm4-prep
+Environment=LD_PRELOAD=/opt/android/libpropshim.so
 ExecStart=/vendor/bin/modem_control
 StandardOutput=file:/var/log/modem_control.log
 StandardError=inherit

@@ -96,3 +96,8 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
   3. Enlaces `/dev/block/by-name/<PARTNAME>` (pm_sys_b, nr_modem_b, nr_phy_b...) y lectura `o+r` en esas particiones: corre como uid 1000. Sin permiso: EACCES y el reinicio llega a ~40 s (read sobre Trusty).
 - Pendiente: `/dev/sctl_ch` da ENODEV en bucle (nodo de sprd-spipe dst=9, mayor dinamico); `CM4 Version` no visto. /dev sin devtmpfs: /dev/null queda 660.
 - Comando de la prueba: `LD_PRELOAD=/opt/android/libpropshim.so /vendor/bin/modem_control` tras ejecutar rgslide-cm4-prep.
+
+## Nota: ¿aplica a una GSI? (sin verificar)
+- En el vendor de fabrica `modem_control` es el servicio `vendor.modem_control` (`/vendor/etc/init/modem_control.rc`, class core, user root). Una GSI conserva vendor, asi que deberia arrancar solo; si la GSI reiniciaba igual, algo le impedia llegar al CM4.
+- Candidatos: by-name ausente, permisos/SELinux sobre pm_sys_b / nr_modem_b / nr_phy_b, propiedades que no coinciden, o el servicio cae antes.
+- Comprobar en una GSI: `getprop init.svc.vendor.modem_control`, `dmesg | grep "cm4 watchdog"`, `logcat -s MODEM_CTRL`. Sin logs de una GSI real, no se sabe cual.

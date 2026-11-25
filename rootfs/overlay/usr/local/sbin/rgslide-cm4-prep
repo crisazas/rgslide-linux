@@ -5,6 +5,7 @@ for n in pmsys modem phycp sctl_pm; do
   M=$(awk -v n="$n" '$2==n{print $1}' /proc/devices | head -1)
   [ -n "$M" ] && [ ! -e /dev/$n ] && mknod -m 660 /dev/$n c "$M" 0
 done
+chmod 666 /dev/null /dev/zero /dev/full /dev/random /dev/urandom /dev/tty 2>/dev/null
 mkdir -p /dev/block/by-name
 for u in /sys/class/block/sd*[0-9]; do
   n=$(sed -n 's/^PARTNAME=//p' $u/uevent); b=$(basename $u)
