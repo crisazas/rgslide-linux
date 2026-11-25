@@ -27,3 +27,9 @@ Como el 20 es a la vez "hotkey" y "menu", RetroArch (`input_driver.c`, `input_dr
 - Sonido; previsualizaciones de video (libvlc sin plugins); decodificador por hardware (docs/video-decoder.md).
 - Probar GBA, SNES, NDS con ROMs reales y medir rendimiento.
 - Atajos extra (guardar/cargar estado con 20+L1/R1): no configurados.
+
+## Arranque automatico de ES (2026-11-25) - `rootfs/overlay/etc/systemd/system/rgslide-es.service`
+- `rgslide-es.service` (habilitado): `User=console`, `After=rgslide-android/gpu/input/clock`, `Requires=rgslide-android`, `Restart=on-failure`, `StartLimitBurst=5` en 120 s; `ExecStart=/usr/local/bin/rgslide-es`.
+- Probado en caliente: arranca como `console` con las variables de hybris y `libtlspad`; "Reiniciar ES" (`/tmp/es-restart`) lo relanza el bucle de `rgslide-es`; `kill -9` -> systemd lo relanza (NRestarts=1).
+- Probado en FRIO (reinicio pedido por SSH, 15:41): el usuario VIO ES aparecer solo en la pantalla y responder al mando. PERO el PC NO volvio a ver el USB de la Slide (ni red ni `ttyUSB0`) durante ~10 min, tampoco tras reconectar el cable. Causa NO identificada: el gadget USB (RNDIS+gser) lo arma el `initramfs`, no Debian. No se pudo mirar el estado de la Slide por SSH en ese arranque.
+- Reinicio desde el menu "Reiniciar sistema" de ES (`/tmp/es-sysrestart` -> `sudo -n systemctl reboot` en `rgslide-es`): funciono; tras el el USB SI volvio a enumerar ("RG Slide rescue", interfaz `enx76c82d434206`).
