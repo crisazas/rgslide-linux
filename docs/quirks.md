@@ -161,3 +161,9 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
 | A: shader ALU pesado, 3 pasadas de pantalla/frame | 5.37 fps, 19.8 Mpix/s | 54.66 fps, 201.5 Mpix/s | x10.2 |
 | B: 1M triangulos pequenos/frame | 1.65 fps, 1.7 Mtri/s | 18.45 fps, 18.4 Mtri/s | x11.2 |
 - Limites de la medida: es sintetica; no mide texturas, ancho de banda de memoria, ni la presentacion al panel. El pixel central difiere entre las dos (226,39,129 vs 196,254,78) porque el shader A itera sin/cos de forma caotica y la precision float difiere; no es un fallo de render. Solo se ha medido una vez.
+
+## Ventanas, paso 1: servicios de Android bajo linker64 (2026-11-25)
+- `servicemanager` abortaba con `Check failed: gSehandle != nullptr`: faltaban `/system/etc/selinux/plat_service_contexts` y `/vendor/etc/selinux/vendor_service_contexts` (copiados de system_a/vendor_a a `dump/android/root/{system,vendor}/etc/selinux/`). Luego fallaba con `Unknown class service_manager` por el libselinux real sin politica cargada.
+- Solucion: `tools/selinuxshim/selinuxshim.c` -> libselinux.so de sustitucion (sin libc, permite todo: check_access=0, getcon fijo `u:r:shell:s0`, selabel_lookup devuelve contexto fijo). Se instala sobre `/opt/android/system/lib64/libselinux.so` (el original queda en `.orig`). Cubre todos los simbolos que importan servicemanager, hwservicemanager y vndservicemanager.
+- `scripts/android-services.sh` (a /usr/local/sbin/android-services): start/stop/status de servicemanager, vndservicemanager (/dev/vndbinder), hwservicemanager y allocator@4.0-service, como uid 1000 con propshim. Los 4 siguen vivos pasados >14 s; el allocator espera en BINDER_WRITE_READ.
+- Aun NO comprobado: que el allocator se registre en hwservicemanager y que el blob consiga reservar un buffer (paso 2).
