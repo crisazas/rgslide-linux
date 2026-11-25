@@ -1,0 +1,5 @@
+out/
+dump/
+third_party/
+*.img
+*.pac
