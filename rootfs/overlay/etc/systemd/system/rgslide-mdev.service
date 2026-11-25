@@ -1,0 +1,13 @@
+[Unit]
+Description=mdev en modo demonio: crea los nodos de /dev de los dispositivos nuevos (modulos cargados despues)
+DefaultDependencies=no
+After=rgslide-dev.service
+Before=sysinit.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/busybox mdev -df
+Restart=on-failure
+
+[Install]
+WantedBy=sysinit.target

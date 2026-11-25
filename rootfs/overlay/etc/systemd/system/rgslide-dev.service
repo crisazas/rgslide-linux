@@ -1,0 +1,12 @@
+[Unit]
+Description=Nodos de /dev sin devtmpfs (repara null/zero/... y puebla con mdev -s)
+DefaultDependencies=no
+Before=sysinit.target systemd-tmpfiles-setup-dev-early.service systemd-udevd.service rgslide-cm4.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/rgslide-dev-fix
+
+[Install]
+WantedBy=sysinit.target
