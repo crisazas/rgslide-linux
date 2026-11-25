@@ -53,3 +53,10 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
 - Cadena USB sin errores de simbolos; `sprd-hsphy`/`sprd-ssphy` hacen probe; `sc27xx-typec ... works as DRP`. PERO no aparece ninguna linea de `dwc3` y `/sys/class/udc` queda vacio.
 - Comparacion con el dmesg de GammaOS (dump/live/dmesg-gamma-now.txt): el dwc3 hace probe a los 4.58 s, JUSTO DESPUES de `aw32257-charger 6-006a: driver registered` (4.52 s). El overlay (dtbo id 0x2100) define el regulador `vddvbus` como `otg-vbus` dentro de `charger@6a` (i2c6), y `dwc3-sprd.ko` contiene `unable to get vbus supply`. `aw32257_charger.ko` (y `sprd-charger-manager`, `sprd_battery_info`) NO estaban en mi lista: hipotesis para el UDC ausente. En el recovery de fabrica (`modules.load.recovery`) van despues de dwc3-sprd, pero los carga antes de que el dwc3 reintente su probe diferido.
 - Hipotesis sin confirmar.
+
+## Prueba 8 (01:17-01:22): el gadget RNDIS ENUMERA en el PC pero la Slide no responde
+- Con aw32257_charger + deps, `dwc3-sprd` hace probe, aparece el UDC `25100000.dwc3`, el gadget `1d6b:0104` "RG Slide rescue" enumera sin errores y el PC crea la interfaz RNDIS (`rndis_host`). El init llega a "listo" (t=20.8 s) con `usb0 -> 10.55.0.2/24` y el UDC pasa a `configured` / `high-speed` (t=23.8 s).
+- El PC emite 153 paquetes (ARP, DHCP, mDNS, IPv6) y recibe 0: la Slide no contesta a nada.
+- pstore (t=266-285 s): `dwc3-sprd ... idle state / b_sess_vld / waiting dwc3 suspended` en BUCLE (~16 veces/s) y `sipa_dummy: ndev sipa_usb0 down` repetido. Hipotesis: `sipa_usb`/`sipa_eth` (modem IPA) comparten el gadget y compiten con rndis. `sipa-core` importa el nombre de netdev.
+- La Slide se reinicio SOLA a los 284.6 s de uptime (01:22:13), ~2 min ANTES de mi temporizador (102.9 + 300 s): NO fue mi timeout. Sin panico en pstore, sin `bootcause` util (`Reboot into normal`). Hipotesis sin comprobar: watchdog (`sprd_wdt_fiq`, timeout 40 s; GammaOS lo alimenta cada 8 s) — el init no lo alimenta pero tampoco habia reiniciado a los 100 s en pruebas anteriores.
+- Mis contadores `rxtx` eran erroneos: `grep usb0:` casaba con `sipa_usb0:` (modem). Corregido a `^ *(usb0|rndis0):`.

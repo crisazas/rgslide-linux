@@ -102,6 +102,8 @@ load_list() {
 	# $1 = fichero con un .ko por linea (orden de carga); insmod sin deps, el orden ya las respeta
 	while IFS= read -r mod; do
 		case "$mod" in ''|'#'*) continue ;; esac
+		# sipa_usb/sipa_eth enganchan interfaces por nombre y las pasan por el IPA del modem (sipa_dummy): no se necesitan.
+		case " ${SKIP_MODS:-sipa_usb.ko sipa_eth.ko} " in *" $mod "*) msg "salto $mod"; continue ;; esac
 		f=/lib/modules/$mod
 		[ -f "$f" ] || { msg "falta $mod"; continue; }
 		out=$(insmod "$f" 2>&1) && msg "ok $mod" || msg "insmod $mod: $out"
@@ -145,7 +147,10 @@ setup_gadget() {
 	echo 250 > "$G/configs/c.1/MaxPower"
 	mkdir "$G/functions/rndis.gs4" || msg "gadget: funcion rndis no disponible"
 	mkdir "$G/functions/gser.gs0"  || msg "gadget: funcion gser no disponible"
-	[ -d "$G/functions/rndis.gs4" ] && ln -s "$G/functions/rndis.gs4" "$G/configs/c.1/f1"
+	if [ -d "$G/functions/rndis.gs4" ]; then
+		echo rndis0 > "$G/functions/rndis.gs4/ifname" 2>/dev/null && msg "ifname rndis0" || msg "ifname no editable"
+		ln -s "$G/functions/rndis.gs4" "$G/configs/c.1/f1"
+	fi
 	[ -d "$G/functions/gser.gs0" ]  && ln -s "$G/functions/gser.gs0"  "$G/configs/c.1/f2"
 	UDC=$(pick_udc) || { msg "gadget: sin UDC en /sys/class/udc"; return 1; }
 	echo "$UDC" > "$G/UDC" 2>&1 || { msg "gadget: no se pudo enlazar $UDC"; return 1; }
@@ -210,8 +215,8 @@ usbwatch() {
 	while :; do
 		st=$(cat /sys/class/udc/*/state 2>/dev/null | tr '\n' ' ')
 		sp=$(cat /sys/class/udc/*/current_speed 2>/dev/null | tr '\n' ' ')
-		nl=$(grep -E 'usb0:|rndis0:' /proc/net/dev 2>/dev/null | tr -s ' ' | cut -d' ' -f3,11 | tr '\n' '|')
-		ca=$(cat /sys/class/net/usb0/carrier 2>/dev/null)
+		nl=$(grep -E '^ *(usb0|rndis0):' /proc/net/dev 2>/dev/null | sed 's/^ *//' | tr -s ' ' | cut -d' ' -f1,2,3,10,11 | tr '\n' '|')
+		ca=$(cat /sys/class/net/rndis0/carrier /sys/class/net/usb0/carrier 2>/dev/null | tr '\n' ',')
 		cur="udc=${st}speed=${sp}carrier=${ca} rxtx=${nl}"
 		case "$st" in *configured*) touch /run/keep ;; esac
 		if [ "$cur" != "$last" ]; then msg "USB $cur"; last=$cur; fi
