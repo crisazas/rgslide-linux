@@ -1,7 +1,7 @@
 # PROGRESS
 
 ## Ahora
-- Rendimiento medido: Mali-G57 ~x10 sobre llvmpipe (shader x10.2, geometria x11.2). Siguiente: presentar en bucle al panel sin ppm, y ventana (binder/gralloc/AIDL) para emuladores.
+- Ventanas: servicios Android corren y la ventana falsa (fakewin) crea EGLSurface y hace 30 swaps con la Mali. Falta: reparto de buffers (solo uno recibe pixeles), presentar a DRM, emulador real. Servicios: scripts/android-services.sh (a mano).
 
 ## Siguiente
 - Arreglar /dev (sin devtmpfs: /dev/null 660, dbus/resolved/wpa_supplicant fallan, systemd degraded)
