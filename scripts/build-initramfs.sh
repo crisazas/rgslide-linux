@@ -54,6 +54,8 @@ fi
 
 # Reproducible: fechas fijas y sin uid/gid del host.
 find "$STAGE" -exec touch -h -d '@0' {} +
-(cd "$STAGE" && find . -print | LC_ALL=C sort | cpio -o -H newc --owner 0:0 --reproducible -R 0:0 2>/dev/null) | gzip -9n > "$IMG"
+(cd "$STAGE" && find . -print | LC_ALL=C sort | cpio -o -H newc --owner 0:0 --reproducible -R 0:0 2>/dev/null) > "$IMG.cpio"
+# El LK concatena la ramdisk de vendor (LZ4 legacy) con esta: el kernel 5.4 solo decodifica la cadena si todo es LZ4.
+lz4 -l -9 -f -q "$IMG.cpio" "$IMG" && rm -f "$IMG.cpio"
 
 echo "$IMG"
