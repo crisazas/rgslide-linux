@@ -73,3 +73,12 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
 - Slide: getty en bucle sobre ttyGS0 con `-l /bin/sh`. Respuesta recibida en el PC: `AT\r\n/bin/sh: ` -> el eco del `AT` (sondeo de ModemManager en el PC, que llego antes que mi comando) y el error de la shell. Canal bidireccional con la shell del init.
 - RNDIS sigue sin pasar datos (rxtx usb0 = 0) con sipa cargado. La Slide vuelve a reiniciarse sola a ~283 s.
 - Pendiente: excluir ttyUSB0 de ModemManager (regla udev ID_MM_DEVICE_IGNORE) y usar la consola de forma interactiva.
+
+## Pruebas 11-14 (01:41-02:17): consola y red FUNCIONAN; el reinicio a ~283 s sigue sin explicar
+- **Consola serie gser: OK.** PC: regla udev tools/udev/91-rgslide-rescue.rules (ModemManager ignorado, usbserial generic, /dev/rgslide-console). Slide: getty en bucle en ttyGS0. scripts/slide-console.py ejecuta comandos con su codigo de salida (19/19 en la primera sesion).
+- **Red: OK, y la causa del fallo era la interfaz.** En este SoC el RNDIS entrega los datos por el IPA: `usb0` queda `up`/carrier=1 pero con contadores a 0; los paquetes entran/salen por **`sipa_usb0`** (creada por sipa_usb.ko). Con la IP 10.55.0.2/24 en sipa_usb0: ping 4/4 y telnet desde el PC. El init ya lo hace solo. Mi hipotesis anterior de que sipa competia con el RNDIS era falsa (quitar sipa_usb/sipa_eth empeoro: sin ellos no existe la interfaz buena).
+- NetworkManager del PC retira la IP 10.55.0.1/24 de la interfaz del gadget: `nmcli dev set <if> managed no` o reponerla (scripts/uptime-watch.sh).
+- **El kernel de serie no registra /dev/watchdog** (watchdogd de Android falla igual). sprd_wdt_fiq (timeout 40 s, "pet" cada 8 s en GammaOS) no escribe ninguna linea en mi init.
+- Cadena de fabrica ordenada por dependencias (scripts/gen-factory-order.py -> rgslide-factory.load): con insmod ya no falla ninguno (antes sdhci-sprd, sensorhub, slog_bridge). sprd_pmic_wdt.ko (dlkm) tambien carga.
+- **Reinicio espontaneo: SIGUE.** Corte a 279.6 s (ultimo uptime leido por telnet) con TODO cargado (sensorhub, sprd_pmic_wdt, cadena ordenada) y con red activa; ultima marca 284.56 s. No hay panico, ni thermal, ni mensaje en pstore: el log se corta en seco (SPRD_PDBG 283.9 s, luego nada). Descartado: mi temporizador, la red, sipa, sprd_pmic_wdt, el orden de modulos.
+- Candidatos que quedan sin probar: watchdog de hardware armado por el LK/BootROM que solo Android alimenta (nada en sprd_wdt_fiq lo hace en el init), el CM4 (sensorhub cargado pero sin su firmware/servicio), o un limite de energia/carga.
