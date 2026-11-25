@@ -1,0 +1,7 @@
+# Gadget de rescate de rgslide (initramfs/init): RNDIS + gser con VID:PID 1d6b:0104.
+# - ModemManager no debe sondear el puerto serie (mandaba "AT" a la shell).
+# - usbserial generic se engancha a la interfaz gser y da /dev/ttyUSB*, con permisos para el grupo plugdev.
+# - Enlace estable /dev/rgslide-console.
+ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="1d6b", ATTR{idProduct}=="0104", ENV{ID_MM_DEVICE_IGNORE}="1", RUN+="/bin/sh -c 'echo 1d6b 0104 > /sys/bus/usb-serial/drivers/generic/new_id 2>/dev/null || true'"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1d6b", ATTRS{idProduct}=="0104", ENV{ID_MM_DEVICE_IGNORE}="1"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1d6b", ATTRS{idProduct}=="0104", ENV{ID_MM_DEVICE_IGNORE}="1", MODE="0660", GROUP="plugdev", SYMLINK+="rgslide-console"

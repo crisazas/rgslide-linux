@@ -1,0 +1,20 @@
+# Diagnostico dentro de la shell de rescate de la Slide (scripts/slide-console.py --cmds scripts/slide-diag.cmds)
+touch /run/keep
+cat /proc/uptime
+uname -a
+cat /sys/class/udc/*/state; cat /sys/class/udc/*/current_speed
+ls /sys/class/net
+cat /proc/net/dev
+ip addr show usb0
+ip link show usb0
+cat /sys/class/net/usb0/operstate /sys/class/net/usb0/carrier
+ls /sys/kernel/config/usb_gadget/g1/functions/ /sys/kernel/config/usb_gadget/g1/configs/c.1/
+cat /sys/kernel/config/usb_gadget/g1/functions/rndis.gs4/ifname /sys/kernel/config/usb_gadget/g1/functions/rndis.gs4/dev_addr /sys/kernel/config/usb_gadget/g1/functions/rndis.gs4/host_addr
+ls /sys/devices/platform/soc/soc:ipa-apb/25210000.pamu3/
+cat /sys/devices/platform/soc/soc:ipa-apb/25210000.pamu3/max_dl_pkts /sys/devices/platform/soc/soc:ipa-apb/25210000.pamu3/max_ul_pkts /sys/devices/platform/soc/soc:ipa-apb/25210000.pamu3/pamu3_netid
+ps
+cat /proc/loadavg
+dmesg | grep -i -E 'wdt|watchdog' | tail -5
+cat /proc/interrupts | grep -i -E 'wdt|dwc3|usb|ipa' | head
+dmesg | tail -n 60
+cat /proc/uptime
