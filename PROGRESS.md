@@ -1,7 +1,7 @@
 # PROGRESS
 
 ## Ahora
-- Hito 2: drmshow saca imagen al panel (patron confirmado). Probando la imagen de la Mali (gltest.ppm). Siguiente: render en bucle + presentar sin copiar por ppm, y medir rendimiento.
+- HITO 2 HECHO: imagen renderizada por la Mali visible en el panel (via ppm + drmshow, copia por CPU). Siguiente: render en bucle presentando sin ppm, medir rendimiento Mali vs llvmpipe, y ventana (binder/gralloc) para emuladores.
 
 ## Siguiente
 - Arreglar /dev (sin devtmpfs: /dev/null 660, dbus/resolved/wpa_supplicant fallan, systemd degraded)

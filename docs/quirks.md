@@ -152,4 +152,4 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
 ## drmshow en la Slide (2026-11-25)
 - `drmshow -p`: patron de prueba en el panel DSI (1280x960@60); el usuario ve "varios colores y franjas". CREATE_DUMB funciona (DRM_CAP_DUMB_BUFFER=1), ADDFB2 y SETCRTC legacy OK; no hizo falta el camino atomico.
 - Restaurar el CRTC original da ENOENT: el driver libera la memoria del logo de arranque (fb 183) en el primer modeset. El panel conserva el ultimo patron.
-- `drmshow /tmp/gltest.ppm` muestra la imagen renderizada por la Mali (256x256 escalada). Resultado visual: pendiente de confirmar por el usuario.
+- `drmshow /tmp/gltest.ppm` muestra la imagen renderizada por la Mali (256x256 escalada): CONFIRMADO por el usuario (ve el triangulo). Camino completo: Mali (GLES 3.2) -> glReadPixels -> ppm -> dumb buffer -> DSI. Es una copia por CPU, sin rendimiento.
