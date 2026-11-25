@@ -125,6 +125,12 @@ if [ -r /lib/modules/modules.load ]; then
 	flush_marks
 	case "$CMDLINE" in *rgslide.restore=1*) restore_misc; flush_marks ;; esac
 fi
+# El watchdog del PMIC lo arma el LK y lo alimenta sprd_pmic_wdt.ko (dlkm, no esta en la ramdisk de vendor) via sbuf/CM4.
+# Sin el, la Slide se reinicia sola a ~283 s de uptime (pruebas 7-10).
+if [ -f /lib/modules/sprd_pmic_wdt.ko ]; then
+	out=$(insmod /lib/modules/sprd_pmic_wdt.ko 2>&1) && msg "ok sprd_pmic_wdt.ko" || msg "insmod sprd_pmic_wdt.ko: $out"
+	flush_marks
+fi
 [ -r /lib/modules/rgslide-usb.load ] && load_list /lib/modules/rgslide-usb.load
 mdev -s
 
@@ -158,23 +164,23 @@ setup_gadget() {
 }
 
 setup_net() {
-	# La interfaz RNDIS la crea el gadget y es la unica cuyo uevent trae DEVTYPE=gadget (o su nombre empieza por rndis/usb).
+	# En este SoC el RNDIS pasa por el IPA: los paquetes salen/entran por sipa_usb0 (creada por sipa_usb.ko), no por usb0.
+	# usb0 (u_ether) debe estar `up` pero la IP va en sipa_usb0. Verificado en la prueba 10 (ping 4/4 tras mover la IP).
 	i=0
 	while [ $i -lt 50 ]; do
-		for p in /sys/class/net/*; do
-			n=${p##*/}
-			# sipa_usb0 tambien es DEVTYPE=gadget pero es del modem (sipa_usb.ko): no es el RNDIS del PC.
-			case "$n" in sipa*|dummy*|lo|gre*|gretap*|erspan*|ifb*|ip6*|ip_vti*|sit*|tunl*|bond*|ccmni*|seth*) continue ;; esac
-			grep -qx 'DEVTYPE=gadget' "$p/uevent" 2>/dev/null || case "$n" in rndis*|usb[0-9]*|eth[0-9]*) ;; *) continue ;; esac
-			ip link set "$n" up 2>/dev/null
-			ip addr add 10.55.0.2/24 dev "$n" 2>/dev/null
-			msg "red: $n -> 10.55.0.2/24"
+		if [ -e /sys/class/net/usb0 ]; then
+			ip link set usb0 up 2>/dev/null
+			IFN=usb0
+			[ -e /sys/class/net/sipa_usb0 ] && IFN=sipa_usb0
+			ip link set "$IFN" up 2>/dev/null
+			ip addr add 10.55.0.2/24 dev "$IFN" 2>/dev/null
+			msg "red: IP 10.55.0.2/24 en $IFN (usb0 up)"
 			telnetd -l /bin/sh -b 10.55.0.2 &
 			return 0
-		done
+		fi
 		i=$((i+1)); sleep 0.2
 	done
-	msg "red: no aparece interfaz USB (hay: $(ls /sys/class/net | tr '\n' ' '))"
+	msg "red: no aparece usb0 (hay: $(ls /sys/class/net | tr '\n' ' '))"
 	return 1
 }
 
@@ -219,7 +225,7 @@ usbwatch() {
 	while :; do
 		st=$(cat /sys/class/udc/*/state 2>/dev/null | tr '\n' ' ')
 		sp=$(cat /sys/class/udc/*/current_speed 2>/dev/null | tr '\n' ' ')
-		nl=$(grep -E '^ *(usb0|rndis0):' /proc/net/dev 2>/dev/null | sed 's/^ *//' | tr -s ' ' | cut -d' ' -f1,2,3,10,11 | tr '\n' '|')
+		nl=$(grep -E '^ *(usb0|sipa_usb0):' /proc/net/dev 2>/dev/null | sed 's/^ *//' | tr -s ' ' | cut -d' ' -f1,2,3,10,11 | tr '\n' '|')
 		ca=$(cat /sys/class/net/rndis0/carrier /sys/class/net/usb0/carrier 2>/dev/null | tr '\n' ',')
 		cur="udc=${st}speed=${sp}carrier=${ca} rxtx=${nl}"
 		case "$st" in *configured*) touch /run/keep ;; esac
