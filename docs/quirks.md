@@ -67,3 +67,9 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
 - CORRECCION: el dwc3 SI completa la secuencia del stock en mi init: runtime_suspend -> b_sess_vld -> runtime_resume -> `otg_start_peripheral: turn on gadget` -> `peripheral state` -> `configfs-gadget gadget: high-speed config #1` -> USB_STATE=CONFIGURED (20.6-21.4 s), igual que GammaOS (10.50-11.02 s). power/control es `auto` en GammaOS y runtime_suspend ocurre tambien en el init: no es la causa.
 - El dwc3 del DT tiene `usb-pam = <0x52>` (pamu3): `sipa 25220000.sipa: sipa_pam_connect ep id is 0` aparece al configurar; el camino de datos USB de este SoC pasa por el IPA (pamu3/sipa). `sprd_u_ether` no importa simbolos sipa; `sipa_pam_connect` lo exporta sipa-core y lo usan sprd-pamu3 y sprd_wlan_combo.
 - Siguiente: probar la consola `gser` (u_serial, fuera del IPA) desde el PC: `usbserial generic` + `new_id 1d6b 0104`; getty en bucle (gs_close lo mata en cada reconexion).
+
+## Prueba 10 (01:41-01:46): CONSOLA SERIE gser FUNCIONA (primera shell en la Slide)
+- PC: `echo '1d6b 0104' > /sys/bus/usb-serial/drivers/generic/new_id` (usbserial generic) -> aparece `/dev/ttyUSB0` al enumerar el gadget.
+- Slide: getty en bucle sobre ttyGS0 con `-l /bin/sh`. Respuesta recibida en el PC: `AT\r\n/bin/sh: ` -> el eco del `AT` (sondeo de ModemManager en el PC, que llego antes que mi comando) y el error de la shell. Canal bidireccional con la shell del init.
+- RNDIS sigue sin pasar datos (rxtx usb0 = 0) con sipa cargado. La Slide vuelve a reiniciarse sola a ~283 s.
+- Pendiente: excluir ttyUSB0 de ModemManager (regla udev ID_MM_DEVICE_IGNORE) y usar la consola de forma interactiva.
