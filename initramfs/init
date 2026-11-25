@@ -113,8 +113,12 @@ load_list() {
 
 # Cadena de fabrica completa. El UFS (linea 15 de modules.load) termina su probe diferido con modulos POSTERIORES
 # (hwspinlock, efuse, i2c...): en la prueba 6 sda aparecio entre t=26 s y t=63 s, no a los 20 s de cargar el modulo.
-if [ -r /lib/modules/modules.load ]; then
-	load_list /lib/modules/modules.load
+# rgslide-factory.load = modules.load ordenado por dependencias (scripts/gen-factory-order.py): insmod no resuelve deps
+# y en el orden de fabrica sensorhub/sdhci-sprd/slog_bridge iban ANTES de lo que necesitan (fallaban con "unknown symbol").
+FACT=/lib/modules/rgslide-factory.load
+[ -r "$FACT" ] || FACT=/lib/modules/modules.load
+if [ -r "$FACT" ]; then
+	load_list "$FACT"
 	msg "MARCA-2 cadena de fabrica cargada"
 	i=0
 	while [ $i -lt 150 ]; do

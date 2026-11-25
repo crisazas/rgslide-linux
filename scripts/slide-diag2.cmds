@@ -1,0 +1,8 @@
+# Diagnostico 2: watchdog del PMIC y red por sipa_usb0
+touch /run/keep
+cat /proc/uptime
+ip addr show sipa_usb0
+ls /sys/bus/platform/drivers/ | grep -i wdt
+dmesg | grep -a -i -E 'wdt|watchdog|cm4' | tail -12
+grep -a -E 'rgslide' /proc/cmdline | cut -c1-40
+cat /proc/uptime
