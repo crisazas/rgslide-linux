@@ -1,0 +1,22 @@
+#!/bin/sh
+# Gamepad de la RG Slide (singleadcjoy.ko = joypad ADC+GPIO + MCU SPI). Su probe NO devuelve -EPROBE_DEFER: si el IIO
+# "sc27xx-adc" (canales joypad_adc/trigger_adc) aun no existe falla con -22 y el driver queda sin enlazar para siempre.
+# Por eso: cargar sc27xx_adc, esperar a su IIO, cargar singleadcjoy y, si udev ya lo cargo antes y fallo, enlazar a mano.
+# Idempotente. Lo lanza rgslide-input.service.
+modprobe sc27xx_adc 2>/dev/null
+i=0
+while [ $i -lt 50 ]; do
+	cat /sys/bus/iio/devices/iio:device*/name 2>/dev/null | grep -qx sc27xx-adc && break
+	i=$((i+1)); sleep 0.2
+done
+modprobe singleadcjoy 2>/dev/null
+i=0
+while [ $i -lt 25 ]; do
+	grep -q '"retrogame_joypad"' /proc/bus/input/devices && exit 0
+	if [ -d /sys/devices/platform/singleadc-joypad ] && [ ! -e /sys/devices/platform/singleadc-joypad/driver ]; then
+		echo singleadc-joypad > /sys/bus/platform/drivers/singleadc-joypad/bind 2>/dev/null
+	fi
+	i=$((i+1)); sleep 0.2
+done
+echo "rgslide-input-prep: retrogame_joypad no aparece" >&2
+exit 1

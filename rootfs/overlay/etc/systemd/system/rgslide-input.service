@@ -1,0 +1,12 @@
+[Unit]
+Description=Gamepad de la Slide: carga sc27xx_adc y enlaza singleadcjoy (sticks ADC + botones GPIO + MCU)
+After=systemd-modules-load.service systemd-udevd.service rgslide-mdev.service
+Wants=rgslide-mdev.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/rgslide-input-prep
+
+[Install]
+WantedBy=multi-user.target
