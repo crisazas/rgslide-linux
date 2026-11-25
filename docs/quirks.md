@@ -148,3 +148,8 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
 - Orden si hiciera falta: servicemanager (/dev/binder) -> hwservicemanager (/dev/hwbinder, necesita libvintf + manifiestos) -> vndservicemanager (/dev/vndbinder) -> allocator@4.0-service (user system, group graphics drmrpc).
 - Hueco: el nombre del heap dma_heap sale de una tabla global (0x1a7cfe0/0x1a7d000). En la Slide `/dev/dma_heap` no existe y el render funciono igual: probablemente usa ION (`/dev/ion` existe). Sin comprobar.
 - Otras rutas que mira: /vendor/etc/mali_platform.config (no existe, opcional), /proc/self/*, /proc/cpuinfo, sockets perfetto (opcionales), props `vendor.mali.*` y `ro.vendor.arm.gralloc.*`.
+
+## drmshow en la Slide (2026-11-25)
+- `drmshow -p`: patron de prueba en el panel DSI (1280x960@60); el usuario ve "varios colores y franjas". CREATE_DUMB funciona (DRM_CAP_DUMB_BUFFER=1), ADDFB2 y SETCRTC legacy OK; no hizo falta el camino atomico.
+- Restaurar el CRTC original da ENOENT: el driver libera la memoria del logo de arranque (fb 183) en el primer modeset. El panel conserva el ultimo patron.
+- `drmshow /tmp/gltest.ppm` muestra la imagen renderizada por la Mali (256x256 escalada). Resultado visual: pendiente de confirmar por el usuario.

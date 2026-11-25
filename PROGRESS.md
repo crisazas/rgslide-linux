@@ -1,7 +1,7 @@
 # PROGRESS
 
 ## Ahora
-- HITO 1 HECHO: Mali-G57 renderiza GLES 3.2 offscreen en Debian con el blob de Arm (gltest). Siguiente: hito 2 = sacar el buffer al panel (drmshow, sin probar) y medir rendimiento.
+- Hito 2: drmshow saca imagen al panel (patron confirmado). Probando la imagen de la Mali (gltest.ppm). Siguiente: render en bucle + presentar sin copiar por ppm, y medir rendimiento.
 
 ## Siguiente
 - Arreglar /dev (sin devtmpfs: /dev/null 660, dbus/resolved/wpa_supplicant fallan, systemd degraded)
