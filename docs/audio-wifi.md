@@ -58,3 +58,9 @@ Causa exacta: `SNDRV_PCM_IOCTL_HW_PARAMS` sobre `hw:0,2` (FE_ST_NORMAL_AP01, pla
 - `rootfs/overlay/etc/systemd/system/rgslide-audio.service` (oneshot, NO habilitado por `push-overlay.sh`)
 - `rootfs/overlay/etc/modules-load.d/rgslide-audio.conf` (todo comentado a proposito)
 - Ejecutado a mano en la Slide: `/tmp/rgslide-audio-prep` -> tarjeta `sprdphonesc2730` tras ~5 s, 31 nodos `/dev/snd`, 0 oops/panic en dmesg. No se desplego a /usr/local/sbin ni se tocaron /opt/android ni /opt/hybris.
+
+## 1.5 Prueba segura de HW_PARAMS (2026-11-25, `tools/pcmprobe`) - RESULTADO
+- `pcmprobe /dev/snd/pcmC0D2p` (solo `HW_REFINE`, no reserva buffer): canales 1..2, tasa 8000..192000, buffer_bytes 320..233440. Con S16_LE/2ch/48k el driver SOLO acepta `period_bytes` 320, 38400, 48000 y 116720 (`-s` escanea 10 valores; 1024, 4096, 8192, 16384, 32768 y 65536 dan EINVAL: no es un limite generico, es la tabla del driver).
+- `HW_PARAMS` + `HW_FREE` con buffer de 640 B, 76800 B y 96000 B (2 periodos): OK, sin panic (dmesg limpio). El panic de la seccion 1.2 era un buffer de 192000 B sobre la preasignacion de 131072 B: la hipotesis "buffer <= 131072 B evita el panic" queda APOYADA con tres puntos, no demostrada para todo el rango (233440 B, el maximo anunciado, NO probado y probablemente provoca el panic: no usar).
+- REGLA: cualquier cliente ALSA/PipeWire debe limitar `buffer_bytes` <= 131072 (p. ej. period_bytes 48000 x 2 = 96000 B).
+- Sin probar aun: reproducir datos (PREPARE/WRITEI/START), arranque real del DSP (`status` no cambia tras `start`), rutas del mixer del altavoz.
