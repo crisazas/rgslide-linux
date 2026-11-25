@@ -1,7 +1,7 @@
 # PROGRESS
 
 ## Ahora
-- Opcion 1 COMPLETA en render: hybristest 59 fps y RetroArch (menu + gambatte) con GPU Mali por hybris, sin SEGV. Siguiente: audio (alsa/DSP), autoconfig gamepad, servicios al arranque (android-services/gpu-prep), prueba con ROM real del usuario.
+- RIESGO: reinicio en frio puede dar bucle de ~40 s (panic de probe en arranque temprano, singleadcjoy/unisoc_mailbox; ver docs/quirks.md INCIDENTE). No reiniciar sin necesidad. GPU+RetroArch OK; autoarranque gpu/android OK; falta audio.
 
 ## Siguiente
 - /dev/sctl_ch da ENODEV en bucle (mayor dinamico 498); CM4 Version no visto
