@@ -39,3 +39,11 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
 - Corregido: abre /dev/console solo si se puede; si no, cae a /dev/null.
 - `adb reboot bootloader` deja `bootonce-bootloader` en misc+0 si fastboot no llega a abrirse; hay que restaurar misc a mano. `fastboot fetch` NO esta soportado en este LK (no se puede leer boot_b desde fastboot).
 - `fastboot set_active b` hace reiniciar el LK por si solo: no hace falta que el usuario reinicie.
+
+## Prueba 6 (00:46-00:54): el init corre y carga modulos; USB y UFS fallan
+- Marcas en boot_b (+48 MiB): FUNCIONAN. `RGSLIDE-MARK` con el log completo del init desde t=2.9 s (uptime del kernel) hasta t=43 s.
+- La cadena de modulos de fabrica carga bien (ufs-sprd-qogirn6pro.ko en t=3.58). **boot_b no aparece en /sys/class/block a los 20 s** (`MARCA-3 NO aparece`): el UFS termina su probe despues; al reiniciar el kernel si sincroniza sda/sdb/sdc (t=63), asi que existe mas tarde. Por eso `restore_misc` no actuo ("misc no visible") y el LK tuvo que agotar los intentos de B. Corregido: espera 30 s tras TODA la cadena en vez de tras el modulo 15.
+- Fallos de insmod por dependencias (insmod no resuelve deps): `dwc3-sprd` necesita `sc27xx_typec`/`sprd_tcpm` antes; `phy-sprd-qogirn6pro` y `phy-sprd-usb31-qogirn6pro` necesitan `sprd_usbm` y `musb_hdrc`; `musb_sprd` necesita `dwc3-sprd`. Resultado: **sin UDC** (`gadget: sin UDC en /sys/class/udc`) y sin gadget USB. `scripts/gen-usb-order.py` genera el orden por modules.dep.
+- Otros insmod fallidos de la cadena de fabrica: `sdhci-sprd`, `sensorhub`, `slog_bridge` (unknown symbol): no se investigaron.
+- `ptn38003a: probe of 6-0030 failed with error -5` (conmutador USB-C por I2C).
+- OJO: `dmesg-ramoops-0` del pstore puede ser de un arranque ANTERIOR; comparar con cmp antes de leerlo.

@@ -8,7 +8,7 @@
 export PATH=/sbin:/bin:/usr/sbin:/usr/bin
 export HOME=/root TERM=linux
 umask 022
-RESCUE_TIMEOUT=${RESCUE_TIMEOUT:-60}
+RESCUE_TIMEOUT=${RESCUE_TIMEOUT:-100}
 
 mount -t proc proc /proc 2>/dev/null
 mount -t sysfs sysfs /sys 2>/dev/null
@@ -103,21 +103,19 @@ load_list() {
 	done < "$1"
 }
 
-# Primero la cadena de fabrica hasta ufs-sprd-qogirn6pro.ko (linea 15): sin ella no hay /sys/class/block y no se puede marcar.
+# Cadena de fabrica completa. El UFS (linea 15 de modules.load) termina su probe diferido con modulos POSTERIORES
+# (hwspinlock, efuse, i2c...): en la prueba 6 sda aparecio entre t=26 s y t=63 s, no a los 20 s de cargar el modulo.
 if [ -r /lib/modules/modules.load ]; then
-	head -n 15 /lib/modules/modules.load > /run/m1.load
-	tail -n +16 /lib/modules/modules.load > /run/m2.load
-	load_list /run/m1.load
-	msg "MARCA-2 cadena hasta UFS cargada"
+	load_list /lib/modules/modules.load
+	msg "MARCA-2 cadena de fabrica cargada"
 	i=0
-	while [ $i -lt 100 ]; do
+	while [ $i -lt 150 ]; do
 		setup_blk && break
 		i=$((i+1)); sleep 0.2
 	done
 	[ -n "$BLK" ] && msg "MARCA-3 boot_b visible tras $i esperas ($BLK)" || msg "MARCA-3 boot_b NO aparece: sda=$(ls /sys/class/block 2>&1 | tr '\n' ' ')"
 	flush_marks
 	case "$CMDLINE" in *rgslide.restore=1*) restore_misc; flush_marks ;; esac
-	load_list /run/m2.load
 fi
 [ -r /lib/modules/rgslide-usb.load ] && load_list /lib/modules/rgslide-usb.load
 mdev -s
