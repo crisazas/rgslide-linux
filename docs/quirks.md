@@ -101,3 +101,11 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
 - En el vendor de fabrica `modem_control` es el servicio `vendor.modem_control` (`/vendor/etc/init/modem_control.rc`, class core, user root). Una GSI conserva vendor, asi que deberia arrancar solo; si la GSI reiniciaba igual, algo le impedia llegar al CM4.
 - Candidatos: by-name ausente, permisos/SELinux sobre pm_sys_b / nr_modem_b / nr_phy_b, propiedades que no coinciden, o el servicio cae antes.
 - Comprobar en una GSI: `getprop init.svc.vendor.modem_control`, `dmesg | grep "cm4 watchdog"`, `logcat -s MODEM_CTRL`. Sin logs de una GSI real, no se sabe cual.
+
+## Pantalla y GPU con el kernel de fabrica en Debian (2026-11-25)
+- Modulos: `dump/live/dlkm/*.ko` + `dump/boot/rd_vendor/lib/modules/*.ko` (190, vermagic 5.4.233 = el kernel). Copiados a `/lib/modules/5.4.233/` y `depmod -a`.
+- Carga que funciona: `modprobe sprd-vpu-pw-domain` (antes que nada: da el `soc:mm:power-domain@0` que esperan DPU y DSI) y luego `pwm-sprd unisoc-iommu apsys-dvfs sprd-drm`. Sin el power-domain, dpu/dsi quedan diferidos.
+- Resultado: `/dev/dri/card0` con `card0-DSI-1` y `card0-DP-1`; panel `lcd_ft8201p_ylm_lbf047001h_mipi_1280x960` (vs `lcd_id=IDffff`); backlight `sprd_backlight` (max 255).
+- `mali_kbase` carga: `/sys/class/misc/mali0` (dev 10:113), `Mali-G57 4 cores r0p1 0x9091`. Sin devtmpfs no hay `/dev/mali0` ni `/dev/dri/card0` (226:0): hay que mknod.
+- NO hacer `rmmod sprd_drm`: oops en `drm_mode_object_unregister` (via `sprd_dpu_unbind`) y panic, reinicio. Descargar este modulo no es seguro.
+- Pendiente: `status` de DSI/DP en `unknown`/`disabled` (no hay modo ni imagen aun); falta un cliente DRM (modetest/kmscube) y el driver de usuario de Mali con kbase.
