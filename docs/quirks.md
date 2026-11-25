@@ -60,3 +60,10 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
 - pstore (t=266-285 s): `dwc3-sprd ... idle state / b_sess_vld / waiting dwc3 suspended` en BUCLE (~16 veces/s) y `sipa_dummy: ndev sipa_usb0 down` repetido. Hipotesis: `sipa_usb`/`sipa_eth` (modem IPA) comparten el gadget y compiten con rndis. `sipa-core` importa el nombre de netdev.
 - La Slide se reinicio SOLA a los 284.6 s de uptime (01:22:13), ~2 min ANTES de mi temporizador (102.9 + 300 s): NO fue mi timeout. Sin panico en pstore, sin `bootcause` util (`Reboot into normal`). Hipotesis sin comprobar: watchdog (`sprd_wdt_fiq`, timeout 40 s; GammaOS lo alimenta cada 8 s) — el init no lo alimenta pero tampoco habia reiniciado a los 100 s en pruebas anteriores.
 - Mis contadores `rxtx` eran erroneos: `grep usb0:` casaba con `sipa_usb0:` (modem). Corregido a `^ *(usb0|rndis0):`.
+
+## Prueba 9 (01:28-01:33) y analisis: el gadget SI se activa; el RNDIS no pasa datos
+- Sin sipa_usb/sipa_eth: el PC tuvo 12 `NETDEV WATCHDOG: transmit queue 0 timed out` (vs 4 con ellos en la prueba 8). `rxtx=usb0: 0 0 0 0` todo el tiempo. Reinicio solo otra vez a ~283 s.
+- `ifname` de la funcion rndis no es editable (se queda `usb0`).
+- CORRECCION: el dwc3 SI completa la secuencia del stock en mi init: runtime_suspend -> b_sess_vld -> runtime_resume -> `otg_start_peripheral: turn on gadget` -> `peripheral state` -> `configfs-gadget gadget: high-speed config #1` -> USB_STATE=CONFIGURED (20.6-21.4 s), igual que GammaOS (10.50-11.02 s). power/control es `auto` en GammaOS y runtime_suspend ocurre tambien en el init: no es la causa.
+- El dwc3 del DT tiene `usb-pam = <0x52>` (pamu3): `sipa 25220000.sipa: sipa_pam_connect ep id is 0` aparece al configurar; el camino de datos USB de este SoC pasa por el IPA (pamu3/sipa). `sprd_u_ether` no importa simbolos sipa; `sipa_pam_connect` lo exporta sipa-core y lo usan sprd-pamu3 y sprd_wlan_combo.
+- Siguiente: probar la consola `gser` (u_serial, fuera del IPA) desde el PC: `usbserial generic` + `new_id 1d6b 0104`; getty en bucle (gs_close lo mata en cada reconexion).

@@ -17,6 +17,15 @@ while [ "$(date +%s)" -lt "$end" ]; do
       [ -n "$P2" ] && kill $P2 2>/dev/null
       sudo -n tcpdump -i "$IF" -n -w "$D/cap-$IF.pcap" >/dev/null 2>&1 & P2=$!
     fi
+    for t in /dev/ttyUSB*; do
+      [ -c "$t" ] || continue
+      grep -q "$t" "$D/tty.done" 2>/dev/null && continue
+      echo "$t" >> "$D/tty.done"
+      echo "$(date +%T) puerto serie $t: pruebo la shell"
+      sudo -n stty -F "$t" 115200 raw -echo 2>/dev/null
+      sudo -n timeout 8 sh -c "exec 3<>$t; printf '\n\necho MARCA-TTY-\$(uname -r); touch /run/keep; ls /sys/class/udc; cat /sys/class/udc/*/state\n' >&3; sleep 3; dd bs=4096 count=1 <&3 2>/dev/null" > "$D/tty-$(basename $t).txt" 2>&1
+      echo "$(date +%T) respuesta tty: $(wc -c < "$D/tty-$(basename $t).txt") bytes"; head -c 400 "$D/tty-$(basename $t).txt"; echo
+    done
     if ping -c1 -W1 10.55.0.2 >/dev/null 2>&1; then
       echo "$(date +%T) PING OK a 10.55.0.2"; got=1
       timeout 8 sh -c 'printf "uname -a; cat /proc/cmdline | cut -c1-120; ls /sys/class/udc; cat /sys/class/udc/*/state; touch /run/keep; echo FIN\n" | nc -w 6 10.55.0.2 23' > "$D/telnet.txt" 2>&1

@@ -102,8 +102,8 @@ load_list() {
 	# $1 = fichero con un .ko por linea (orden de carga); insmod sin deps, el orden ya las respeta
 	while IFS= read -r mod; do
 		case "$mod" in ''|'#'*) continue ;; esac
-		# sipa_usb/sipa_eth enganchan interfaces por nombre y las pasan por el IPA del modem (sipa_dummy): no se necesitan.
-		case " ${SKIP_MODS:-sipa_usb.ko sipa_eth.ko} " in *" $mod "*) msg "salto $mod"; continue ;; esac
+		# SKIP_MODS (vacio por defecto): modulos a no cargar. Prueba 9 salto sipa_usb/sipa_eth y el RNDIS siguio sin datos (PC: 12 timeouts vs 4 con ellos).
+		case " ${SKIP_MODS:-} " in *" $mod "*) msg "salto $mod"; continue ;; esac
 		f=/lib/modules/$mod
 		[ -f "$f" ] || { msg "falta $mod"; continue; }
 		out=$(insmod "$f" 2>&1) && msg "ok $mod" || msg "insmod $mod: $out"
@@ -181,7 +181,11 @@ setup_net() {
 setup_gadget && setup_net
 mdev -s
 for i in 1 2 3 4 5 6 7 8 9 10; do [ -c /dev/ttyGS0 ] && break; sleep 0.3; done
-[ -c /dev/ttyGS0 ] && { msg "getty en ttyGS0"; setsid getty -n -l /bin/sh 115200 ttyGS0 & }
+# gser (u_serial, sin pasar por el IPA): shell en ttyGS0, relanzado tras cada reconexion USB (gs_close mata al getty).
+if [ -c /dev/ttyGS0 ]; then
+	msg "getty en ttyGS0 (bucle)"
+	( while :; do setsid getty -n -l /bin/sh 115200 ttyGS0; sleep 1; done ) &
+fi
 
 msg "UDC: $(ls /sys/class/udc 2>&1 | tr '\n' ' ') estado: $(cat /sys/class/udc/*/state 2>&1 | tr '\n' ' ')"
 msg "red: $(ls /sys/class/net | tr '\n' ' ')"
