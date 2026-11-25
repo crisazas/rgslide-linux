@@ -1,0 +1,15 @@
+[Unit]
+Description=wpa_supplicant de wlan0 (RG Slide, sin depender de sys-subsystem-net-devices-wlan0.device)
+After=rgslide-wifi.service
+Requires=rgslide-wifi.service
+Before=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/wpa_supplicant -c/etc/wpa_supplicant/wpa_supplicant-nl80211-wlan0.conf -Dnl80211 -iwlan0
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
