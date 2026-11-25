@@ -45,6 +45,7 @@ mkpart() {
 }
 setup_blk() {
 	[ -n "$BLK" ] && return 0
+	if [ -b /dev/bootb ]; then BLK=/dev/bootb; return 0; fi
 	mkpart boot_b /dev/bootb && BLK=/dev/bootb && return 0
 	return 1
 }
@@ -82,8 +83,13 @@ msg "init de rescate, kernel $(uname -r), timeout ${RESCUE_TIMEOUT}s"
 msg "cmdline: $CMDLINE"
 msg "modulos en /lib/modules: $(ls /lib/modules | wc -l)"
 
+# Temporizador de seguridad. Si el USB llego a `configured` (/run/keep) se concede una prorroga, pero con tope duro:
+# la Slide nunca se queda en este init (misc ya esta restaurado, un reinicio devuelve GammaOS).
 ( sleep "$RESCUE_TIMEOUT"
-  [ -e /run/keep ] && exit 0
+  if [ -e /run/keep ]; then
+    msg "prorroga: USB configurado, reinicio a los ${KEEP_EXTRA:-300} s"
+    sleep "${KEEP_EXTRA:-300}"
+  fi
   msg "timeout de rescate: reiniciando"
   flush_marks
   sync
@@ -198,6 +204,21 @@ case "$CMDLINE" in
 	msg "no se pudo arrancar el rootfs; shell de rescate" ;;
 esac
 
-msg "listo: telnet 10.55.0.2 (o ttyGS0). touch /run/keep evita el reinicio"
+msg "listo: telnet 10.55.0.2 (o ttyGS0). El USB configurado amplia el temporizador"
+usbwatch() {
+	last=""
+	while :; do
+		st=$(cat /sys/class/udc/*/state 2>/dev/null | tr '\n' ' ')
+		sp=$(cat /sys/class/udc/*/current_speed 2>/dev/null | tr '\n' ' ')
+		nl=$(grep -E 'usb0:|rndis0:' /proc/net/dev 2>/dev/null | tr -s ' ' | cut -d' ' -f3,11 | tr '\n' '|')
+		ca=$(cat /sys/class/net/usb0/carrier 2>/dev/null)
+		cur="udc=${st}speed=${sp}carrier=${ca} rxtx=${nl}"
+		case "$st" in *configured*) touch /run/keep ;; esac
+		if [ "$cur" != "$last" ]; then msg "USB $cur"; last=$cur; fi
+		flush_marks
+		sleep 3
+	done
+}
+usbwatch &
 flush_marks
 while :; do sleep 5; done
