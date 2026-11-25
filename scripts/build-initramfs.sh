@@ -52,6 +52,11 @@ if [ -d "$SRC/initramfs/modules" ]; then
 	cp -R "$SRC/initramfs/modules/." "$STAGE/lib/modules/"
 fi
 
+# misc original (fase 0), solo 4096 B: lo usa restore_misc con rgslide.restore=1.
+if [ -f "$SRC/dump/min/misc.img" ]; then
+	head -c 4096 "$SRC/dump/min/misc.img" > "$STAGE/lib/misc-orig.bin"
+fi
+
 # Reproducible: fechas fijas y sin uid/gid del host.
 find "$STAGE" -exec touch -h -d '@0' {} +
 (cd "$STAGE" && find . -print | LC_ALL=C sort | cpio -o -H newc --owner 0:0 --reproducible -R 0:0 2>/dev/null) > "$IMG.cpio"

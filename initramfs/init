@@ -26,17 +26,38 @@ msg() {
 	echo "$(cut -d' ' -f1 /proc/uptime) $*" >> /run/marklog 2>/dev/null
 }
 # Marcas persistentes: el log se acumula en /run/marklog y se vuelca a boot_b + 48 MiB (cola libre de la particion de prueba).
-setup_blk() {
-	[ -n "$BLK" ] && return 0
-	for u in /sys/class/block/*/uevent; do
+mkpart() {
+	# $1 = PARTNAME, $2 = ruta del nodo a crear
+	_pn=$1; _dst=$2
+	for u in ${SYSBLK:-/sys/class/block}/*/uevent; do
 		[ -r "$u" ] || continue
-		grep -qx 'PARTNAME=boot_b' "$u" 2>/dev/null || continue
-		mm=$(sed -n 's/^MAJOR=//p;s/^MINOR=//p' "$u" | tr '\n' ' ')
-		set -- $mm
-		[ -n "$2" ] || continue
-		mknod -m 600 /dev/bootb b "$1" "$2" 2>/dev/null && BLK=/dev/bootb && return 0
+		grep -qx "PARTNAME=$_pn" "$u" 2>/dev/null || continue
+		_maj=$(sed -n 's/^MAJOR=//p' "$u"); _min=$(sed -n 's/^MINOR=//p' "$u")
+		[ -n "$_maj" ] && [ -n "$_min" ] || continue
+		mknod -m 600 "$_dst" b "$_maj" "$_min" 2>/dev/null && return 0
 	done
 	return 1
+}
+setup_blk() {
+	[ -n "$BLK" ] && return 0
+	mkpart boot_b /dev/bootb && BLK=/dev/bootb && return 0
+	return 1
+}
+# Devuelve `misc` al estado de la fase 0 (slot A activo) para que el LK no siga reintentando B.
+# Solo con rgslide.restore=1, solo si estamos en slot _b, y solo si el misc actual es un bootloader_control valido.
+# $1 = dispositivo (por defecto /dev/misc), $2 = original de 4096 B (por defecto /lib/misc-orig.bin)
+restore_misc() {
+	DEV=${1:-/dev/misc}; ORIG=${2:-/lib/misc-orig.bin}
+	[ -f "$ORIG" ] || { msg "restore: sin $ORIG"; return 1; }
+	[ -n "$1" ] || mkpart misc /dev/misc || { msg "restore: misc no visible"; return 1; }
+	dd if="$DEV" of=/run/misc-cur.bin bs=4096 count=1 2>/dev/null
+	[ "$(dd if=/run/misc-cur.bin bs=1 skip=2052 count=4 2>/dev/null)" = "BCAB" ] || { msg "restore: sin magic BCAB, no escribo"; return 1; }
+	[ "$(dd if=/run/misc-cur.bin bs=1 skip=2048 count=2 2>/dev/null)" = "_b" ] || { msg "restore: suffix no es _b, no escribo"; return 1; }
+	cmp -s /run/misc-cur.bin "$ORIG" && { msg "restore: misc ya es el original"; return 0; }
+	dd if="$ORIG" of="$DEV" bs=4096 count=1 conv=notrunc,fsync 2>/dev/null
+	sync
+	dd if="$DEV" of=/run/misc-new.bin bs=4096 count=1 2>/dev/null
+	if cmp -s /run/misc-new.bin "$ORIG"; then msg "MARCA-4 misc restaurado a slot A (verificado)"; else msg "MARCA-4 FALLO al verificar misc"; return 1; fi
 }
 flush_marks() {
 	setup_blk || return 1
@@ -77,7 +98,22 @@ load_list() {
 	done < "$1"
 }
 
-[ -r /lib/modules/modules.load ] && load_list /lib/modules/modules.load
+# Primero la cadena de fabrica hasta ufs-sprd-qogirn6pro.ko (linea 15): sin ella no hay /sys/class/block y no se puede marcar.
+if [ -r /lib/modules/modules.load ]; then
+	head -n 15 /lib/modules/modules.load > /run/m1.load
+	tail -n +16 /lib/modules/modules.load > /run/m2.load
+	load_list /run/m1.load
+	msg "MARCA-2 cadena hasta UFS cargada"
+	i=0
+	while [ $i -lt 100 ]; do
+		setup_blk && break
+		i=$((i+1)); sleep 0.2
+	done
+	[ -n "$BLK" ] && msg "MARCA-3 boot_b visible tras $i esperas ($BLK)" || msg "MARCA-3 boot_b NO aparece: sda=$(ls /sys/class/block 2>&1 | tr '\n' ' ')"
+	flush_marks
+	case "$CMDLINE" in *rgslide.restore=1*) restore_misc; flush_marks ;; esac
+	load_list /run/m2.load
+fi
 [ -r /lib/modules/rgslide-usb.load ] && load_list /lib/modules/rgslide-usb.load
 mdev -s
 
