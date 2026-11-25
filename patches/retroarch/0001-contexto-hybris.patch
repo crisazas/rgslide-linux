@@ -1,0 +1,314 @@
+diff --git a/Makefile.common b/Makefile.common
+index a1db99f..084ee02 100644
+--- a/Makefile.common
++++ b/Makefile.common
+@@ -1673,6 +1673,10 @@ ifeq ($(HAVE_GL_CONTEXT), 1)
+       OBJ += gfx/drivers_context/mali_fbdev_ctx.o
+    endif
+ 
++   ifeq ($(HAVE_HYBRIS), 1)
++      OBJ += gfx/drivers_context/hybris_ctx.o
++   endif
++
+    ifeq ($(HAVE_VIVANTE_FBDEV), 1)
+       OBJ += gfx/drivers_context/vivante_fbdev_ctx.o
+    endif
+diff --git a/gfx/drivers_context/hybris_ctx.c b/gfx/drivers_context/hybris_ctx.c
+new file mode 100644
+index 0000000..264918d
+--- /dev/null
++++ b/gfx/drivers_context/hybris_ctx.c
+@@ -0,0 +1,255 @@
++/*  RetroArch - A frontend for libretro.
++ *
++ *  Contexto EGL para libhybris (plataforma "drm"): la ventana es la que
++ *  entrega hybris, respaldada por AHardwareBuffer y presentada por PAGE_FLIP,
++ *  asi que eglCreateWindowSurface recibe 0 como ventana nativa.
++ *  Basado en mali_fbdev_ctx.c; tamano fijo.
++ *
++ *  RetroArch is free software: you can redistribute it and/or modify it under the terms
++ *  of the GNU General Public License as published by the Free Software Found-
++ *  ation, either version 3 of the License, or (at your option) any later version.
++ */
++
++#include <stdlib.h>
++#include <string.h>
++
++#ifdef HAVE_CONFIG_H
++#include "../../config.h"
++#endif
++
++#ifdef HAVE_EGL
++#include "../common/egl_common.h"
++#endif
++
++#include "../../frontend/frontend_driver.h"
++#include "../../input/input_driver.h"
++#include "../../verbosity.h"
++#include "../../configuration.h"
++
++#ifndef EGL_OPENGL_ES3_BIT
++#define EGL_OPENGL_ES3_BIT 0x0040
++#endif
++
++#define HYBRIS_DEFAULT_WIDTH  1280
++#define HYBRIS_DEFAULT_HEIGHT 960
++
++typedef struct
++{
++#ifdef HAVE_EGL
++   egl_ctx_data_t egl;
++#endif
++   unsigned width;
++   unsigned height;
++   bool gles3;
++} hybris_ctx_data_t;
++
++static bool hybris_want_gles3 = false;
++
++static void gfx_ctx_hybris_get_video_size(void *data, unsigned *dims)
++{
++   hybris_ctx_data_t *hy = (hybris_ctx_data_t*)data;
++   *dims = VIDEO_SCALE_PACK(hy->width, hy->height);
++}
++
++static void gfx_ctx_hybris_destroy(void *data)
++{
++   hybris_ctx_data_t *hy = (hybris_ctx_data_t*)data;
++   if (!hy)
++      return;
++#ifdef HAVE_EGL
++   egl_destroy(&hy->egl);
++#endif
++   free(hy);
++}
++
++static void *gfx_ctx_hybris_init(void *video_driver)
++{
++#ifdef HAVE_EGL
++   EGLint n;
++   EGLint major, minor;
++   EGLint attribs_init[] = {
++      EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
++      EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
++      EGL_BLUE_SIZE, 8,
++      EGL_GREEN_SIZE, 8,
++      EGL_RED_SIZE, 8,
++      EGL_ALPHA_SIZE, 8,
++      EGL_NONE
++   };
++   EGLint attribs_create[] = {
++      EGL_CONTEXT_CLIENT_VERSION, hybris_want_gles3 ? 3 : 2,
++      EGL_NONE
++   };
++#endif
++   const char *e;
++   hybris_ctx_data_t *hy = (hybris_ctx_data_t*)calloc(1, sizeof(*hy));
++   if (!hy)
++      return NULL;
++
++   hy->width  = HYBRIS_DEFAULT_WIDTH;
++   hy->height = HYBRIS_DEFAULT_HEIGHT;
++   if ((e = getenv("RGSLIDE_WIDTH")) && atoi(e) > 0)
++      hy->width = (unsigned)atoi(e);
++   if ((e = getenv("RGSLIDE_HEIGHT")) && atoi(e) > 0)
++      hy->height = (unsigned)atoi(e);
++   hy->gles3 = hybris_want_gles3;
++
++#ifdef HAVE_EGL
++   if (hybris_want_gles3)
++      attribs_init[1] = EGL_OPENGL_ES3_BIT;
++   RARCH_LOG("[hybris] GLES %d, %ux%u.\n", hybris_want_gles3 ? 3 : 2,
++         hy->width, hy->height);
++
++   frontend_driver_install_signal_handler();
++   hy->egl.use_hw_ctx = true;
++   if (!egl_init_context(&hy->egl, EGL_NONE, EGL_DEFAULT_DISPLAY,
++            &major, &minor, &n, attribs_init, NULL))
++      goto error;
++   if (!egl_create_context(&hy->egl, attribs_create))
++      goto error;
++   if (!egl_create_surface(&hy->egl, NULL))
++      goto error;
++   return hy;
++
++error:
++   egl_report_error();
++#endif
++   gfx_ctx_hybris_destroy(hy);
++   return NULL;
++}
++
++static void gfx_ctx_hybris_check_window(void *data, bool *quit,
++      bool *resize, unsigned *dims)
++{
++   unsigned new_dims;
++   gfx_ctx_hybris_get_video_size(data, &new_dims);
++   if (new_dims != *dims)
++   {
++      *dims   = new_dims;
++      *resize = true;
++   }
++   *quit = (bool)frontend_driver_get_signal_handler_state();
++}
++
++static bool gfx_ctx_hybris_set_video_mode(void *data,
++      unsigned dims, bool fullscreen)
++{
++   return true;
++}
++
++static void gfx_ctx_hybris_input_driver(void *data,
++      const char *name)
++{
++   input_driver_video_window(INPUT_WINDOW_KMS, NULL);
++}
++
++static enum gfx_ctx_api gfx_ctx_hybris_get_api(void *data)
++{
++   return GFX_CTX_OPENGL_ES_API;
++}
++
++static bool gfx_ctx_hybris_bind_api(void *data,
++      enum gfx_ctx_api api, unsigned major, unsigned minor)
++{
++   if (major * 100 + minor >= 300)
++      hybris_want_gles3 = true;
++   return (api == GFX_CTX_OPENGL_ES_API);
++}
++
++static bool gfx_ctx_hybris_has_focus(void *data) { return true; }
++static bool gfx_ctx_hybris_suppress_screensaver(void *data, bool enable) { return false; }
++
++static void gfx_ctx_hybris_set_swap_interval(void *data, int swap_interval)
++{
++#ifdef HAVE_EGL
++   hybris_ctx_data_t *hy = (hybris_ctx_data_t*)data;
++   egl_set_swap_interval(&hy->egl, swap_interval);
++#endif
++}
++
++static void gfx_ctx_hybris_swap_buffers(void *data)
++{
++#ifdef HAVE_EGL
++   hybris_ctx_data_t *hy = (hybris_ctx_data_t*)data;
++   egl_swap_buffers(&hy->egl);
++#endif
++}
++
++static void gfx_ctx_hybris_bind_hw_render(void *data, bool enable)
++{
++#ifdef HAVE_EGL
++   hybris_ctx_data_t *hy = (hybris_ctx_data_t*)data;
++   egl_bind_hw_render(&hy->egl, enable);
++#endif
++}
++
++static uint32_t gfx_ctx_hybris_get_flags(void *data)
++{
++   uint32_t flags = 0;
++   BIT32_SET(flags, GFX_CTX_FLAGS_SHADERS_GLSL);
++   return flags;
++}
++
++static void gfx_ctx_hybris_set_flags(void *data, uint32_t flags) { }
++
++static float gfx_ctx_hybris_get_refresh_rate(void *data) { return 60.0f; }
++
++static bool gfx_ctx_hybris_create_surface(void *data)
++{
++#ifdef HAVE_EGL
++   hybris_ctx_data_t *hy = (hybris_ctx_data_t*)data;
++   return egl_create_surface(&hy->egl, NULL);
++#else
++   return false;
++#endif
++}
++
++static bool gfx_ctx_hybris_destroy_surface(void *data)
++{
++#ifdef HAVE_EGL
++   hybris_ctx_data_t *hy = (hybris_ctx_data_t*)data;
++   return egl_destroy_surface(&hy->egl);
++#else
++   return false;
++#endif
++}
++
++const gfx_ctx_driver_t gfx_ctx_hybris = {
++   gfx_ctx_hybris_init,
++   gfx_ctx_hybris_destroy,
++   gfx_ctx_hybris_get_api,
++   gfx_ctx_hybris_bind_api,
++   gfx_ctx_hybris_set_swap_interval,
++   gfx_ctx_hybris_set_video_mode,
++   gfx_ctx_hybris_get_video_size,
++   gfx_ctx_hybris_get_refresh_rate,
++   NULL, /* get_video_output_size */
++   NULL, /* get_video_output_prev */
++   NULL, /* get_video_output_next */
++   NULL, /* get_metrics */
++   NULL,
++   NULL, /* update_title */
++   gfx_ctx_hybris_check_window,
++   NULL, /* set_resize */
++   gfx_ctx_hybris_has_focus,
++   gfx_ctx_hybris_suppress_screensaver,
++   false, /* has_windowed */
++   gfx_ctx_hybris_swap_buffers,
++   gfx_ctx_hybris_input_driver,
++#ifdef HAVE_EGL
++   egl_get_proc_address,
++#else
++   NULL,
++#endif
++   NULL,
++   NULL,
++   NULL,
++   "hybris",
++   gfx_ctx_hybris_get_flags,
++   gfx_ctx_hybris_set_flags,
++   gfx_ctx_hybris_bind_hw_render,
++   NULL,
++   NULL,
++   gfx_ctx_hybris_create_surface,
++   gfx_ctx_hybris_destroy_surface
++};
+diff --git a/gfx/video_driver.c b/gfx/video_driver.c
+index 24d208b..a853d30 100644
+--- a/gfx/video_driver.c
++++ b/gfx/video_driver.c
+@@ -332,6 +332,9 @@ static const gfx_ctx_driver_t *gfx_ctx_gl_drivers[] = {
+ #if defined(HAVE_MALI_FBDEV)
+    &gfx_ctx_mali_fbdev,
+ #endif
++#if defined(HAVE_HYBRIS)
++   &gfx_ctx_hybris,
++#endif
+ #if defined(HAVE_VIVANTE_FBDEV)
+    &gfx_ctx_vivante_fbdev,
+ #endif
+diff --git a/gfx/video_driver.h b/gfx/video_driver.h
+index db075a0..2729030 100644
+--- a/gfx/video_driver.h
++++ b/gfx/video_driver.h
+@@ -3393,6 +3393,7 @@ extern const gfx_ctx_driver_t gfx_ctx_vk_x;
+ extern const gfx_ctx_driver_t gfx_ctx_drm;
+ extern const gfx_ctx_driver_t gfx_ctx_go2_drm;
+ extern const gfx_ctx_driver_t gfx_ctx_mali_fbdev;
++extern const gfx_ctx_driver_t gfx_ctx_hybris;
+ extern const gfx_ctx_driver_t gfx_ctx_vivante_fbdev;
+ extern const gfx_ctx_driver_t gfx_ctx_android;
+ extern const gfx_ctx_driver_t gfx_ctx_vk_android;
+diff --git a/qb/config.params.sh b/qb/config.params.sh
+index 23dd120..16de603 100644
+--- a/qb/config.params.sh
++++ b/qb/config.params.sh
+@@ -165,6 +165,7 @@ HAVE_LIBDECOR=auto         # libdecor support
+ HAVE_KMS=auto              # KMS context support
+ C89_KMS=no
+ HAVE_MALI_FBDEV=no         # Mali fbdev context support
++HAVE_HYBRIS=no             # libhybris (Android EGL blob) context support
+ HAVE_VIVANTE_FBDEV=no      # Vivante fbdev context support
+ HAVE_OPENDINGUX_FBDEV=no   # Opendingux fbdev context support
+ HAVE_SDL_DINGUX=no         # Opendingux SDL input/gfx driver support

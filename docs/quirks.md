@@ -239,3 +239,10 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
 - Efecto: sshd no puede leer authorized_keys; `sudo` dice Permission denied.
 - Regla: NUNCA extraer a `/` un tar que contenga la entrada `.`; generar con `tar -cf - ./opt ./etc ./usr` o usar `--no-overwrite-dir`.
 - ARREGLADO: `root@10.55.0.2` sigue entrando por clave (PermitRootLogin prohibit-password, rootfs/authorized_keys): `chmod 755 / /etc /usr /usr/local /usr/local/bin /opt /opt/retroarch`. Tras ello SSH y sudo de console vuelven. Script corregido (sin entrada ".", --no-overwrite-dir). La consola serie gser es un shell de initramfs sin utilidades (no sirve para esto).
+
+## hybris + plataforma drm: PRIMER RENDER REAL (2026-11-25) - `hybristest`
+- `hybristest 5` (glibc, root, `rgslide-hybris-env`, 4 servicios Android): Mali-G57 GLES 3.2 -> EGLSurface de la plataforma `drm` -> PAGE_FLIP sin copia: 298 frames/5.01 s = 59.5 fps (vsync).
+- Causa del `AHardwareBuffer_allocate rc=5`: el allocator (HIDL, uid 1000) abortaba con "Unable to retrieve GPU capabilities" (SIGABRT) al atender la peticion cuando el usage incluia GPU_SAMPLED_IMAGE (bit 8) junto con COMPOSER_OVERLAY, y tambien con los bits >32 que pone el blob (bit 62). Arreglo en `drm_window.cpp`: solo bits publicos bajos y SIN GPU_SAMPLED; usage = GPU_COLOR_OUTPUT|COMPOSER_OVERLAY (igual que `ahbdrm`). Con eso el allocator no cae.
+- Si el allocator muere: `android-services start` lo relanza; `hybristest` espera eternamente en `HidlServiceManagement getService` sin el.
+- Tras el SSH colgado la Slide entro en bucle de reinicios ~40-80 s durante unos 15 min (pm_sys/CM4 sin arrancar a tiempo, sin panic en journal); se estabilizo sola (>350 s). Tras cada reinicio la IP del PC cambia de interfaz (MAC aleatoria de usb0): `ip addr add 10.55.0.1/24 dev enx...`.
+- Pendiente: SEGV (si_addr=NULL) al terminar `hybristest` tras RMFB/close (cierre de la plataforma/blob); `glGetError=0x502` al final.

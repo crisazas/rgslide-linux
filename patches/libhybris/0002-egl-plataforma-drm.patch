@@ -172,10 +172,10 @@ index 0000000..bf57cff
 +	$(top_builddir)/common/libhybris-common.la
 diff --git a/hybris/egl/platforms/drm/drm_window.cpp b/hybris/egl/platforms/drm/drm_window.cpp
 new file mode 100644
-index 0000000..1449b1d
+index 0000000..6cd7811
 --- /dev/null
 +++ b/hybris/egl/platforms/drm/drm_window.cpp
-@@ -0,0 +1,270 @@
+@@ -0,0 +1,272 @@
 +#include "drm_window.h"
 +
 +#include <errno.h>
@@ -241,8 +241,10 @@ index 0000000..1449b1d
 +	if (!ahb_init()) return;
 +	memset(&d, 0, sizeof d);
 +	d.width = w; d.height = h; d.layers = 1; d.format = fmt ? fmt : 1;
-+	d.usage = usage | AHB_USAGE_GPU_COLOR_OUTPUT | AHB_USAGE_GPU_SAMPLED | AHB_USAGE_COMPOSER_OVERLAY;
-+	if (p_alloc(&d, &m_ahb) != 0 || !m_ahb) { m_ahb = nullptr; return; }
++	/* El blob pide bits de uso privados (p. ej. bit 62) que gralloc rechaza (rc=5): solo se pasan los bits publicos de AHardwareBuffer. */
++	d.usage = (usage & 0x0000FFFFFFFFULL & ~AHB_USAGE_GPU_SAMPLED) | AHB_USAGE_GPU_COLOR_OUTPUT | AHB_USAGE_COMPOSER_OVERLAY;
++	int rc = p_alloc(&d, &m_ahb);
++	if (rc != 0 || !m_ahb) { fprintf(stderr, "hybris drm: AHardwareBuffer_allocate rc=%d (%ux%u fmt=%u usage=0x%llx)\n", rc, w, h, d.format, (unsigned long long)d.usage); m_ahb = nullptr; return; }
 +	memset(&o, 0, sizeof o);
 +	p_describe(m_ahb, &o);
 +	const RgNativeHandle *h2 = p_handle(m_ahb);
