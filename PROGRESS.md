@@ -1,7 +1,7 @@
 # PROGRESS
 
 ## Ahora
-- Suspension: la prueba de freeze con sipa wakeup=disabled acabo en panic sipa_recv_skb (ver docs/power-sensors.md); no repetir sin el usuario delante. ES+wifi+USB OK en frio; GBA/NDS libres a 60 fps; falta audio, sensores, BT, ventilador por persona
+- Boton de encendido ya NO suspende (suspend deep cuelga en sprd-sensorhub); 3 subagentes en marcha: power key/mask suspend, sensores CM4, bluetooth. NO probar suspension real sin usuario delante. Falta audio (AGDSP), ventilador por persona
 
 ## Siguiente
 - /dev/sctl_ch da ENODEV en bucle (mayor dinamico 498); CM4 Version no visto
