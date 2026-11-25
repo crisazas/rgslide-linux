@@ -1,0 +1,15 @@
+[Unit]
+Description=Bluetooth de la Slide (Marlin3 Lite): init vendor + proxy H4 + btattach
+After=rgslide-wifi.service
+Requires=rgslide-wifi.service
+Before=bluetooth.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/rgslide-bt-prep
+Restart=no
+KillMode=control-group
+
+[Install]
+# NO habilitado: desplegado a mano. Ver docs/agent-bt.md.
+WantedBy=multi-user.target

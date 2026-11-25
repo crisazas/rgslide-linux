@@ -5,7 +5,7 @@ set -eu
 cd "$(dirname "$0")/.."
 H=${1:-console@10.55.0.2}
 SSH="ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/tmp/opencode/kh -o ConnectTimeout=8"
-python3 - <<'PY' | $SSH "$H" 'sudo tee /opt/android/vendor/bin/modem_control_ch >/dev/null && sudo chmod 755 /opt/android/vendor/bin/modem_control_ch'
+python3 - <<'PY' | $SSH "$H" 'sudo tee /opt/android/vendor/bin/modem_control_ch.new >/dev/null && sudo chmod 755 /opt/android/vendor/bin/modem_control_ch.new && sudo mv -f /opt/android/vendor/bin/modem_control_ch.new /opt/android/vendor/bin/modem_control_ch'
 import sys
 d=bytearray(open('dump/android/root/vendor/bin/modem_control','rb').read())
 assert d[0xcf4c:0xcf50].hex()=="68000035" and d[0xcf50:0xcf54].hex()=="e0078052"

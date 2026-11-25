@@ -1,0 +1,14 @@
+#!/bin/sh
+# Bluetooth de la Slide (Marlin3 Lite): sprdbt_tty -> rfkill -> VSC vendor (0xfca0/a2/a1) -> proxy H4 + btattach => hci0.
+# Requiere wcn_bsp cargado (rgslide-wifi.service) y /usr/local/sbin/rgslide-bt-init (out/bt/bt-init) + /usr/lib/firmware/bt_configure_{pskey,rf}.ini.
+# Se queda en primer plano ejecutando el proxy (Type=simple). Nunca hace rmmod.
+grep -q '^wcn_bsp ' /proc/modules || { echo "rgslide-bt-prep: falta wcn_bsp (arranca rgslide-wifi)" >&2; exit 1; }
+grep -q '^sprdbt_tty ' /proc/modules || modprobe sprdbt_tty || exit 1
+i=0; while [ $i -lt 20 ] && [ ! -e /dev/ttyBT0 ]; do sleep 1; i=$((i+1)); done
+[ -e /dev/ttyBT0 ] || { echo "rgslide-bt-prep: no hay /dev/ttyBT0" >&2; exit 1; }
+RF=/sys/class/rfkill; for r in $RF/rfkill*; do [ "$(cat $r/type)" = bluetooth ] && R=$r; done
+echo 0 > $R/state; sleep 1; echo 1 > $R/state; sleep 2
+H=$(md5sum /etc/machine-id | cut -c1-10)
+ADDR=$(echo "02$H" | sed 's/../&:/g; s/:$//')
+/usr/local/sbin/rgslide-bt-init -d /dev/ttyBT0 -p /usr/lib/firmware/bt_configure_pskey.ini -r /usr/lib/firmware/bt_configure_rf.ini -a "$ADDR" || exit 1
+exec /usr/local/sbin/rgslide-bt-proxy --attach /dev/ttyBT0
