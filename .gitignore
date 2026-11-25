@@ -3,3 +3,5 @@ dump/
 third_party/
 *.img
 *.pac
+__pycache__/
+*.pyc

@@ -5,7 +5,8 @@ Plan completo: `PLAN.md`. Estado: `PROGRESS.md`.
 
 ## Dispositivo
 - Anbernic RG Slide, SoC Unisoc T820 = `ums9620_2h10`. Sin microSD: todo por USB (`fastboot` para iterar, `spd_dump`/BROM solo para `uboot` y rescate).
-- Entrar en BROM: botón **Back del lado derecho de la pantalla** mantenido al conectar el USB (por confirmar). Forzar apagado: **Vol-down + Power**.
+- Entrar en BROM: botón **Back del lado derecho de la pantalla** mantenido al conectar el USB (confirmado por el usuario; a veces varía). Forzar apagado: **Vol-down + Power**.
+- El usuario NO quiere respaldar datos personales de la Slide (partidas, ROMs, capturas).
 - Slot A = pruebas, slot B = último arranque bueno.
 
 ## Rutas
