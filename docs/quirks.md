@@ -25,3 +25,10 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
 - Marcas: NINGUNA (zona boot_b+48 MiB a ceros). **Inconcluso**: flush_marks necesita /sys/class/block/sda37 y el UFS solo existe tras cargar ufs-sprd-qogirn6pro.ko (linea 15 de modules.load); si el init o ese insmod se quedaron antes, no hay marca posible. pstore tambien vacio al volver.
 - Siguiente diseno: marcar ANTES de cargar modulos y en un medio que no dependa del UFS (ramoops en 0xfff80000, que el LK/Android pueden limpiar) o cargar primero solo la cadena minima hasta el UFS y marcar tras cada modulo.
 - misc volvio a suffix _b / prio b=15 tras la prueba; restaurado con dd (md5 534e94b7).
+
+## Prueba 3 (23:50-23:52): scripts/slot-b-once.sh — NO probo nada
+- Escribi boot_b (verificado byte a byte) y `misc` con suffix `_b`, b prio 15 tries 1, desde Android con dd, y `adb reboot`. No relei `misc` antes de reiniciar.
+- Resultado: la Slide volvio a GammaOS en ~33 s (dmesg del PC: desconexion 23:51:31, Android 23:52:04), lo que no cuadra con un intento de B (LK ~14 s + 60 s de init). uboot_log no contiene el ramdisk 1350568 de esta imagen. `misc` quedo IDENTICO al original de la fase 0 (0 bytes distintos).
+- Android no revierte `misc` mientras corre (reescrito despues y estable 60 s). Quien lo devolvio al original durante el reinicio NO se ha averiguado. Hipotesis sin comprobar: el apagado de Android o un paso previo al LK.
+- Lo que si funciono antes: `fastboot set_active b` (lo escribe el propio LK), con ~7 intentos de B.
+- Esta prueba no aporta datos sobre el init. pstore: solo pmsg-ramoops-0 de Android (sin cadenas rgslide).

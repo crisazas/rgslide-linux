@@ -8,7 +8,7 @@
 export PATH=/sbin:/bin:/usr/sbin:/usr/bin
 export HOME=/root TERM=linux
 umask 022
-RESCUE_TIMEOUT=${RESCUE_TIMEOUT:-90}
+RESCUE_TIMEOUT=${RESCUE_TIMEOUT:-60}
 
 mount -t proc proc /proc 2>/dev/null
 mount -t sysfs sysfs /sys 2>/dev/null
@@ -51,6 +51,7 @@ mount -t tmpfs tmpfs /run 2>/dev/null
 mount -t configfs none /sys/kernel/config 2>/dev/null || msg "configfs: fallo"
 
 CMDLINE=$(cat /proc/cmdline)
+msg "MARCA-1 cmdline: $CMDLINE"
 msg "init de rescate, kernel $(uname -r), timeout ${RESCUE_TIMEOUT}s"
 msg "cmdline: $CMDLINE"
 msg "modulos en /lib/modules: $(ls /lib/modules | wc -l)"
