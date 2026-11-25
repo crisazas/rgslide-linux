@@ -58,3 +58,15 @@ Como el 20 es a la vez "hotkey" y "menu", RetroArch (`input_driver.c`, `input_dr
 - Solucion aplicada: se retira el drop-in y la plantilla `wpa_supplicant-nl80211@wlan0` (disabled); nueva unidad `rootfs/overlay/etc/systemd/system/rgslide-wpa.service` (Requires/After `rgslide-wifi.service`, `wpa_supplicant -c.../wpa_supplicant-nl80211-wlan0.conf -Dnl80211 -iwlan0`, `Restart=on-failure`), habilitada. Verificada en caliente: `wlan0` 192.168.68.116/22. NO verificada en frio.
 - En ese mismo arranque en frio: USB OK (`gadget enlazado`, UDC `attached`, sin linea de espera), ES activo, 0 panics.
 - Verificado en FRIO (reinicio 16:48): `rgslide-wifi` y `rgslide-wpa` activos solos (wpa a los ~60 s del arranque), `wlan0` con 192.168.68.116/22, USB y SSH OK, ES activo, 0 panics, IP del PC puesta sola. Tampoco salio la linea `UDC visible tras N esperas` (3 arranques seguidos sin necesitar la espera): la carrera sigue sin reproducirse.
+
+## ROMs libres GBA y NDS: rendimiento medido (2026-11-25)
+- ROMs (creditos y licencias en `CREDITOS.md`): `gba/glacia.gba` (GPL-3.0), `gba/notebook.gba` (GPL-3.0), `nds/delve.nds` (MIT + arte CC0). Release del autor, cabeceras comprobadas (logo GBA, CRC de logo NDS).
+- Medida: `rgslide-retroarch --max-frames=1200` con ES parado, audio `null`. 1200 fotogramas a 60 fps = 20 s ideales.
+  | Juego | Nucleo | Tiempo real | CPU usuario |
+  |---|---|---|---|
+  | Glacia Dungeon | mgba | 20,6 s | 9,4 s (~46 % de un nucleo) |
+  | Notebook Adventure | mgba | 20,6 s | 6,8 s (~33 %) |
+  | Delve | desmume | 20,7 s | 17,7 s (~86 %) |
+  Los tres a velocidad completa (el tiempo lo fija el limitador de 60 fps, no la CPU). Temperatura del SoC tras las tres: 41,8 C. 0 panics. NDS es el mas justo: 86 % de UN nucleo (hay 8). Delve es 2D con algo de 3D; un juego NDS con 3D pesado puede no ir igual. NO medido por persona: control, imagen y sonido (sin audio).
+- Fallo hallado y arreglado: `[SRAM] Failed to save SRAM` en mgba. `/opt/retroarch/saves` y `states` eran `root 755` en la Slide aunque `scripts/install-retroarch.sh` ya hace `chmod -R a+rwX`; se aplico a mano (`chmod -R a+rwX`) y el error desaparece (0). Si se reinstala el rootfs sin pasar por el script, hay que repetirlo.
+- N64: no hay nucleo en la Slide; los nucleos de RetroArch (mupen64plus-next) usan GL y no se ha probado el contexto GL de nuestro RetroArch con ellos; los juegos libres de libdragon piden hardware exacto (solo ares los emula bien). Aparcado.
