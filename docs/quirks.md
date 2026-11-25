@@ -126,3 +126,11 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
 - Build: fetch-mesa.sh + apply-patches.sh --profile g57-v9-jm + meson con el native file; compila contra Mesa fijado en sources.lock.
 - Limitaciones declaradas: sin geometry/tessellation en algunos casos, sin BC nativo, sin display/wayland/xcb (en Android).
 - Riesgo: kbase JM en G57 con el UAPI de ESTE kernel (5.4.233 de Unisoc); el repo exige coincidir `pan_arch+gpu_id+frontend+kbase_uapi`. Nuestro gpu_id es 0x9091.
+
+## Evaluacion del driver de Arm del vendor en glibc (2026-11-25, solo lectura; no probado en la Slide)
+- Blobs: `dump/android/mali/libGLES_mali.so` (43.7 MB; es EGL+GLES, md5 310ee915) y `vulkan.ums9620.so` (MISMO fichero, mismo md5: un solo blob para GLES y Vulkan 1.4), `gralloc.default.so`. Version r40p0-01eac0 = la del modulo kbase de la Slide (UK 11.36): no hay desajuste de UAPI.
+- NEEDED: allocator-V1-ndk, libbinder_ndk, libnativewindow, mapper@4.0, libgralloctypes, libhidlbase, libhardware, libdmabufheap, libcutils, liblog, libbase, libutils, libc++ (todo Android, bionic).
+- Simbolos Android sin resolver (45): ANativeWindow_* (16), AHardwareBuffer_* (6), AServiceManager_checkService, __system_property_*, android::base::CachedProperty, android::gralloc4::decode*, hidl_string, IMapper::getService, RefBase.
+- Plataforma de salida: EGL solo `EGL_KHR_platform_android`; sin gbm, sin wayland/x11, sin /dev/dri. Vulkan: solo `VK_ANDROID_native_buffer` (+ dma_buf/drm_modifier de memoria); sin VK_KHR_display ni wayland/xcb. Para sacar imagen a `/dev/dri/card0` habria que emular ANativeWindow/AHardwareBuffer o escribir un WSI propio.
+- Kernel de la Slide: binder, ION y dma_heap compilados (`/proc/devices`: binder 235, dma_heap 248); faltan los nodos (sin devtmpfs).
+- Camino realista: libhybris (no esta en el apt de la Slide; hay que compilarlo) + servicios Android minimos (servicemanager, allocator@4.0-service) + una plataforma EGL de hybris que muestre en DRM. Es un proyecto largo y fragil; no lo hemos hecho nunca en este SoC.
