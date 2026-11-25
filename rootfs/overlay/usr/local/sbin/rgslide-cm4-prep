@@ -9,6 +9,7 @@ mkdir -p /dev/block/by-name
 for u in /sys/class/block/sd*[0-9]; do
   n=$(sed -n 's/^PARTNAME=//p' $u/uevent); b=$(basename $u)
   [ -n "$n" ] && [ ! -e /dev/block/by-name/$n ] && ln -s /dev/$b /dev/block/by-name/$n
+  case "$n" in pm_sys_*|nr_modem_*|nr_phy_*|nr_pm_*|nr_agdsp_*|nr_dsp_*) chmod o+r /dev/$b ;; esac
 done
 mkdir -p /dev/__properties__ /linkerconfig 2>/dev/null
 exit 0

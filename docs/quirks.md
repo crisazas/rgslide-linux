@@ -87,3 +87,12 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
 - Un GSI usa el kernel y el vendor de fabrica, como nosotros. Que reinicie igual apunta a algo que el Android de fabrica / GammaOS hace y un GSI o Linux no (no es de mi init ni de Debian).
 - Compatible con el corte medido a 279-285 s (4 min 44 s). Intervalo del usuario aproximado: no es una prueba.
 - Sin documentacion encontrada en la web ni en third_party/ (UnisocBypass, rg-rotate-linux, base618). Hipotesis principal: el CM4 (pm_sys cargado por modem_control en GammaOS a ~10 s, tras lo cual aparece `cm4 watchdog on/off` y `CM4 Version`).
+
+## RESUELTO (2026-11-25): el reinicio a ~284 s lo evita arrancar el CM4 con modem_control
+- Prueba manual en Debian: uptime 415 s+ sin corte (antes siempre ~284 s). Dmesg: `sprd-pmic-wdt: sbuf ready for pmic wdt init` y `cm4 watchdog on/off` a ~75 s.
+- Lo que hizo falta para que modem_control llegue al CM4 fuera de Android:
+  1. `libkernelbootcp.trusty.so` y `libtrusty.so` del vendor_a del .pac (en install-cm4.sh).
+  2. Propiedades de Android: `tools/propshim/libpropshim.so` (property_get/__system_property_get con getprop de GammaOS) cargada con `LD_PRELOAD`. Sin ella: "can't get modem type!" y duerme.
+  3. Enlaces `/dev/block/by-name/<PARTNAME>` (pm_sys_b, nr_modem_b, nr_phy_b...) y lectura `o+r` en esas particiones: corre como uid 1000. Sin permiso: EACCES y el reinicio llega a ~40 s (read sobre Trusty).
+- Pendiente: `/dev/sctl_ch` da ENODEV en bucle (nodo de sprd-spipe dst=9, mayor dinamico); `CM4 Version` no visto. /dev sin devtmpfs: /dev/null queda 660.
+- Comando de la prueba: `LD_PRELOAD=/opt/android/libpropshim.so /vendor/bin/modem_control` tras ejecutar rgslide-cm4-prep.
