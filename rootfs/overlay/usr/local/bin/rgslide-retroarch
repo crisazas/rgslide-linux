@@ -1,0 +1,15 @@
+#!/bin/sh
+# RetroArch (glibc) con la GPU Mali por libhybris. Uso: rgslide-retroarch [opciones de retroarch] [-L nucleo contenido]
+R=/opt/retroarch
+export LD_LIBRARY_PATH=/opt/hybris/lib:$R/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+export HYBRIS_LINKER_DIR=/opt/hybris/lib/libhybris/linker
+export HYBRIS_EGLPLATFORM_DIR=/opt/hybris/lib/libhybris
+export EGL_PLATFORM=${EGL_PLATFORM:-drm}
+export LIBEGL=/vendor/lib64/egl/libGLES_mali.so
+export LIBGLESV2=/vendor/lib64/egl/libGLES_mali.so
+export LIBGLESV1_CM=/vendor/lib64/egl/libGLES_mali.so
+export HYBRIS_ANDROID_SDK_VERSION=33
+export HYBRIS_LD_LIBRARY_PATH=/opt/hybris/alib:/vendor/lib64:/system/lib64:/odm/lib64
+[ -f /opt/hybris/libabortbt.so ] && [ -n "$RGSLIDE_ABORTBT" ] && export LD_PRELOAD=/opt/hybris/libabortbt.so
+cd "$R" || exit 1
+exec "$R/bin/retroarch" --config "${RGSLIDE_RA_CONFIG:-/etc/retroarch.cfg}" "$@"

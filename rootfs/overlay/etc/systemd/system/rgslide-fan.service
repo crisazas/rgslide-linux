@@ -1,0 +1,14 @@
+[Unit]
+Description=Ventilador de la RG Slide segun la temperatura (pwm-fan no se autorregula)
+After=systemd-modules-load.service rgslide-dev.service
+Wants=systemd-modules-load.service
+
+[Service]
+Type=simple
+ExecStartPre=/sbin/modprobe -a sc27xx_adc sprd_ump96xx_tsensor sprd_thermal sprd_thermal_r5p0 sprd_soc_thm pwm_sprd pwm_fan
+ExecStart=/usr/local/sbin/rgslide-fan
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

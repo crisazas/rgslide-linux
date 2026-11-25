@@ -1,0 +1,13 @@
+[Unit]
+Description=Modulos de audio de la Slide (registra la tarjeta ALSA; no abre ningun PCM)
+After=rgslide-dev.service rgslide-mdev.service rgslide-cm4.service
+Wants=rgslide-mdev.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/rgslide-audio-prep
+
+[Install]
+# NO habilitado por defecto (push-overlay.sh no lo habilita): hasta resolver el panic de hw_params, nadie debe usar los PCM.
+WantedBy=multi-user.target

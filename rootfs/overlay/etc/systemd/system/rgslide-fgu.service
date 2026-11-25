@@ -1,0 +1,13 @@
+[Unit]
+Description=Enlaza sc27xx-fgu (medidor de bateria) que el kernel no engancha solo en el arranque
+After=systemd-modules-load.service rgslide-dev.service
+Wants=systemd-modules-load.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/sbin/modprobe -a sc27xx_adc sc27xx_fuel_gauge
+ExecStart=/bin/sh -c 'test -d /sys/class/power_supply/sc27xx-fgu || echo sc27xx-fgu > /sys/bus/platform/drivers/sc27xx-fgu/bind'
+
+[Install]
+WantedBy=multi-user.target

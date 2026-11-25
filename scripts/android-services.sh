@@ -8,10 +8,10 @@ D=/tmp/android-services
 RUN="setpriv --reuid=1000 --regid=1000 --clear-groups"
 arranca() {
   n=$1; shift
-  if pgrep -f "linker64 .*$n" >/dev/null 2>&1; then echo "$n ya corre"; return 0; fi
+  if pgrep -f "^/opt/android/apex/com.android.runtime/bin/linker64 .*$n" >/dev/null 2>&1; then echo "$n ya corre"; return 0; fi
   ( cd /tmp && setsid env LD_PRELOAD=$PRE $RUN $LK "$@" >$D/$n.log 2>&1 </dev/null & )
   sleep 1
-  if pgrep -f "linker64 .*$n" >/dev/null 2>&1; then echo "$n OK"; else echo "$n MUERTO ($D/$n.log)"; fi
+  if pgrep -f "^/opt/android/apex/com.android.runtime/bin/linker64 .*$n" >/dev/null 2>&1; then echo "$n OK"; else echo "$n MUERTO ($D/$n.log)"; fi
 }
 case "${1:-status}" in
 start)
@@ -22,6 +22,6 @@ start)
   arranca hwservicemanager /system/bin/hwservicemanager
   arranca android.hardware.graphics.allocator@4.0-service /vendor/bin/hw/android.hardware.graphics.allocator@4.0-service
   ;;
-stop) pkill -f "linker64 .*servicemanager"; pkill -f "linker64 .*graphics.allocator"; echo parados ;;
-*) pgrep -af "linker64 " | cut -c1-120 ;;
+stop) pkill -f "^/opt/android/apex/com.android.runtime/bin/linker64 .*servicemanager"; pkill -f "^/opt/android/apex/com.android.runtime/bin/linker64 .*graphics.allocator"; echo parados ;;
+*) pgrep -af "^/opt/android/apex/com.android.runtime/bin/linker64 " | cut -c1-120 ;;
 esac

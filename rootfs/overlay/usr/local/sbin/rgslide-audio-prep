@@ -1,0 +1,29 @@
+#!/bin/sh
+# Carga los modulos de audio (ALSA/ASoC sprd) de la Slide en el orden de fabrica y deja registrada la tarjeta sprdphonesc2730.
+# SOLO carga modulos: NO abre ningun PCM. Un hw_params con buffer > 128 KiB sobre esa tarjeta provoca un kernel panic
+# (ver docs/audio-wifi.md). Idempotente; nunca hace rmmod. Opcional: RGSLIDE_AGDSP_BOOT=1 vuelca l_agdsp_a al audiocp_boot y lo arranca (sin verificar).
+carga() {
+  if grep -q "^$(echo "$1" | tr - _) " /proc/modules; then return 0; fi
+  modprobe "$1" 2>/dev/null || echo "rgslide-audio-prep: modprobe $1 fallo" >&2
+}
+
+# orden de dump/live/dlkm/modules.load (sprd_apipe, audio-pipe y audio-dsp-dump crean los /dev/audio_*)
+for m in agdsp_access audio_mem sprd_apipe audio_sipc audio-pipe audio-dsp-dump \
+         mcdt_hw_r2p0 sprd_audcp_dvfs sprd_audcp_boot voice_trigger_irq \
+         snd-soc-sprd-codec-ump9620-power snd-soc-sprd-codec-ump9620-power-dev snd-soc-sprd-codec-ump9620 \
+         snd-soc-unisoc-dp-codec snd-soc-sprd-dummy-codec snd-soc-sprd-pa-ucp1301 \
+         snd-soc-sprd-pdm-r2p0 snd-soc-sprd-tdm sprd-platform-pcm-routing \
+         snd-soc-sprd-vbc-v4 snd-soc-sprd-vbc-fe snd-soc-sprd-dai \
+         sprd-dmaengine-pcm sprd-compr-2stage-dma snd-soc-sprd-card; do
+  carga "$m"
+done
+
+if [ "${RGSLIDE_AGDSP_BOOT:-0}" = 1 ] && [ -w /sys/devices/platform/audiocp_boot/start ]; then
+  dd if=/dev/block/by-name/l_agdsp_a of=/sys/devices/platform/audiocp_boot/agdsp bs=4096 count=1536 2>/dev/null
+  echo 1 > /sys/devices/platform/audiocp_boot/start
+fi
+
+# que mdev cree /dev/snd/* si el demonio aun no lo hizo
+[ -d /proc/asound ] && [ -e /dev/snd/controlC0 ] || busybox mdev -s 2>/dev/null
+cat /proc/asound/cards
+exit 0

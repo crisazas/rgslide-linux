@@ -1,0 +1,135 @@
+#!/usr/bin/python3
+# Gobierna el ventilador de la RG Slide (pwm-fan, hwmon "pwmfan", pwm1: 0=parado, 255=maximo).
+# El kernel no lo regula: pwm-fan solo expone un cooling_device de max_state=0.
+# Uso: rgslide-fan            demonio (curva con histeresis)
+#      rgslide-fan set N|off|max   fija pwm1 una vez (N=0..255)
+#      rgslide-fan status     temperatura y pwm actuales
+import glob, os, signal, sys, time
+
+CONF = "/etc/default/rgslide-fan"
+# (temperatura de subida en grados C, pwm); la curva baja con HYST grados de histeresis
+CURVE = [(45, 90), (52, 140), (58, 200), (64, 255)]
+HYST = 4
+PERIOD = 3
+ZONES = ("soc-thmzone", "big7-thmzone", "big7mid4-thmzone", "mid4-thmzone", "mid5-thmzone",
+         "mid6-thmzone", "gpu-thmzone", "apcpu0-thmzone", "apcpu1-thmzone", "board-thmzone")
+
+
+def load_conf():
+    global CURVE, HYST, PERIOD
+    mode = "auto"
+    try:
+        for line in open(CONF):
+            line = line.split("#")[0].strip()
+            if "=" not in line:
+                continue
+            k, v = (x.strip().strip('"') for x in line.split("=", 1))
+            if k == "FAN_MODE":
+                mode = v
+            elif k == "FAN_CURVE":
+                CURVE = [(int(a), int(b)) for a, b in (p.split(":") for p in v.split(","))]
+            elif k == "FAN_HYST":
+                HYST = int(v)
+            elif k == "FAN_PERIOD":
+                PERIOD = int(v)
+    except FileNotFoundError:
+        pass
+    except ValueError as e:
+        print("rgslide-fan: %s mal formado: %s" % (CONF, e), file=sys.stderr)
+    return mode
+
+
+def find_pwm():
+    for h in glob.glob("/sys/class/hwmon/hwmon*"):
+        try:
+            if open(h + "/name").read().strip() == "pwmfan":
+                return h + "/pwm1"
+        except OSError:
+            pass
+    return None
+
+
+def temps():
+    out = {}
+    for z in glob.glob("/sys/class/thermal/thermal_zone*"):
+        try:
+            t = open(z + "/type").read().strip()
+            if t in ZONES:
+                v = int(open(z + "/temp").read())
+                if 0 < v < 150000:
+                    out[t] = v / 1000.0
+        except (OSError, ValueError):
+            pass
+    return out
+
+
+def write(pwm, v):
+    v = max(0, min(255, int(v)))
+    with open(pwm, "w") as f:
+        f.write(str(v))
+    return v
+
+
+def level_at(t):
+    want = 0
+    for up, p in CURVE:
+        if t >= up:
+            want = p
+    return want
+
+
+def level_for(t, cur):
+    # sube en cuanto se cruza el umbral; baja solo cuando t+HYST ya cae en un nivel menor
+    up, down = level_at(t), level_at(t + HYST)
+    if up > cur:
+        return up
+    if down < cur:
+        return down
+    return cur
+
+
+def main():
+    pwm = find_pwm()
+    if not pwm:
+        sys.exit("rgslide-fan: no hay hwmon pwmfan (modprobe pwm_fan pwm_sprd)")
+    args = sys.argv[1:]
+    if args[:1] == ["status"]:
+        t = temps()
+        print("pwm1=%s max=%.1f %s" % (open(pwm).read().strip(), max(t.values()) if t else -1, t))
+        return
+    if args[:1] == ["set"]:
+        v = {"off": 0, "max": 255}.get(args[1]) if len(args) > 1 else None
+        write(pwm, int(args[1]) if v is None else v)
+        return
+
+    stop = []
+    signal.signal(signal.SIGTERM, lambda *a: stop.append(1))
+    signal.signal(signal.SIGINT, lambda *a: stop.append(1))
+    cur = write(pwm, 255)  # arranque: maximo un instante, luego la curva decide
+    time.sleep(1)
+    last = None
+    while not stop:
+        mode = load_conf()
+        t = temps()
+        tmax = max(t.values()) if t else None
+        if mode == "off":
+            new = 0
+        elif mode == "max" or tmax is None:  # sin lectura: no arriesgar
+            new = 255
+        elif mode.isdigit():
+            new = int(mode)
+        else:
+            new = level_for(tmax, cur)
+        if tmax is not None and tmax >= CURVE[-1][0]:
+            new = 255
+        if new != cur or last is None:
+            cur = write(pwm, new)
+        if (cur, round(tmax or 0)) != last:
+            print("rgslide-fan: modo=%s tmax=%s pwm1=%d" % (mode, tmax, cur), flush=True)
+            last = (cur, round(tmax or 0))
+        time.sleep(PERIOD)
+    t = temps()
+    write(pwm, 255 if t and max(t.values()) >= CURVE[0][0] else 0)
+
+
+main()
