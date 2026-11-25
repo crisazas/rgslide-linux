@@ -1,0 +1,5 @@
+#!/bin/sh
+# Lanza RetroArch desde EmulationStation y devuelve la pantalla. ES libera el contexto GL antes (la plataforma "drm" de hybris solo admite
+# un programa con la pantalla a la vez), asi que RetroArch puede abrir la suya. Uso: rgslide-es-launch NUCLEO.so ROM
+CORE=$1; ROM=$2
+exec /usr/local/bin/rgslide-retroarch --appendconfig=/etc/retroarch-es.cfg -L "$CORE" "$ROM"

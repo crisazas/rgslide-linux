@@ -10,6 +10,7 @@
 - NO rmmod sprd_drm (panic); cargar sprd-vpu-pw-domain antes que sprd-drm
 - RTC vuelve a abril 2026 en cada arranque (apt falla firma): hora desde el PC por ssh o NTP
 - Regla: ningun binario glibc que llame a GL por hybris puede tener PT_TLS (-DDT_NO_POOL en RetroArch)
+- PENDIENTE: decodificador de video por hardware (vpu.ko/jpg.ko, ioctls propios de Unisoc, ver docs/video-decoder.md). No afecta a la emulacion (medido: ningun nucleo ni retroarch enlaza libav*); solo previsualizaciones de ES. No cargar vpu/jpg sin arranque estable.
 
 ## No olvidar
 - Subagentes no commitean. Dump/out no se versionan.
