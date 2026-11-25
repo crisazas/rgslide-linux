@@ -1,0 +1,9 @@
+#!/bin/sh
+# Prepara el entorno de bionic para modem_control y crea los nodos de dispositivo del CM4/modem (el mayor es dinamico).
+# Idempotente: se ejecuta en cada arranque (/dev es un tmpfs del initramfs y los nodos no persisten).
+for n in pmsys modem phycp sctl_pm; do
+  M=$(awk -v n="$n" '$2==n{print $1}' /proc/devices | head -1)
+  [ -n "$M" ] && [ ! -e /dev/$n ] && mknod -m 660 /dev/$n c "$M" 0
+done
+mkdir -p /dev/__properties__ /linkerconfig 2>/dev/null
+exit 0

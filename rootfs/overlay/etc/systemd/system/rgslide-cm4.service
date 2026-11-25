@@ -1,0 +1,16 @@
+[Unit]
+Description=Arranca el CM4 de la Slide (modem_control de Android carga pm_sys)
+After=local-fs.target systemd-udevd.service
+DefaultDependencies=no
+Before=network-pre.target
+
+[Service]
+Type=simple
+ExecStartPre=/usr/local/sbin/rgslide-cm4-prep
+ExecStart=/vendor/bin/modem_control
+StandardOutput=file:/var/log/modem_control.log
+StandardError=inherit
+Restart=no
+
+[Install]
+WantedBy=sysinit.target
