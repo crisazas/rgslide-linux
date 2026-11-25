@@ -112,3 +112,9 @@ No ejecuta la imagen enviada: el LK la descarga y arranca la de flash (ver stock
 - Nodos a mano: `mknod -m 666 /dev/dri/card0 c 226 0` y `mknod -m 666 /dev/mali0 c 10 113`. Con ellos `kmscube -D /dev/dri/card0` (Mesa 25.0.7) hace modeset 1280x960@60 en DSI-1 (`status=connected`, luego `enabled`; `dsi is initialized`).
 - Mesa usa `llvmpipe` (software), no Mali: falta driver de usuario para kbase. `Modifiers failed!` en kmscube.
 - Imagen en el panel: CONFIRMADA por el usuario (ve el cubo de kmscube, renderizado en CPU con llvmpipe).
+
+## GPU por hardware: situacion (2026-11-25)
+- Mesa 25.0.7 de Debian en la Slide: `panfrost_dri.so` solo habla con el kernel `panfrost` upstream; no contiene `kbase` ni `/dev/mali`. Con `mali_kbase` (el de fabrica) cae a `llvmpipe` (CPU).
+- Mesa documenta G57 (Valhall v9) con GLES 3.1 / GL 3.1 sobre panfrost upstream.
+- Existe `zenithblue-oss/panvk-kbase-android` (PanVK sobre mali_kbase), pensado para Android y Vulkan; no verificado para G57 ni en glibc.
+- Opciones sin decidir: (1) Mesa propio con backend kbase, (2) libmali de Arm (bionic) en glibc con capa de compatibilidad, (3) kernel con panfrost upstream para el T820 (no se si existe).
