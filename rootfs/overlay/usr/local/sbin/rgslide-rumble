@@ -1,0 +1,81 @@
+#!/usr/bin/python3
+# Vibra el RG Slide por evdev (FF_RUMBLE en el dispositivo "sc27xx:vibrator").
+# Uso: rgslide-rumble [-d MS] [-i 0..100] [-w 0..100] [-n VECES] [-p PAUSA_MS] [-e /dev/input/eventN] [-v]
+#   -d duracion en ms (def. 200)   -i intensidad fuerte en % (def. 100)   -w intensidad debil en % (def. = -i)
+#   -n repeticiones (def. 1)       -p pausa entre repeticiones en ms (def. 100)
+#   -v imprime el estado del regulador vddvib antes/durante/despues
+# El numero de eventN cambia entre arranques: se busca por nombre en /proc/bus/input/devices.
+import argparse, fcntl, os, struct, sys, time
+
+EV_FF, FF_RUMBLE, FF_GAIN = 0x15, 0x50, 0x60
+EVIOCSFF = 0x40304580   # _IOW('E', 0x80, struct ff_effect) con sizeof=48 (aarch64/x86_64)
+EVIOCRMFF = 0x40044581  # _IOW('E', 0x81, int)
+NAME = "sc27xx:vibrator"
+
+
+def find_event():
+    cur = None
+    for line in open("/proc/bus/input/devices"):
+        if line.startswith("N: Name="):
+            cur = line.split("=", 1)[1].strip().strip('"')
+        elif line.startswith("H: Handlers=") and cur == NAME:
+            for w in line.split("=", 1)[1].split():
+                if w.startswith("event"):
+                    return "/dev/input/" + w
+    return None
+
+
+def reg_state():
+    try:
+        for d in os.listdir("/sys/class/regulator"):
+            p = "/sys/class/regulator/" + d
+            if open(p + "/name").read().strip() == "vddvib":
+                return open(p + "/state").read().strip()
+    except OSError:
+        pass
+    return "?"
+
+
+def main():
+    a = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    a.add_argument("-d", type=int, default=200)
+    a.add_argument("-i", type=int, default=100)
+    a.add_argument("-w", type=int)
+    a.add_argument("-n", type=int, default=1)
+    a.add_argument("-p", type=int, default=100)
+    a.add_argument("-e")
+    a.add_argument("-v", action="store_true")
+    o = a.parse_args()
+    dev = o.e or find_event()
+    if not dev:
+        sys.exit("rgslide-rumble: no hay %s en /proc/bus/input/devices (modprobe sc27xx_vibra)" % NAME)
+    strong = max(0, min(100, o.i)) * 65535 // 100
+    weak = max(0, min(100, o.i if o.w is None else o.w)) * 65535 // 100
+    ms = max(1, min(o.d, 30000))
+    fd = os.open(dev, os.O_RDWR)
+    # struct ff_effect (48 B): type,id,direction | trigger{button,interval} | replay{length,delay} | pad | union rumble{strong,weak}
+    eff = bytearray(struct.pack("HhHHHHHH", FF_RUMBLE, -1, 0, 0, 0, ms, 0, 0) + struct.pack("HH", strong, weak))
+    eff += bytes(48 - len(eff))
+    buf = fcntl.ioctl(fd, EVIOCSFF, bytes(eff))
+    eid = struct.unpack("Hh", buf[:4])[1]
+    os.write(fd, struct.pack("llHHi", 0, 0, EV_FF, FF_GAIN, 0xFFFF))
+    if o.v:
+        print("antes:   vddvib=%s (%s, efecto id %d)" % (reg_state(), dev, eid), flush=True)
+    for k in range(o.n):
+        os.write(fd, struct.pack("llHHi", 0, 0, EV_FF, eid, 1))
+        if o.v:
+            time.sleep(min(ms, 100) / 1000.0)
+            print("durante: vddvib=%s" % reg_state(), flush=True)
+            time.sleep(max(0, ms - min(ms, 100)) / 1000.0)
+        else:
+            time.sleep(ms / 1000.0)
+        if k + 1 < o.n:
+            time.sleep(o.p / 1000.0)
+    time.sleep(0.05)
+    if o.v:
+        print("despues: vddvib=%s" % reg_state(), flush=True)
+    fcntl.ioctl(fd, EVIOCRMFF, eid)
+    os.close(fd)
+
+
+main()

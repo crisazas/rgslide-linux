@@ -2,24 +2,28 @@
 # Gobierna el ventilador de la RG Slide (pwm-fan, hwmon "pwmfan", pwm1: 0=parado, 255=maximo).
 # El kernel no lo regula: pwm-fan solo expone un cooling_device de max_state=0.
 # Uso: rgslide-fan            demonio (curva con histeresis)
-#      rgslide-fan set N|off|max   fija pwm1 una vez (N=0..255)
-#      rgslide-fan status     temperatura y pwm actuales
+#      rgslide-fan mode auto|off|max|N   cambia FAN_MODE en /etc/rgslide-fan.conf (el demonio lo lee cada ciclo)
+#      rgslide-fan set N|off|max   escribe pwm1 una vez (si el demonio esta activo lo pisa en <= PERIOD s)
+#      rgslide-fan status     modo, temperatura y pwm actuales
+# Suelo de seguridad: con tmax >= FAN_SAFE (def. 58 C) ningun modo baja del nivel que da la curva.
 import glob, os, signal, sys, time
 
-CONF = "/etc/default/rgslide-fan"
+CONF = "/etc/rgslide-fan.conf"
+CONF_OLD = "/etc/default/rgslide-fan"  # compatibilidad: solo si no existe CONF
 # (temperatura de subida en grados C, pwm); la curva baja con HYST grados de histeresis
 CURVE = [(45, 90), (52, 140), (58, 200), (64, 255)]
 HYST = 4
 PERIOD = 3
+SAFE = 58
 ZONES = ("soc-thmzone", "big7-thmzone", "big7mid4-thmzone", "mid4-thmzone", "mid5-thmzone",
          "mid6-thmzone", "gpu-thmzone", "apcpu0-thmzone", "apcpu1-thmzone", "board-thmzone")
 
 
 def load_conf():
-    global CURVE, HYST, PERIOD
+    global CURVE, HYST, PERIOD, SAFE
     mode = "auto"
     try:
-        for line in open(CONF):
+        for line in open(CONF if os.path.exists(CONF) else CONF_OLD):
             line = line.split("#")[0].strip()
             if "=" not in line:
                 continue
@@ -31,7 +35,9 @@ def load_conf():
             elif k == "FAN_HYST":
                 HYST = int(v)
             elif k == "FAN_PERIOD":
-                PERIOD = int(v)
+                PERIOD = max(1, int(v))
+            elif k == "FAN_SAFE":
+                SAFE = int(v)
     except FileNotFoundError:
         pass
     except ValueError as e:
@@ -95,7 +101,20 @@ def main():
     args = sys.argv[1:]
     if args[:1] == ["status"]:
         t = temps()
-        print("pwm1=%s max=%.1f %s" % (open(pwm).read().strip(), max(t.values()) if t else -1, t))
+        print("modo=%s pwm1=%s max=%.1f %s" % (load_conf(), open(pwm).read().strip(), max(t.values()) if t else -1, t))
+        return
+    if args[:1] == ["mode"]:
+        m = args[1] if len(args) > 1 else ""
+        if not (m in ("auto", "off", "max") or (m.isdigit() and 0 <= int(m) <= 255)):
+            sys.exit("uso: rgslide-fan mode auto|off|max|0..255")
+        lines = []
+        try:
+            lines = [l for l in open(CONF).read().splitlines() if not l.split("#")[0].strip().startswith("FAN_MODE")]
+        except FileNotFoundError:
+            pass
+        with open(CONF, "w") as f:
+            f.write("\n".join(lines + ["FAN_MODE=" + m]) + "\n")
+        print("FAN_MODE=%s en %s" % (m, CONF))
         return
     if args[:1] == ["set"]:
         v = {"off": 0, "max": 255}.get(args[1]) if len(args) > 1 else None
@@ -120,6 +139,8 @@ def main():
             new = int(mode)
         else:
             new = level_for(tmax, cur)
+        if tmax is not None and tmax >= SAFE:
+            new = max(new, level_at(tmax))
         if tmax is not None and tmax >= CURVE[-1][0]:
             new = 255
         if new != cur or last is None:
