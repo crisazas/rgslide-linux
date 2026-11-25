@@ -1,7 +1,7 @@
 # PROGRESS
 
 ## Ahora
-- Ventanas: servicios Android corren y la ventana falsa (fakewin) crea EGLSurface y hace 30 swaps con la Mali. Falta: reparto de buffers (solo uno recibe pixeles), presentar a DRM, emulador real. Servicios: scripts/android-services.sh (a mano).
+- Ventanas: fakewin da 30/30 fotogramas correctos (reparto de buffers resuelto; el blob manda fence en cada queue). Siguiente: presentar los buffers a DRM (sync_wait del fence + drmshow/ADDFB2 del dma-buf) y luego un emulador real.
 
 ## Siguiente
 - Arreglar /dev (sin devtmpfs: /dev/null 660, dbus/resolved/wpa_supplicant fallan, systemd degraded)

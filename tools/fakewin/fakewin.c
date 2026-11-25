@@ -41,7 +41,8 @@ static int W = 640, H = 480, FMT = 1;
 static uint64_t USAGE = 0;
 static wbuf_t *bufs[NBUF];
 static AHardwareBuffer *ahb[NBUF];
-static int busy[NBUF], nq = 0, nd = 0, ncall = 0;
+static int busy[NBUF], nq = 0, nd = 0, ncall = 0, next_buf = 0;
+static int qlog[64], qfence[64], dlog[64], nfence = 0;
 static int log_perform = 1;
 
 static void inc(void *b) { (void)b; }
@@ -117,17 +118,28 @@ static int alloc_all(void)
 }
 static int f_dequeue(fw_t *w, wbuf_t **b, int *fence)
 {
-	int i;
-	(void)w; nd++;
+	int i, k;
+	(void)w;
 	if (!ahb[0] && alloc_all()) return -1;
-	for (i = 0; i < NBUF; i++) if (!busy[i]) { busy[i] = 1; *b = bufs[i]; *fence = -1; return 0; }
+	for (k = 0; k < NBUF; k++) {
+		i = (next_buf + k) % NBUF;
+		if (!busy[i]) {
+			busy[i] = 1; next_buf = (i + 1) % NBUF; *b = bufs[i]; *fence = -1;
+			if (nd < 64) dlog[nd] = i;
+			nd++;
+			return 0;
+		}
+	}
 	return -1;
 }
 static int f_queue(fw_t *w, wbuf_t *b, int fence)
 {
-	int i;
-	(void)w; (void)fence; nq++;
-	for (i = 0; i < NBUF; i++) if (bufs[i] == b) busy[i] = 0;
+	int i, idx = -1;
+	(void)w;
+	for (i = 0; i < NBUF; i++) if (bufs[i] == b) { busy[i] = 0; idx = i; }
+	if (nq < 64) { qlog[nq] = idx; qfence[nq] = fence; }
+	if (fence >= 0) nfence++;
+	nq++;
 	return 0;
 }
 static int f_cancel(fw_t *w, wbuf_t *b, int fence)
@@ -202,29 +214,33 @@ int main(int argc, char **argv)
 	printf("OK: contexto con la ventana. GL_RENDERER=%s\n", glGetString(GL_RENDERER)); fflush(stdout);
 	fflush(stdout);
 	log_perform = 0;
-	for (fr = 0; fr < 30; fr++) {
-		glViewport(0, 0, W, H);
-		glClearColor((fr % 10) / 10.0f, 0.2f, 1.0f - (fr % 10) / 10.0f, 1);
-		glClear(GL_COLOR_BUFFER_BIT);
-		if (!eglSwapBuffers(dpy, surf)) { printf("FALLO eglSwapBuffers frame %d err=0x%x\n", fr, eglGetError()); return 4; }
-	}
-	glFinish();
-	printf("OK: 30 eglSwapBuffers; dequeue=%d queue=%d\n", nd, nq);
-	if (nq >= 30 && ahb[0]) {
-		int k;
-		for (k = 0; k < NBUF; k++) {
-			void *p = 0;
-			int rc = AHardwareBuffer_lock(ahb[k], AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN, -1, 0, &p);
-			if (!rc && p) {
-				unsigned char *c = p;
-				unsigned long nz = 0, tot = (unsigned long)bufs[k]->stride * bufs[k]->height * 4, j;
-				for (j = 0; j < tot; j++) if (c[j]) nz++;
-				printf("buffer %d: lock rc=%d, bytes distintos de 0: %lu de %lu; px(0,0)=%d %d %d %d; px(centro)=%d %d %d %d\n", k, rc, nz, tot,
-				       c[0], c[1], c[2], c[3], c[(H / 2 * bufs[k]->stride + W / 2) * 4], c[(H / 2 * bufs[k]->stride + W / 2) * 4 + 1],
-				       c[(H / 2 * bufs[k]->stride + W / 2) * 4 + 2], c[(H / 2 * bufs[k]->stride + W / 2) * 4 + 3]);
-				AHardwareBuffer_unlock(ahb[k], 0);
-			} else printf("buffer %d: lock rc=%d\n", k, rc);
+	{
+		int bad = 0, k, seen[NBUF] = { 0 };
+		for (fr = 0; fr < 30; fr++) {
+			float r = (fr % 10) / 10.0f, bl = 1.0f - (fr % 10) / 10.0f;
+			int q0 = nq, er, eb;
+			glViewport(0, 0, W, H);
+			glClearColor(r, 0.2f, bl, 1);
+			glClear(GL_COLOR_BUFFER_BIT);
+			if (!eglSwapBuffers(dpy, surf)) { printf("FALLO eglSwapBuffers frame %d err=0x%x\n", fr, eglGetError()); return 4; }
+			glFinish();
+			k = qlog[q0 < 64 ? q0 : 63];
+			er = (int)(r * 255.0f + 0.5f); eb = (int)(bl * 255.0f + 0.5f);
+			if (nq > q0 && k >= 0) {
+				void *p = 0;
+				if (!AHardwareBuffer_lock(ahb[k], AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN, -1, 0, &p) && p) {
+					unsigned char *c = p + ((size_t)(H / 2) * bufs[k]->stride + W / 2) * 4;
+					int ok = abs(c[0] - er) <= 1 && abs(c[1] - 51) <= 1 && abs(c[2] - eb) <= 1 && c[3] == 255;
+					seen[k]++;
+					if (!ok) { bad++; if (bad <= 6) printf("frame %2d buffer %d MAL: leido %d %d %d %d, esperado %d 51 %d 255\n", fr, k, c[0], c[1], c[2], c[3], er, eb); }
+					AHardwareBuffer_unlock(ahb[k], 0);
+				}
+			} else { bad++; if (bad <= 6) printf("frame %2d: no hubo queueBuffer (nq=%d)\n", fr, nq); }
 		}
+		printf("RESULTADO: %d/30 fotogramas correctos; dequeue=%d queue=%d fences_en_queue=%d; usos por buffer: %d %d %d\n", 30 - bad, nd, nq, nfence, seen[0], seen[1], seen[2]);
+		printf("orden de queue (buffer): ");
+		for (k = 0; k < 12 && k < nq; k++) printf("%d ", qlog[k]);
+		printf("...\n");
 	}
 	(void)i;
 	printf("FIN\n");
