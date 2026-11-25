@@ -9,6 +9,14 @@ while [ $i -lt 50 ]; do
 	cat /sys/bus/iio/devices/iio:device*/name 2>/dev/null | grep -qx sc27xx-adc && break
 	i=$((i+1)); sleep 0.2
 done
+# spi0.0 (MCU) debe existir ANTES de cargar singleadcjoy: si no, g_smd queda NULL y custom_led_setting provoca un panic en el probe.
+modprobe spi_sprd 2>/dev/null
+i=0
+while [ $i -lt 100 ]; do
+	[ -e /sys/bus/spi/devices/spi0.0 ] && break
+	i=$((i+1)); sleep 0.2
+done
+if [ ! -e /sys/bus/spi/devices/spi0.0 ]; then echo "rgslide-input-prep: spi0.0 no aparece, NO cargo singleadcjoy (evita panic)" >&2; exit 1; fi
 modprobe singleadcjoy 2>/dev/null
 i=0
 while [ $i -lt 25 ]; do
