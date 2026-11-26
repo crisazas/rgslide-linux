@@ -1,8 +1,13 @@
 #!/bin/sh
 # Lanza RetroArch desde EmulationStation y devuelve la pantalla. ES libera el contexto GL antes (la plataforma "drm" de hybris solo admite
 # un programa con la pantalla a la vez), asi que RetroArch puede abrir la suya. Uso: rgslide-es-launch NUCLEO.so ROM
+# Con python3 y hotkey-launch.py lo supervisa (combo de Ajustes, ver docs/agent-hotkey.md); si falta algo, lanza RetroArch directo como siempre.
 CORE=$1; ROM=$2
 # Frecuencia (/etc/default/rgslide-display): 120 = RetroArch a 120 Hz; 60 y auto = a 60 Hz (sin variable).
 REFRESH=$(sed -n 's/^REFRESH=//p' /etc/default/rgslide-display 2>/dev/null | tail -n 1 | tr -d "\"' ")
 case "$REFRESH" in 120) export HYBRIS_DRM_REFRESH=120;; *) unset HYBRIS_DRM_REFRESH;; esac
+SUP=/usr/local/lib/rgslide/hotkey-launch.py
+if [ -z "$RGSLIDE_NO_HOTKEY" ] && [ -r "$SUP" ] && command -v python3 >/dev/null 2>&1; then
+	exec python3 "$SUP" "$@"
+fi
 exec /usr/local/bin/rgslide-retroarch --appendconfig=/etc/retroarch-es.cfg -L "$CORE" "$ROM"

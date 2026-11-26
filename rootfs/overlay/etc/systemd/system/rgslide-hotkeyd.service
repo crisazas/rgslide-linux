@@ -1,0 +1,21 @@
+[Unit]
+Description=Atajo de Ajustes de la RG Slide (Back+Select mantenido dentro de un juego)
+After=rgslide-input.service rgslide-mdev.service
+Wants=rgslide-input.service
+
+[Service]
+Type=simple
+User=console
+Group=console
+SupplementaryGroups=input
+RuntimeDirectory=rgslide
+RuntimeDirectoryMode=0775
+RuntimeDirectoryPreserve=yes
+ExecStart=/usr/local/sbin/rgslide-hotkeyd
+Restart=on-failure
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

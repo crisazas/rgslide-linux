@@ -1,0 +1,158 @@
+#!/usr/bin/env python3
+"""rgslide-hotkeyd: detecta el combo de Ajustes en el mando (evdev) y crea /run/rgslide/settings-request.
+
+Solo LEE el evdev (nunca EVIOCGRAB): RetroArch sigue viendo el mando. Solo dispara con un juego en marcha
+(/run/rgslide/session contiene "game", lo escribe rgslide-es-launch). Config: /etc/rgslide/hotkey.conf. Ver docs/agent-hotkey.md.
+"""
+import fcntl, glob, os, re, select, struct, sys, time
+
+CONF = os.environ.get("RGSLIDE_HOTKEY_CONF", "/etc/rgslide/hotkey.conf")
+RUN = os.environ.get("RGSLIDE_RUN", "/run/rgslide")
+DEVNAME = os.environ.get("RGSLIDE_PAD_NAME", "retrogame_joypad")
+AUTOCONF = os.environ.get("RGSLIDE_AUTOCONF", "/usr/share/rgslide/autoconfig/RG_Slide.cfg")
+RACFG = os.environ.get("RGSLIDE_RACFG", "/etc/retroarch.cfg")
+EV_KEY = 1
+EVFMT = "llHHi"
+EVSZ = struct.calcsize(EVFMT)
+EVIOCGKEY = 0x80604518  # _IOR('E', 0x18, 96 bytes)
+# codigo evdev -> indice de boton de RetroArch (RG_Slide.cfg): 158 Back=20, 314 Select=10, 315 Start=11
+EV2RA = {158: 20, 314: 10, 315: 11, 304: 0, 305: 1, 307: 3, 308: 4, 310: 6, 311: 7, 312: 8, 313: 9}
+PAD_KEYS = {"a", "b", "x", "y", "start", "select", "l", "r", "l2", "r2", "l3", "r3", "up", "down", "left", "right", "enable_hotkey", "menu_toggle"}
+
+
+def log(*a):
+    print("rgslide-hotkeyd:", *a, file=sys.stderr, flush=True)
+
+
+def load_conf():
+    c = {"COMBO": "158,314", "HOLD_MS": "300"}
+    try:
+        for line in open(CONF):
+            m = re.match(r"\s*([A-Z_]+)\s*=\s*(\S+)", line)
+            if m:
+                c[m.group(1)] = m.group(2).strip("\"'")
+    except OSError as e:
+        log("sin", CONF, "(", e, ") uso valores por defecto")
+    combo = set(int(x) for x in c["COMBO"].split(",") if x.strip())
+    return combo, max(50, int(c["HOLD_MS"]))
+
+
+def check_conflicts(combo):
+    """Avisa si RetroArch ya usa un boton del combo como atajo propio (aparte de Back=hotkey/menu)."""
+    btns = {EV2RA[k] for k in combo if k in EV2RA}
+    for path in (AUTOCONF, RACFG):
+        try:
+            for line in open(path):
+                m = re.match(r'\s*input_([a-z0-9_]+)_btn\s*=\s*"?(\d+)"?', line)
+                if m and m.group(1) not in PAD_KEYS and int(m.group(2)) in btns:
+                    log("AVISO: %s usa input_%s_btn=%s, que forma parte del combo" % (path, m.group(1), m.group(2)))
+        except OSError:
+            pass
+
+
+def find_pad():
+    try:
+        txt = open("/proc/bus/input/devices").read()
+    except OSError:
+        return None
+    for blk in txt.split("\n\n"):
+        if 'Name="%s"' % DEVNAME in blk:
+            m = re.search(r"Handlers=.*?\b(event\d+)", blk)
+            if m:
+                return "/dev/input/" + m.group(1)
+    return None
+
+
+def session():
+    try:
+        return open(os.path.join(RUN, "session")).read().strip()
+    except OSError:
+        return ""
+
+
+def fire(combo):
+    if session() != "game":
+        return
+    req = os.path.join(RUN, "settings-request")
+    try:
+        tmp = req + ".tmp"
+        with open(tmp, "w") as f:
+            f.write("%d\n" % int(time.time()))
+        os.rename(tmp, req)
+        log("combo", sorted(combo), "-> peticion de Ajustes")
+    except OSError as e:
+        log("no pude escribir", req, e)
+
+
+def held_now(fd):
+    buf = bytearray(96)
+    try:
+        fcntl.ioctl(fd, EVIOCGKEY, buf, True)
+    except OSError:
+        return set()
+    return {i for i in range(96 * 8) if buf[i >> 3] & (1 << (i & 7))}
+
+
+def run_pad(path, combo, hold_ms):
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)  # sin EVIOCGRAB, a proposito
+    down = held_now(fd) & combo
+    since = time.monotonic() if down == combo else None
+    fired = False
+    log("leyendo", path, "combo", sorted(combo), "mantener", hold_ms, "ms")
+    try:
+        while True:
+            timeout = None
+            if since is not None and not fired:
+                timeout = max(0.0, since + hold_ms / 1000.0 - time.monotonic())
+            r, _, _ = select.select([fd], [], [], timeout)
+            if r:
+                try:
+                    data = os.read(fd, EVSZ * 64)
+                except BlockingIOError:
+                    continue
+                if not data:
+                    return
+                for off in range(0, len(data) - EVSZ + 1, EVSZ):
+                    _, _, typ, code, val = struct.unpack_from(EVFMT, data, off)
+                    if typ != EV_KEY or code not in combo or val == 2:
+                        continue
+                    if val:
+                        down.add(code)
+                    else:
+                        down.discard(code)
+                    if down == combo:
+                        if since is None:
+                            since, fired = time.monotonic(), False
+                    else:
+                        since, fired = None, False
+            if since is not None and not fired and time.monotonic() - since >= hold_ms / 1000.0:
+                fired = True
+                fire(combo)
+    finally:
+        os.close(fd)
+
+
+def main():
+    combo, hold_ms = load_conf()
+    check_conflicts(combo)
+    try:
+        os.makedirs(RUN, exist_ok=True)
+    except OSError as e:
+        log("no puedo crear", RUN, e)
+    while True:
+        p = find_pad()
+        if p is None:
+            time.sleep(2)
+            continue
+        try:
+            run_pad(p, combo, hold_ms)
+        except OSError as e:
+            log("lectura de", p, "fallo:", e)
+        time.sleep(1)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass
