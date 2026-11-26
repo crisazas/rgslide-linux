@@ -1,7 +1,7 @@
 # PROGRESS
 
 ## Ahora
-- Sensores: CM4 ch arranca y el acelerometro da datos (rgslide-ch.service instalado SIN habilitar). BT: hci0 UP (rgslide-bt.service SIN habilitar). Suspension enmascarada. Esperando subagente de audio; luego habilitar ch+bt y reinicio en frio con vigilante. Falta por persona: ventilador, giro, A2DP, emparejar
+- Panic de arranque apsys_dvfs (carrera del modulo de fabrica, 2 de 14 arranques; NO es de ch/bt; sin arreglar). rgslide-ch y rgslide-bt instalados y DESHABILITADOS. BT: hci0 sube con btmgmt power on; sensores: CH en frio no da datos. Por persona: ventilador, giro, A2DP, botones, atajo 20+Start
 
 ## Siguiente
 - Reflashear rootfs corregido por BROM (el overlay solo esta en la Slide por ssh)
