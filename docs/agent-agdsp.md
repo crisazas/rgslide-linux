@@ -300,3 +300,10 @@ Cómo deshacer: nada cambiado en la Slide ni en el repo salvo este fichero.
 - `bind` a mano falla siempre con `read chip id high fail -5` (EIO), tambien con la ruta del altavoz encendida, con `Speaker Function`/`Speaker1 Function`=1 y con la salida HP activa. `dump/live/dmesg-gamma-now.txt` no tiene **ninguna** traza de `ucp1301` y su modulo esta cargado con 0 usos: en Android tampoco enlaza.
 - El rail del PA externo, `DCDC_WPA` (3,398 V), esta `disabled` con `num_users=0`. Es de solo lectura en sysfs (`-r--r--r--`, tambien como root) y **ningun driver lo pide** (ni el del codec ni el del PA declaran supplies; el nodo del codec no tiene `*-supply`).
 - Sin `i2c-dev` ni `gpio-sysfs` en el kernel no se puede ni sondear el bus ni mover el reset desde userspace.
+
+## 5ad. Opcion 1 (i2c-dev + gpio-sysfs): no es un modulo, exige otro kernel (MEDIDO en las fuentes)
+
+- El kernel de la Slide trae `# CONFIG_I2C_CHARDEV is not set` y `# CONFIG_GPIO_SYSFS is not set` (config en `dump/live/config.txt`), y **no hay fuentes 5.4.233 ni `Module.symvers`/cabeceras** para compilar modulos fuera de arbol: activarlos es recompilar kernel.
+- Arboles 5.4.254 con la plataforma UMS9620 que existen: el GPL de ZTE (`dikeckaan/zte-ums9620-kernel-5.4.254`). Trae `ums9620.dtsi` y `I2C_CHARDEV`, pero **no** trae el codec `ump9620`, el PA `ucp1301` ni DTS de la placa: es de un router sin audio ni pantalla, asi que recompilar desde ahi es portar el audio entero, no activar dos opciones.
+- El arbol que si tiene la plataforma Unisoc completa con codec (`sound/soc/sprd/unisoc/codec/ump9620/...`) es el del E5 (`Enceka/linux-lts-e5`, rama `e5-6.18`, 6.18.54) y ya define `CONFIG_I2C_CHARDEV=y` en su defconfig. Su DTS `ums9620-2h10.dts` es el de placa generica, no el de la Slide.
+- Conclusion: para la opcion 1 por la via barata hace falta **traer el codec/PA a un arbol 5.4.254 y arrancarlo**, o **portar la Slide al 6.18 del E5**. Ninguna es "activar un modulo".
