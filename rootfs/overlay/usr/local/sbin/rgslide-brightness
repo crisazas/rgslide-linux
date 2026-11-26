@@ -1,0 +1,41 @@
+#!/bin/sh
+# Brillo de la RG Slide (backlight sprd_backlight, 0..255 raw). Porcentaje con suelo del 5%.
+# Uso: rgslide-brightness get|raw|max_brightness|set N|up|down|restore
+BL=/sys/class/backlight/sprd_backlight
+STATE=/var/lib/rgslide/brightness
+MIN=5
+STEP=5
+
+[ -w "$BL/brightness" ] || [ "$1" = get ] || [ "$1" = raw ] || [ "$1" = max_brightness ] || exec sudo -n "$0" "$@"
+[ -r "$BL/max_brightness" ] || { echo "sin $BL (sprd_drm cargado?)" >&2; exit 1; }
+MAX=$(cat "$BL/max_brightness")
+
+get() { echo $(( ($(cat "$BL/brightness") * 100 + MAX / 2) / MAX )); }
+
+set_pct() {
+    case "$1" in ''|*[!0-9]*) echo "porcentaje invalido: $1" >&2; exit 2;; esac
+    p=$1
+    [ "$p" -lt "$MIN" ] && p=$MIN
+    [ "$p" -gt 100 ] && p=100
+    echo $(( (p * MAX + 50) / 100 )) > "$BL/brightness" || exit 1
+    mkdir -p "$(dirname "$STATE")"
+    echo "$p" > "$STATE"
+    get
+}
+
+case "$1" in
+    get) get ;;
+    raw) cat "$BL/brightness" ;;
+    max_brightness) echo "$MAX" ;;
+    set) set_pct "$2" ;;
+    up) set_pct $(( $(get) + STEP )) ;;
+    down)
+        c=$(get)
+        [ "$c" -le $((MIN + STEP)) ] && set_pct "$MIN" || set_pct $(( c - STEP )) ;;
+    restore)
+        [ -r "$STATE" ] || exit 0
+        v=$(cat "$STATE")
+        case "$v" in ''|*[!0-9]*) exit 0;; esac
+        set_pct "$v" ;;
+    *) echo "uso: $0 get|raw|max_brightness|set N|up|down|restore" >&2; exit 2 ;;
+esac

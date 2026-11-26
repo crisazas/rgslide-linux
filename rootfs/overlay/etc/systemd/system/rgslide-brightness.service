@@ -1,0 +1,12 @@
+[Unit]
+Description=Restaura el brillo guardado de la RG Slide
+After=systemd-modules-load.service rgslide-dev.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 30); do [ -w /sys/class/backlight/sprd_backlight/brightness ] && exit 0; sleep 1; done; exit 0'
+ExecStart=/usr/local/sbin/rgslide-brightness restore
+
+[Install]
+WantedBy=multi-user.target
