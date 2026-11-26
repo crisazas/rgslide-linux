@@ -249,3 +249,9 @@ Cómo deshacer: nada cambiado en la Slide ni en el repo salvo este fichero.
 - Alineación por correlación cruzada (pico/mediana 23-60; corr. forma de onda 0,13-0,28: el camino altavoz→micro colorea mucho). SNR en banda 300-4000 Hz sobre el reposo: amp 1500 → 1-7 dB; amp 5000 → 5-12 dB; amp 14000 → 11-19 dB (a 19,4 dB, e 13,2, i 11,1, o 16,4, u 14,5). El micro capta señal de voz claramente por encima del ruido.
 - Sin persona no se puede medir inteligibilidad; el siseo del amplificador sigue sin ser medible (el micro nunca lo capta): `AMP_MUTE` lo elimina por construcción (GPIO 176 a `lo`), pero que se oiga menos es SUPUESTO hasta que lo confirme el usuario.
 - Rootfs: `/dev/sda73` ext4 rw; los 10 ficheros de audio/ventilador de la Slide son idénticos (sha256) a `rootfs/overlay/` y `audiod` coincide con el compilado del repo. El cambio sobrevivió a un reinicio en frío; solo hace falta reflashear si se regenera el rootfs desde cero.
+
+## 5w. `AMP_MUTE` sin oscilar: cierre solo tras 15 s de silencio
+
+- Problema medido: con el umbral corto (1,2 s) y la condición de cola, el relleno de ceros del propio demonio dejaba la cola en ~600-770 muestras y el mute oscilaba (43 cambios en 6 min, pitidos de relé y cortes en pausas musicales).
+- Regla actual: cierra tras `IDLE_PCM_MS` (15 s) de silencio **y** con la cola ya consumida por el DAC; abre en cuanto llega sonido (<1,2 s). MEDIDO: reposo largo = 2 cambios en 30 s; pausa de 3 s entre tonos = mute 0 durante toda la pausa; ataques completos desde la primera ventana de 50 ms.
+- El sensor de sonido no distingue el siseo del audio real (ambos superan el umbral de 64), así que con ALWAYS_ON el amplificador sigue abierto hasta 15 s tras el último sonido. Quitarlo del todo deja la estática siempre audible.

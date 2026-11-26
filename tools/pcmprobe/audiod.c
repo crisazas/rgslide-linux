@@ -28,7 +28,7 @@ static void si(struct snd_pcm_hw_params *p,int n,unsigned v){struct snd_interval
 #define IDLE_PCM_MS 15000   /* tras el ultimo sonido el PCM sigue abierto este tiempo (baja latencia en menus) */
 #define IDLE_ROUTE_MS 180000 /* y la ruta del altavoz se apaga tras este reposo total */
 #define BUFFR 24000
-#define MUTE_MS 1200        /* con AMP_MUTE=1: silencio digital seguido tras el cual se activa Speaker Mute (amplificador apagado) */
+#define MUTE_MS 1200        /* con AMP_MUTE=1: al dejar de llegar sonido se quita Speaker Mute (amplificador encendido) */
 #define SILMS IDLE_PCM_MS   /* silencio digital seguido tras el cual se cierra el PCM y se apaga el amplificador */
 #ifndef F_SETPIPE_SZ
 #define F_SETPIPE_SZ 1031
@@ -101,7 +101,7 @@ static unsigned find_numid(const char*name){
 	if(ioctl(ctl_fd,SNDRV_CTL_IOCTL_ELEM_LIST,&l)==0) for(unsigned i=0;i<l.used;i++) if(!strcmp((char*)ids[i].name,name)){r=ids[i].numid;break;}
 	free(ids); return r;
 }
-static void set_mute(int v){
+static void set_mute_now(int v){
 	if(!amp_mute||mute_state==v)return; if(ctl_open()<0)return;
 	if(!mute_numid&&!(mute_numid=find_numid("Speaker Mute")))return;
 	struct snd_ctl_elem_value ev; memset(&ev,0,sizeof ev); ev.id.numid=mute_numid; ev.value.integer.value[0]=v;
@@ -149,7 +149,7 @@ int main(int argc,char**argv)
 		}
 		if(fd<0){route("off");route_on=0;usleep(500000);continue;}
 		ring_trim(OPENKEEP); last_data=now_ms(); long lastlog=now_ms(); st_under=st_drop=st_in=st_out=0; fprintf(stderr,"audio abierto (anillo=%ld frames, %ld ms desde el primer sonido)\n",ring_frames(),now_ms()-last_sound);
-		if(amp_mute&&now_ms()-last_sound>MUTE_MS)set_mute(1);
+		if(amp_mute&&now_ms()-last_sound>IDLE_PCM_MS)set_mute_now(1);
 		while(!stop){
 			unsigned long hw; long av=avail(fd,&hw); if(av<0)break;
 			long queued=BUFFR-av;
@@ -160,11 +160,11 @@ int main(int argc,char**argv)
 				else if(queued<CH){st_under++;if(wr(fd,zero,CH)<0)break;}   /* relleno solo si el buffer esta a punto de vaciarse */
 				else usleep(4000);
 			} else usleep(4000);
-			if(amp_mute){ if(now_ms()-last_sound>MUTE_MS)set_mute(1); else set_mute(0); }   /* el PCM sigue abierto: solo se apaga/enciende el amplificador */
+			if(amp_mute){ if(now_ms()-last_sound>IDLE_PCM_MS&&BUFFR-av<CH*8)set_mute_now(1); else if(now_ms()-last_sound<MUTE_MS)set_mute_now(0); }   /* cierra tras 15 s de silencio con la cola consumida (pausas musicales no lo cierran); abre al llegar sonido */
 			if(!always_on&&now_ms()-last_sound>SILMS)break;
 			if(now_ms()-lastlog>5000){lastlog=now_ms();fprintf(stderr,"in=%ld out=%ld vaciados=%ld descartados=%ld anillo=%ld cola=%ld\n",st_in,st_out,st_under,st_drop,ring_frames(),BUFFR-av);}
 		}
-		pcm_close(fd); set_mute(0); closed_at=now_ms(); fprintf(stderr,"audio cerrado\n");
+		pcm_close(fd); set_mute_now(0); closed_at=now_ms(); fprintf(stderr,"audio cerrado\n");
 	}
 	return 0;
 }
