@@ -281,3 +281,9 @@ Cómo deshacer: nada cambiado en la Slide ni en el repo salvo este fichero.
 - Banco: reposo con `Inter PA Config`=303 y =0 alternando, 5 rondas, 2 s de espera, mismo volumen. Resultado: 19,3/19,2, 22,7/20,9, 19,3/16,9, 18,6/18,1, 21,9/25,0 (rms PA303/PA0). Sin diferencia significativa.
 - Conclusión: con el amplificador interno del codec apagado el siseo sigue igual, así que no lo mete el `Inter PA`; el ruido entra antes, en el DAC o en su referencia.
 - El DT de Android (binario `dump/boot/dtb_a.img`) resultó estar **entero a ceros** (8 MiB), así que la comparación con Android se hace por `dump/live/dmesg-gamma-now.txt`: allí el GPIO del altavoz (`hook_general_spk`, gpio 176) aparece una sola vez con `on: 0` y el módulo `snd_soc_sprd_pa_ucp1301` está cargado con **0 usos**. En Debian el control `Speaker Function` mueve exactamente ese 176 (y no el 112 del `spk-ext-pa-gpio` que citaba la investigación previa).
+
+## 5aa. ¿El siseo entra por el DAC o por el amplificador? (MEDIDO)
+
+- Banco: mezclador DAC->HP apagado (`HPL/HPR Mixer DACL/RHPL Switch`=0, el amplificador y el DAC siguen encendidos) frente a encendido, 5 rondas, 3 s de espera. Resultado (rms apagado/encendido): 12,6/14,0, 12,1/13,9, 17,6/11,8, 13,8/15,9, 14,7/15,9.
+- Con el mezclador cerrado el ruido solo baja ~1-2 rms (dentro del ruido de la medida): la mayor parte del siseo NO viene de la señal del DAC, entra en la etapa analogica (referencia/alimentacion del codec) o es del propio amplificador interno.
+- Junto con 5z (PA on/off sin diferencia), la unica via que queda es la alimentacion/referencia analogica del codec: `avdd18`, `avdd12`, `vdd28` estan siempre encendidos y sin consumidores declarados.
