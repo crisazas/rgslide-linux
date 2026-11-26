@@ -1,7 +1,7 @@
 # PROGRESS
 
 ## Ahora
-- Audio: causa del ruido del MIC = ventilador (pwm 255 -> rms 230; pwm 50 -> rms 20). Curva nueva 40:50..74:255, FAN_SAFE=68 (docs 5u). AMP_MUTE=1, Inter PA=303, vol 100%=DG20. Falta oido del usuario: estatica altavoz en reposo, ruido en reproduccion, voz por mic
+- Audio validado tras arranque en frio: tono 515 vs ~1 de reposo, mute/desmute OK, 0 panics. Causa del ruido del MIC = ventilador (curva nueva, docs 5u). AMP_MUTE=1, Inter PA=303, vol 100%=DG20. Falta solo el oido del usuario: estatica del altavoz, voz por mic. El overlay sigue sin reflashear (solo en la Slide por ssh)
 
 ## Siguiente
 - Reflashear rootfs corregido por BROM (el overlay solo esta en la Slide por ssh)
