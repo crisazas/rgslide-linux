@@ -113,6 +113,13 @@ Herramienta: `/tmp/ctl2.py` en la Slide (ioctl crudos de `/dev/snd/controlC0`; n
 - Conclusión corregida: **el DSP está vivo y accesible**. Lo que falta no es arrancarlo, sino el estado de mixer y los perfiles de audio (firmware `dsp_vbc` y compañía). `agdsp-probe.sh` (stop/start) NO hay que repetirlo.
 - Encontrado el material de Android: `odm_a` extraído de `super.img` (lpunpack) en `/tmp/opencode/odm/odm_a.img`, con `etc/audio_route.xml` (micro principal: `ADD0 DATA SEL`=`ADD0_DATA_MIC13`, `ADC_1 Mixer MIC1PGA_1 Switch`, `Mic Function`) y `etc/audio_params/sprd/{dsp_vbc,audio_structure,codec,cvs,audio_pga}.xml`. `dsp_vbc.xml` es XML (689 KB, `num_mode=0x48`, `struct_size=0x6c4`); el kernel pide un binario `dsp_vbc`, que el HAL de Android genera a partir de ese XML.
 
+## 5c. Firmware `dsp_vbc` generado y aceptado por el kernel (2026-11-26) - MEDIDO
+- Formato deducido del desensamblado de `vbc_profile_loading`/`vbc_profile_put` (`snd-soc-sprd-vbc-v4.ko`): 16 B `audio_profile`+NUL (se compara con `strncmp(...,16)`), u32 `num_mode`, u32 `struct_size`, y `num_mode*struct_size` bytes. El XML de Android (`dsp_vbc.xml`: 72 modos x 1732 B) trae cada campo con su `id` = desplazamiento absoluto; los u32 con hijos son campos de bits.
+- `tools/vbcprofile/xml2bin.py` lo genera (124704 B de datos + 24 de cabecera; cobertura exacta de los 72 modos) y `scripts/install-dsp-vbc.sh` lo instala en `/lib/firmware/dsp_vbc` de la Slide.
+- Resultado: `DSP VBC Profile Update`=1 (con `agdsp_access_en`=1) -> `vbc_profile_loading, return 0`, datos reservados, sin errores ni panic; PMU 0x544 vuelve a 00070700 al soltar el acceso.
+- SUPUESTO: el kernel no valida el contenido de los campos, solo cabecera y tamaño; si el DSP rechazara el contenido lo veriamos como `aud_send_cmd` fallido al enviar el perfil (`vbc_profile_put` -> `aud_send_block_param`), aun no probado.
+- Falta: `audio_structure` (ídem, `Audio Structure Profile Update`), el estado de mixer de `audio_route.xml` y abrir el PCM de captura con buffer <= 7680 B.
+
 ## 6. Advertencia: registros AGCP (0x56xxxxxx)
 No leer ni escribir `0x56xxxxxx` (MCDT, DMA 0x56650000, VBC 0x56510000, IRAM 0x568xxxxx) con devmem/mmap/`/dev/mem` ni con ningún truco: con el dominio sin acceso es un **abort síncrono externo → reinicio** (CITADO e5 FINDINGS §32 y §34 "Trap"; un `sprd_pcm_pointer` leyendo el DMA tumbó una Slide tras 5 h 50 min). Solo son seguros PMU APB `0x64910000` y AON APB `0x64900000` (vía debugfs regmap) y SOLO lectura. Esa regla es la que implementa `agdsp_can_access` (§2).
 
