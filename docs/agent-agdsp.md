@@ -268,3 +268,10 @@ Cómo deshacer: nada cambiado en la Slide ni en el repo salvo este fichero.
 - MEDIDO: `ap-iis0` (reloj base del I2S, 153,6 MHz de `tgpll-153m6`) tiene `enable=0` **con el PCM en `RUNNING`**, y `iis0-eb` / `audcp-iis0-eb` tambien a 0; el unico reloj de audio activo es `clk-26m-aud`. Comprobado con el demonio, con `rgslide-cap` y muestreando cada 0,5 s durante un tono.
 - El nodo `agcp/i2s@56270800` (enlazado a `sprd-dai`, `sprd,id=0x125`, `hw-port=0`) **no declara `clocks` en el DT**; el unico nodo i2s con `clocks` es `ap-ahb/i2s@0x202b0000`, que esta `status=disable`. `snd-soc-sprd-dai.ko` calcula `iis_sck` desde `src_clk` (constante 24,576 MHz en el modulo) e imprime `iis_sck`/`iis_clkd` solo con `dev_dbg`; con `dynamic_debug` activado esas trazas no salen, asi que la configuracion del reloj ocurre por otra ruta (VBC: `vbc_put_iis_master_width`).
 - `ucp1301` (amplificador I2C `6-0058`): el driver existe (`ucp1301`) pero el nodo no esta enlazado y `bind` falla con `read chip id high fail -5` (EIO), tambien con la ruta del altavoz encendida. Sin `i2c-dev` en el kernel no se puede sondear el bus desde espacio de usuario.
+
+## 5y. Reloj del I2S: el VBC lo controla y dice "no need audio top" (MEDIDO)
+
+- `snd-soc-sprd-vbc-v4.ko` controla el reloj del IIS (`vbc_put_aud_iis_clock`, controles `VBC_IIS_MASTER_ENALBE`=115, `VBC IIS Master Setting`=87 enum, `VBC_IIS_MST_SEL_0_TYPE`=116, `VBC_MUX_MST_IIS0_PORT_DO_SEL`=67) y decide si pide reloj al AP segun `sprd,need-aud-top-clk`.
+- Ese parametro NO esta declarado en ningun nodo (`vbc@56510000`, `audio-codec@56360000`, `i2s@56270800`), asi que el driver imprime `vbc_put_aud_iis_clock: No need audio top to provide da clock` y nunca habilita `ap-iis0` (sigue a 0). El I2S se queda con el reloj interno del codec/DSP.
+- Probado a mano: maestro=1 y tipo de reloj 1..4 se aceptan, pero `ap-iis0` sigue a 0 y el siseo no cambia (rms 16,5 / 17,2 con maestro 1 / 0, alternando). Es decir: el reloj del AP no es la causa del siseo con esta configuracion.
+- `ucp1301` sigue sin enlazar (`bind` -> `read chip id high fail -5`).
