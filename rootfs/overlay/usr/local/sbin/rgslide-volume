@@ -10,9 +10,10 @@ cur() { v=$(cat "$F" 2>/dev/null); case "$v" in ''|*[!0-9]*) v=20;; esac; echo "
 apply() {
 	[ -r "$CTL" ] || { echo "falta $CTL (scripts/install-audio-mic.sh)" >&2; return 1; }
 	dg=$(( $1 * 64 / 100 ))
+	was=$(python3 "$CTL" read 88 2>/dev/null | sed -n 's/.*valor (\([0-9]*\),.*/\1/p')
 	python3 "$CTL" set agdsp_access_en 1 >/dev/null 2>&1 || return 1
 	python3 "$CTL" set "VBC DAC0 DG Set" "$dg" "$dg" >/dev/null 2>&1; rc=$?
-	python3 "$CTL" set agdsp_access_en 0 >/dev/null 2>&1
+	[ "$was" = 1 ] || python3 "$CTL" set agdsp_access_en 0 >/dev/null 2>&1
 	return $rc
 }
 save() { mkdir -p "$(dirname "$F")"; echo "$1" > "$F"; }

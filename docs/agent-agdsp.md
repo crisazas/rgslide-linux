@@ -131,7 +131,8 @@ Herramienta: `/tmp/ctl2.py` en la Slide (ioctl crudos de `/dev/snd/controlC0`; n
 ## 5e. Reproducción por el altavoz: el DMA avanza (2026-11-26) - MEDIDO / SIN CONFIRMAR POR OIDO
 - Ruta (`audio_route.xml` speaker + lo medido): `S_NORMAL_AP01_P_CODEC SWITCH`=1, `ag_iis0_ext_sel_v2`=`aud_4ad_iis0_da0`, `VBC_IIS_MST_WIDTH_SET` y `VBC_IIS_TX0_WD_SEL`=`WD_16BIT` (TX0 venia en 24 bit), `DSP VBC Profile Select`=961216512, `VBC DAC0 AUD MDG Set`=4096 4096, `VBC_MUX_AP01_DSP_PLY`=`AP01_TO_DSP_ENABLE`, mixers HP (`HPL/HPR Mixer`, `HPL EAR Sel`=HPL, ganancia 1), `DA AOR Switch`, `AO Mixer AOL/AOR`, `DAC Gain`=8 8, `Speaker Function` y `Speaker1 Function`=1.
 - Con eso `hw_ptr` avanza (~4800 frames cada 100 ms) con `NO_PERIOD_WAKEUP`, buffer 96000 B, sin panic.
-- Peculiaridad MEDIDA: el primer PCM tras activar la ruta deja `hw_ptr` clavado (160-640); el segundo funciona siempre (2 de 2 en `rgslide-audio-spk test`, que hace un pase de cebado a amplitud 0). Causa sin investigar.
+- Peculiaridad MEDIDA: el primer PCM tras activar la ruta deja `hw_ptr` clavado (160-640); el segundo funciona (`rgslide-audio-spk test` hace un pase de cebado a amplitud 0).
+- Causa real de un fallo posterior (MEDIDO): `rgslide-volume apply` soltaba `agdsp_access_en` (=0) al terminar y el DMA se quedaba clavado en 160. Corregido: `apply` solo suelta el acceso si no estaba ya activo. Con eso 4 de 4 pruebas avanzan.
 - NO verificado: que suene (lo oye una persona) ni el amplificador externo (`Inter PA Config`, ucp1301): se dejo el valor por defecto.
 - Herramientas: `tools/pcmprobe/play.c` (`rgslide-play`), `rootfs/overlay/usr/local/sbin/rgslide-audio-spk on|off|test`, instalacion con `scripts/install-audio-mic.sh`.
 
