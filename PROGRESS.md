@@ -1,7 +1,7 @@
 # PROGRESS
 
 ## Ahora
-- Brillo hecho (rgslide-brightness). Sensores en frio OK (rgslide-sensorhub). Tema ES carbon instalado (aspecto sin ver). Subagentes en marcha: investigacion audio/mic, menu de control rgslide-ctl en ES. Panic apsys_dvfs: 1 arranque sin panic con el serializado, no concluyente. BT/mic/audio pendientes. Al terminar TODO: llamar al usuario (agentring)
+- Todo verificado en frio (0 panics, ES/hotkeyd/sensorhub/brillo/BT activos, wifi, 120 Hz, tema carbon, ES en ingles, atajo Select+Home validado). Audio/mic sin resolver: el HAL de Android hace la misma secuencia que nuestro start, falta el estado previo del AUDCP (docs/agent-agdsp.md). Falta llamar al usuario
 
 ## Siguiente
 - Reflashear rootfs corregido por BROM (el overlay solo esta en la Slide por ssh)
