@@ -142,6 +142,13 @@ Herramienta: `/tmp/ctl2.py` en la Slide (ioctl crudos de `/dev/snd/controlC0`; n
 - Medido: `set 30` -> DG 19 19 leido por ioctl; `up/down` de 5 en 5; `set 150` -> 100; PMU 0x544 vuelve a 00070700; 0 panics. `rgslide-ctl volume` y el deslizador de Ajustes ya lo usan; `rgslide-ctl status` muestra `Volume: 20`.
 - `rgslide-audio-spk on` aplica el volumen guardado (ya no fija DG a 10).
 
+## 5g. Audio en juegos y siseo del altavoz (2026-11-26) - MEDIDO / PERCIBIDO
+- Camino de audio: ALSA `default` (`/etc/asound.conf`, plugin `file`) -> FIFO `/run/rgslide/audio.fifo` -> `rgslide-audiod` (anillo, PCM `pcmC0D2p` de 96000 B con `NO_PERIOD_WAKEUP`, reabre si `hw_ptr` se clava, llama a `rgslide-audio-spk on/off`). `retroarch-es.cfg` usa `alsa`/`default`. Unidades `rgslide-audio` y `rgslide-audiod` habilitadas.
+- Probado con Adjustris (GB) y Thwaite (NES): el usuario oye el juego; `in`/`out` del demonio coinciden (0 descartes, 6-10 vaciados), 0 panics.
+- Siseo ("estatica") CONFIRMADO POR EL USUARIO incluso con silencio digital, mientras el amplificador esta encendido (GPIO 176 on). Aislamiento uno a uno (percepcion humana, sin instrumento): DAC Gain 1->0: igual. HPL/HPR Gain 1->0: bajo. Inter PA Config 2->1: bajo. Las dos juntas: igual. Resultado inconsistente; NO se concluyo la causa. Con el amplificador APAGADO (sin PCM abierto) no se oye siseo (prueba F: "nada").
+- Cambio hecho: `rgslide-audiod` solo abre el PCM y enciende el amplificador cuando llega audio con amplitud > 64; con 4 s de silencio digital seguido lo cierra y apaga la ruta. Asi el siseo solo suena mientras hay sonido.
+- Fallo conocido (MEDIDO en prueba F): abrir el PCM tarda ~3 s (`hw_ptr clavado, reabro`) y el demonio descarta lo anterior (`ring_trim`), asi que un sonido de ~1 s (clic de menu) se pierde. En juegos solo se pierde el primer instante.
+
 ## 6. Advertencia: registros AGCP (0x56xxxxxx)
 No leer ni escribir `0x56xxxxxx` (MCDT, DMA 0x56650000, VBC 0x56510000, IRAM 0x568xxxxx) con devmem/mmap/`/dev/mem` ni con ningún truco: con el dominio sin acceso es un **abort síncrono externo → reinicio** (CITADO e5 FINDINGS §32 y §34 "Trap"; un `sprd_pcm_pointer` leyendo el DMA tumbó una Slide tras 5 h 50 min). Solo son seguros PMU APB `0x64910000` y AON APB `0x64900000` (vía debugfs regmap) y SOLO lectura. Esa regla es la que implementa `agdsp_can_access` (§2).
 

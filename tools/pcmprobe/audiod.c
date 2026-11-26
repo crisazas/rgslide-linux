@@ -24,6 +24,7 @@ static void si(struct snd_pcm_hw_params *p,int n,unsigned v){struct snd_interval
 #define RING 48000
 #define LAT 9600
 #define BUFFR 24000
+#define SILMS 4000   /* silencio digital seguido tras el cual se cierra el PCM y se apaga el amplificador */
 #ifndef F_SETPIPE_SZ
 #define F_SETPIPE_SZ 1031
 #endif
@@ -32,14 +33,16 @@ static void onsig(int s){(void)s;stop=1;}
 static long now_ms(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);return t.tv_sec*1000L+t.tv_nsec/1000000L;}
 
 static short ring[RING*2]; static long rhead, rtail; /* en frames, crecen sin parar */
-static pthread_mutex_t mu=PTHREAD_MUTEX_INITIALIZER; static volatile long last_data;
+static pthread_mutex_t mu=PTHREAD_MUTEX_INITIALIZER; static volatile long last_data, last_sound;
 static int fifo_rd;
+static volatile long st_under, st_drop, st_in, st_out;
 static long ring_frames(void){return rtail-rhead;}
 static void ring_put(const short*b,int fr)
 {
 	pthread_mutex_lock(&mu);
 	for(int i=0;i<fr;i++){ring[(rtail%RING)*2]=b[2*i];ring[(rtail%RING)*2+1]=b[2*i+1];rtail++;}
 	if(rtail-rhead>RING)rhead=rtail-RING;
+	st_in+=fr;
 	pthread_mutex_unlock(&mu);
 }
 static int ring_get(short*b,int fr)
@@ -59,6 +62,7 @@ static void *reader(void*a)
 		if(n<=0){usleep(5000);continue;}
 		n+=carry; int fr=n/4; ring_put((short*)raw,fr); carry=n-fr*4; if(carry)memmove(raw,raw+fr*4,carry);
 		last_data=now_ms();
+		short*sp=(short*)raw; for(int i=0;i<fr*2;i++) if(sp[i]>64||sp[i]<-64){last_sound=last_data;break;}
 	}
 	return 0;
 }
@@ -90,9 +94,9 @@ int main(int argc,char**argv)
 	if(fifo_rd<0){perror("fifo");return 1;}
 	fcntl(fifo_rd,F_SETPIPE_SZ,4096);
 	pthread_t th; pthread_create(&th,0,reader,0);
-	static short buf[CH*2], zero[CH*2];
+	static short buf[CH*2], zero[CH*2]; long closed_at=0;
 	while(!stop){
-		if(ring_frames()==0){usleep(50000);continue;}
+		if(ring_frames()==0||last_sound<=closed_at){usleep(50000);if(ring_frames()>RING/2)ring_trim(LAT);continue;}   /* solo abre con sonido real: el silencio digital deja el amplificador apagado (sisa encendido) */
 		route("on");
 		int fd=-1;
 		for(int t=0;t<4&&fd<0&&!stop;t++){
@@ -100,22 +104,24 @@ int main(int argc,char**argv)
 			for(int k=0;k<3;k++)wr(f,zero,CH);
 			ioctl(f,SNDRV_PCM_IOCTL_START);
 			unsigned long h0=0,h1=0; avail(f,&h0); usleep(250000); avail(f,&h1);
-			if(h1!=h0)fd=f; else {fprintf(stderr,"hw_ptr clavado, reabro\n");pcm_close(f);}
+			if(h1!=h0)fd=f; else {fprintf(stderr,"hw_ptr clavado, reabro (intento %d)\n",t);pcm_close(f);}
 		}
 		if(fd<0){route("off");usleep(500000);continue;}
-		ring_trim(LAT); last_data=now_ms(); fprintf(stderr,"audio abierto\n");
+		ring_trim(LAT); last_data=now_ms(); last_sound=now_ms(); long lastlog=now_ms(); st_under=st_drop=st_in=st_out=0; fprintf(stderr,"audio abierto\n");
 		while(!stop){
 			unsigned long hw; long av=avail(fd,&hw); if(av<0)break;
 			long queued=BUFFR-av;
 			if(queued<TARGET&&av>=CH){
+				if(ring_frames()>LAT*3){st_drop+=ring_frames()-LAT;ring_trim(LAT);}   /* el juego va un poco mas rapido que el DAC: descarta lo viejo */
 				int n=ring_get(buf,CH);
-				if(n>0){if(wr(fd,buf,n)<0)break;}
-				else if(queued<CH){if(wr(fd,zero,CH)<0)break;}   /* relleno solo si el buffer esta a punto de vaciarse */
+				if(n>0){if(wr(fd,buf,n)<0)break;st_out+=n;}
+				else if(queued<CH){st_under++;if(wr(fd,zero,CH)<0)break;}   /* relleno solo si el buffer esta a punto de vaciarse */
 				else usleep(4000);
 			} else usleep(4000);
-			if(now_ms()-last_data>3000)break;
+			if(now_ms()-last_sound>SILMS)break;
+			if(now_ms()-lastlog>5000){lastlog=now_ms();fprintf(stderr,"in=%ld out=%ld vaciados=%ld descartados=%ld anillo=%ld cola=%ld\n",st_in,st_out,st_under,st_drop,ring_frames(),BUFFR-av);}
 		}
-		pcm_close(fd); route("off"); fprintf(stderr,"audio cerrado\n");
+		pcm_close(fd); route("off"); closed_at=now_ms(); fprintf(stderr,"audio cerrado\n");
 	}
 	return 0;
 }
