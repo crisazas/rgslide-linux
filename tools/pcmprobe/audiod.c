@@ -39,6 +39,8 @@ static long now_ms(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);ret
 static short ring[RING*2]; static long rhead, rtail; /* en frames, crecen sin parar */
 static pthread_mutex_t mu=PTHREAD_MUTEX_INITIALIZER; static volatile long last_data, last_sound;
 static int fifo_rd;
+static int always_on;   /* /etc/rgslide/audio.conf: ALWAYS_ON=1 mantiene la ruta y el PCM abiertos (sin latencia de apertura) */
+static void load_conf(void){FILE*f=fopen("/etc/rgslide/audio.conf","r");char l[128];always_on=0;if(!f)return;while(fgets(l,sizeof l,f)){if(!strncmp(l,"ALWAYS_ON=1",11))always_on=1;}fclose(f);}
 static volatile long st_under, st_drop, st_in, st_out;
 static long ring_frames(void){return rtail-rhead;}
 static void ring_put(const short*b,int fr)
@@ -94,15 +96,28 @@ static void route(const char*m){char c[96];snprintf(c,sizeof c,"/usr/local/sbin/
 int main(int argc,char**argv)
 {
 	const char*path=argc>1?argv[1]:"/run/rgslide/audio.fifo";
-	signal(SIGTERM,onsig); signal(SIGINT,onsig);
+	signal(SIGTERM,onsig); signal(SIGINT,onsig); load_conf(); fprintf(stderr,"ALWAYS_ON=%d\n",always_on);
 	mkdir("/run/rgslide",0755); umask(0); mkfifo(path,0666);
 	fifo_rd=open(path,O_RDONLY|O_NONBLOCK); int dummy=open(path,O_WRONLY|O_NONBLOCK); (void)dummy;
 	if(fifo_rd<0){perror("fifo");return 1;}
 	fcntl(fifo_rd,F_SETPIPE_SZ,4096);
 	pthread_t th; pthread_create(&th,0,reader,0);
 	static short buf[CH*2], zero[CH*2]; long closed_at=0; int route_on=0;
+	/* Cebado: la 1a apertura del PCM tras encender la ruta se atasca siempre (medido, docs 5n). Se hace aqui, una vez,
+	 * con la ruta encendida; despues la apertura real tarda ~1,3 s en vez de ~3,5 s. El amplificador solo suena mientras hay PCM abierto. */
+	{ route("on"); route_on=1;   /* (con ALWAYS_ON el bucle principal abre el PCM de inmediato y no lo cierra) */
+	  for(int t=0;t<3&&!stop;t++){
+		int f=pcm_open(); if(f<0){usleep(300000);continue;}
+		for(int k=0;k<3;k++)wr(f,zero,CH);
+		ioctl(f,SNDRV_PCM_IOCTL_START);
+		unsigned long h0=0,h1=0; avail(f,&h0); usleep(250000); avail(f,&h1);
+		pcm_close(f);
+		if(h1!=h0){fprintf(stderr,"cebado listo (intento %d)\n",t);break;}
+		fprintf(stderr,"cebado: hw_ptr clavado (intento %d)\n",t);
+	  }
+	  closed_at=now_ms(); }
 	while(!stop){
-		if(ring_frames()==0||last_sound<=closed_at){   /* la deteccion de sonido real marca last_sound en el hilo lector */
+		if(!always_on&&(ring_frames()==0||last_sound<=closed_at)){   /* la deteccion de sonido real marca last_sound en el hilo lector */
 			usleep(20000); if(ring_frames()>RING/2)ring_trim(OPENKEEP);
 			if(route_on&&now_ms()-closed_at>IDLE_ROUTE_MS){route("off");route_on=0;fprintf(stderr,"ruta apagada por reposo\n");}
 			continue;
@@ -128,7 +143,7 @@ int main(int argc,char**argv)
 				else if(queued<CH){st_under++;if(wr(fd,zero,CH)<0)break;}   /* relleno solo si el buffer esta a punto de vaciarse */
 				else usleep(4000);
 			} else usleep(4000);
-			if(now_ms()-last_sound>SILMS)break;
+			if(!always_on&&now_ms()-last_sound>SILMS)break;
 			if(now_ms()-lastlog>5000){lastlog=now_ms();fprintf(stderr,"in=%ld out=%ld vaciados=%ld descartados=%ld anillo=%ld cola=%ld\n",st_in,st_out,st_under,st_drop,ring_frames(),BUFFR-av);}
 		}
 		pcm_close(fd); closed_at=now_ms(); fprintf(stderr,"audio cerrado\n");
