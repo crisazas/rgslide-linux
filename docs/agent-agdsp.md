@@ -275,3 +275,9 @@ Cómo deshacer: nada cambiado en la Slide ni en el repo salvo este fichero.
 - Ese parametro NO esta declarado en ningun nodo (`vbc@56510000`, `audio-codec@56360000`, `i2s@56270800`), asi que el driver imprime `vbc_put_aud_iis_clock: No need audio top to provide da clock` y nunca habilita `ap-iis0` (sigue a 0). El I2S se queda con el reloj interno del codec/DSP.
 - Probado a mano: maestro=1 y tipo de reloj 1..4 se aceptan, pero `ap-iis0` sigue a 0 y el siseo no cambia (rms 16,5 / 17,2 con maestro 1 / 0, alternando). Es decir: el reloj del AP no es la causa del siseo con esta configuracion.
 - `ucp1301` sigue sin enlazar (`bind` -> `read chip id high fail -5`).
+
+## 5z. Ruido del DAC frente al del amplificador interno (MEDIDO)
+
+- Banco: reposo con `Inter PA Config`=303 y =0 alternando, 5 rondas, 2 s de espera, mismo volumen. Resultado: 19,3/19,2, 22,7/20,9, 19,3/16,9, 18,6/18,1, 21,9/25,0 (rms PA303/PA0). Sin diferencia significativa.
+- Conclusión: con el amplificador interno del codec apagado el siseo sigue igual, así que no lo mete el `Inter PA`; el ruido entra antes, en el DAC o en su referencia.
+- El DT de Android (binario `dump/boot/dtb_a.img`) resultó estar **entero a ceros** (8 MiB), así que la comparación con Android se hace por `dump/live/dmesg-gamma-now.txt`: allí el GPIO del altavoz (`hook_general_spk`, gpio 176) aparece una sola vez con `on: 0` y el módulo `snd_soc_sprd_pa_ucp1301` está cargado con **0 usos**. En Debian el control `Speaker Function` mueve exactamente ese 176 (y no el 112 del `spk-ext-pa-gpio` que citaba la investigación previa).
