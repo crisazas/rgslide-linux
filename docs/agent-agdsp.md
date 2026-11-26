@@ -14,6 +14,10 @@ Alcance: lo medido en la Slide con `scripts/agdsp-probe.sh` (`RGSLIDE_OK=1`: dd 
 ## CONCLUSIÓN
 El DSP no arranca con la receta de `start`. El mejor candidato sigue siendo `bootprotect` (AON `0x78`, bit 31 puesto por el LK) ignorando la escritura de `0x9620`, o que el bloque AUDCP no tenga alimentación/reloj raíz hasta que lo pida otro agente (Trusty/pm_sys). Ninguno de los dos está probado: las dos son hipótesis (SUPUESTO).
 
+## Contraste con otros proyectos (MEDIDO en sus DTS publicados)
+- Los DTS de Android del RG556 y del RG-Cube (gist de TheGammaSqueeze, misma T820) tienen el mismo `audiocp_boot`: `corereset 0xb88`, `sysreset 0xb98`, `sysshutdown 0x3d0`, `coreshutdown 0x3d4`, `deepsleep 0x818`, `reset_sel 0xba8`, `corestatus/sysstatus 0x544`, `bootprotect 0x78`, `bootvector 0x140`, `bootaddress_sel 0x144`. Es decir, coincide con lo que escribimos: el DT no es la causa.
+- `rg-rotate-linux` (ums512, otro SoC) sí arranca el AGDSP en mainline, pero su driver no está en `third_party` (el submódulo `vendor/` está vacío) y los registros de ums512 son otros; no se puede comparar paso a paso.
+
 ## Qué NO se hizo
 - No se leyó ni escribió ningún registro `0x56xxxxxx` (sin alimentación podría colgar el bus).
 - No se probó a quitar `bootprotect` por SMC/Trusty, ni a replicar el orden de arranque del HAL de Android (en GammaOS el primer `aud_send_cmd` con respuesta es a 14,83 s y no deja log de kernel intermedio).
