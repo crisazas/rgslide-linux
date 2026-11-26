@@ -143,3 +143,4 @@ settings=Settings
 Idioma=Language
 es=Español
 en=English
+Nombre del sistema en ES: %s (se aplica al reiniciar ES).=System name in ES: %s (applied when ES restarts).

@@ -394,7 +394,21 @@ cmd_lang() {
 			echo '</gameList>'
 		} > "$tmp"
 		if [ "$DRY" = 1 ]; then echo "[dry-run] escribiria $g:"; cat "$tmp"; rm -f "$tmp"; return 0; fi
-		cat "$tmp" > "$g"; rm -f "$tmp"; sayf "Nombres de Ajustes escritos en %s (%s)." "$g" "$LANGCODE";;
+		cat "$tmp" > "$g"; rm -f "$tmp"; sayf "Nombres de Ajustes escritos en %s (%s)." "$g" "$LANGCODE"
+		# Nombre del propio sistema en la lista de ES (<fullname> de "settings" en es_systems.cfg): ES lo lee al arrancar.
+		es=${RGSLIDE_ESCFG:-/etc/emulationstation/es_systems.cfg}
+		fn=$(tt "Ajustes" | sed 's/&/\&amp;/g;s/</\&lt;/g;s/>/\&gt;/g')
+		if [ -w "$es" ] || sudo -n true 2>/dev/null; then
+			cur=$(sed -n '/<name>settings<\/name>/,/<\/system>/s#.*<fullname>\(.*\)</fullname>.*#\1#p' "$es" | head -n 1)
+			if [ -n "$cur" ] && [ "$cur" != "$fn" ]; then
+				t2=$(mktemp); sed "/<name>settings<\/name>/,/<\/system>/s#<fullname>.*</fullname>#<fullname>$fn</fullname>#" "$es" > "$t2"
+				if grep -q "<fullname>$fn</fullname>" "$t2" && [ "$(grep -c '<system>' "$t2")" = "$(grep -c '<system>' "$es")" ]; then
+					if [ -w "$es" ]; then cat "$t2" > "$es"; else sudo -n tee "$es" < "$t2" >/dev/null; fi
+					sayf "Nombre del sistema en ES: %s (se aplica al reiniciar ES)." "$fn"
+				fi
+				rm -f "$t2"
+			fi
+		fi;;
 	*) die "lang [show|get|set auto|es|en|apply [DIR]]";;
 	esac
 }
