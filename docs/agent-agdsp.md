@@ -104,6 +104,15 @@ Seguras / solo lectura, ya hechas o repetibles sin tocar nada:
 
 Sigue sin recomendarse: repetir `stop`/`start` (borra los rings y deja al DSP esperando un init que nadie envía); si hace falta reiniciar el DSP, hacerlo **antes** de cargar `audio_sipc`/`audio_dsp_dump`/`audio_pipe` (SUPUESTO: así el init sblock llega a un DSP recién arrancado; no probado).
 
+## 5b. Prueba P3 ejecutada con autorización del usuario (2026-11-26, arranque en frío, sin start/stop, sin abrir PCM) - MEDIDO
+Herramienta: `/tmp/ctl2.py` en la Slide (ioctl crudos de `/dev/snd/controlC0`; no hay `amixer`). Resultado:
+- Tras `rgslide-audio-prep`: tarjeta `sprdphonesc2730` registrada y 2 líneas `aud_send_cmd_no_param out` (canales 3 y 4) = el DSP contestó. 0 panics, 0 `power up timeout`.
+- `agdsp_access_en`=1 (numid 88): **PMU 0x544 pasa de 00070700 a 00000000** (sys=0, core=0) y vuelve a 00070700 al soltarlo (=0). Es la prueba directa de que el handshake de acceso funciona y el dominio AUDCP se enciende. 15 pares `wake up dsp/done`, 0 timeouts.
+- `DSP VBC Profile Select` (numid 98) = 0 al leer; escribir 961216512 (0x394b0000, el valor "load-bearing" de rg-rotate-linux) llega a `vbc_profile_put` sin error, pero no genera `aud_send_cmd out`.
+- `DSP VBC Profile Update` (numid 94) lanza `vbc_profile_loading` y el kernel pide el **firmware `dsp_vbc`**, que NO está en `/lib/firmware` de la Slide: `Direct firmware load for dsp_vbc failed with error -2`.
+- Conclusión corregida: **el DSP está vivo y accesible**. Lo que falta no es arrancarlo, sino el estado de mixer y los perfiles de audio (firmware `dsp_vbc` y compañía). `agdsp-probe.sh` (stop/start) NO hay que repetirlo.
+- Encontrado el material de Android: `odm_a` extraído de `super.img` (lpunpack) en `/tmp/opencode/odm/odm_a.img`, con `etc/audio_route.xml` (micro principal: `ADD0 DATA SEL`=`ADD0_DATA_MIC13`, `ADC_1 Mixer MIC1PGA_1 Switch`, `Mic Function`) y `etc/audio_params/sprd/{dsp_vbc,audio_structure,codec,cvs,audio_pga}.xml`. `dsp_vbc.xml` es XML (689 KB, `num_mode=0x48`, `struct_size=0x6c4`); el kernel pide un binario `dsp_vbc`, que el HAL de Android genera a partir de ese XML.
+
 ## 6. Advertencia: registros AGCP (0x56xxxxxx)
 No leer ni escribir `0x56xxxxxx` (MCDT, DMA 0x56650000, VBC 0x56510000, IRAM 0x568xxxxx) con devmem/mmap/`/dev/mem` ni con ningún truco: con el dominio sin acceso es un **abort síncrono externo → reinicio** (CITADO e5 FINDINGS §32 y §34 "Trap"; un `sprd_pcm_pointer` leyendo el DMA tumbó una Slide tras 5 h 50 min). Solo son seguros PMU APB `0x64910000` y AON APB `0x64900000` (vía debugfs regmap) y SOLO lectura. Esa regla es la que implementa `agdsp_can_access` (§2).
 
