@@ -176,6 +176,10 @@ Herramienta: `/tmp/ctl2.py` en la Slide (ioctl crudos de `/dev/snd/controlC0`; n
 - Con `VBC ADC0 DG Set`=25 (Android) y la voz a 2-3 cm del agujero del borde inferior: reposo RMS 18, voz 133-1354 RMS, bandas 150-400/400-1000/1-3k Hz 20-80 veces sobre el fondo, pico 24648 sin saturar. La voz SI entra en el micro.
 - Reproducida por el altavoz (perfil modo 64, ganancia x5,3 con limitador): el usuario dice "se intuye con ruido". Es decir: captura funcional, inteligibilidad baja. SUPUESTO: el DSP no aplica el perfil de grabacion (`Music/Handsfree/Record` no existe en `dsp_vbc.xml`/`audio_structure.xml` de este ODM; el `audio_structure` sigue en modo 0, de llamada) y el altavoz pequeno a ganancia alta degrada; no aislado.
 
+## 5m. El ucp1301 no interviene: el altavoz usa el amplificador interno del codec (2026-11-26) - MEDIDO en el DT
+- `codec@1000 { hp-use-inter-pa = <1>; ... }` (`live.dts` l.3287): el altavoz va por la ruta HP del codec con `Inter PA`. El phandle del `ucp1301` (0x24a) no se referencia desde ningun dai-link ni nodo `sound@0`. Que el chip no responda por I2C (`-5`) es irrelevante para el sonido.
+- Banco de pruebas objetivo: `tools/pcmprobe/seqplay.c` (secuencias de tonos sobre un PCM abierto una vez) + `rgslide-cap` (micro) + Goertzel; respuesta altavoz->aire->micro con el perfil base: SNR 55 dB a 1 kHz, 45 dB a 2 y 5 kHz, 36 dB a 3 kHz, 32 dB a 600 Hz, **21 dB a 300 Hz**; THD 8 % a 1 kHz. (El micro y el altavoz estan pegados: es una medida relativa, no absoluta.)
+
 ## 6. Advertencia: registros AGCP (0x56xxxxxx)
 No leer ni escribir `0x56xxxxxx` (MCDT, DMA 0x56650000, VBC 0x56510000, IRAM 0x568xxxxx) con devmem/mmap/`/dev/mem` ni con ningún truco: con el dominio sin acceso es un **abort síncrono externo → reinicio** (CITADO e5 FINDINGS §32 y §34 "Trap"; un `sprd_pcm_pointer` leyendo el DMA tumbó una Slide tras 5 h 50 min). Solo son seguros PMU APB `0x64910000` y AON APB `0x64900000` (vía debugfs regmap) y SOLO lectura. Esa regla es la que implementa `agdsp_can_access` (§2).
 
