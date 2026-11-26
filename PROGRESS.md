@@ -1,7 +1,7 @@
 # PROGRESS
 
 ## Ahora
-- Audio y mic validados con medidas: voz sintetica SNR 11-19 dB (amp alta), tono 515 vs 1, ruido mic ~14 con ventilador callado (docs 5u/5v), 0 panics en frio, overlay==dispositivo (sha256) y persiste (sda73 ext4). Falta solo oido humano: estatica del altavoz y voz real
+- AUDIO PARCIAL: altavoz y juegos suenan, micro capta voz (SNR 11-19 dB), ruido del mic resuelto con la curva del ventilador. Abierto: siseo del altavoz (no es DAC, PA ni reloj; el PA externo ucp1301 no enlaza). AMP_MUTE=0. Detalle en docs/agent-agdsp.md 5ae
 
 ## Siguiente
 - Reflashear rootfs corregido por BROM (el overlay solo esta en la Slide por ssh)

@@ -307,3 +307,10 @@ Cómo deshacer: nada cambiado en la Slide ni en el repo salvo este fichero.
 - Arboles 5.4.254 con la plataforma UMS9620 que existen: el GPL de ZTE (`dikeckaan/zte-ums9620-kernel-5.4.254`). Trae `ums9620.dtsi` y `I2C_CHARDEV`, pero **no** trae el codec `ump9620`, el PA `ucp1301` ni DTS de la placa: es de un router sin audio ni pantalla, asi que recompilar desde ahi es portar el audio entero, no activar dos opciones.
 - El arbol que si tiene la plataforma Unisoc completa con codec (`sound/soc/sprd/unisoc/codec/ump9620/...`) es el del E5 (`Enceka/linux-lts-e5`, rama `e5-6.18`, 6.18.54) y ya define `CONFIG_I2C_CHARDEV=y` en su defconfig. Su DTS `ums9620-2h10.dts` es el de placa generica, no el de la Slide.
 - Conclusion: para la opcion 1 por la via barata hace falta **traer el codec/PA a un arbol 5.4.254 y arrancarlo**, o **portar la Slide al 6.18 del E5**. Ninguna es "activar un modulo".
+
+## 5ae. PARCIAL: audio y micro funcionan, el siseo queda abierto (2026-11-26)
+
+- Estado: el altavoz suena y los juegos tambien (perfil DSP modo 64), el micro capta voz (SNR 11-19 dB con el ventilador calmado) y el ruido de reposo del micro bajo de rms 230 a ~14 con la curva de ventilador nueva. El unico defecto abierto es el siseo del altavoz en reposo.
+- Descartado con medidas: ventilador, amplificador interno (PA on/off), senal del DAC (mezclador cerrado), ganancias (`HPL`, `DAC`), ruta de auricular, `Inter PA`, `CLK 26M IN SEL`, reloj del I2S y del AP (el VBC ni lo pide).
+- Via pendiente: el amplificador externo `ucp1301` no enlaza (`read chip id high fail -5`), su reset (pin 120) no lo pide nadie y su rail `DCDC_WPA` esta apagado sin consumidores. Arreglarlo exige otro kernel: el 5.4.302 de `weikaizhi4/android_kernel_ums9620` trae codec `ump9620`, PA `ucp1301` y DTS de placa `ums9620-2h10`; el 5.4.233 de la Slide no tiene fuentes publicas.
+- `AMP_MUTE` esta a 0 (amplificador siempre encendido) mientras dure la investigacion; el demonio sigue soportandolo con `AMP_MUTE=1`.
