@@ -1,0 +1,25 @@
+#!/bin/sh
+# Altavoz de la Slide: mixer de reproduccion (audio_route.xml speaker + ajustes medidos) y tono de prueba por el DSP.
+# El primer arranque del PCM tras 'on' deja hw_ptr clavado (medido); el segundo funciona, por eso 'test' hace un pase de cebado a amplitud 0.
+# Uso: rgslide-audio-spk on|off|test [segundos] [amplitud<=8000]   (el PCM usa buffer de 96000 B y NO_PERIOD_WAKEUP, no cambiarlo)
+C="python3 /usr/local/lib/rgslide/ctl.py set"
+case "${1:-on}" in
+on)
+	$C agdsp_access_en 1 >/dev/null
+	python3 /usr/local/lib/rgslide/ctl.py write 93 1 >/dev/null 2>&1; python3 /usr/local/lib/rgslide/ctl.py write 94 1 >/dev/null 2>&1
+	for a in 'S_NORMAL_AP01_P_CODEC SWITCH|1' 'ag_iis0_ext_sel_v2|aud_4ad_iis0_da0' 'VBC_IIS_MST_WIDTH_SET|WD_16BIT' \
+		'VBC_IIS_TX0_WD_SEL|WD_16BIT' 'VBC DAC0 DG Set|10 10' 'DSP VBC Profile Select|961216512' 'VBC DAC0 AUD MDG Set|4096 4096' \
+		'VBC_MUX_AP01_DSP_PLY|AP01_TO_DSP_ENABLE' 'DAC LRCLK Select|invert' 'HPL Mixer DACLHPL Switch|1' 'HPR Mixer DACRHPR Switch|1' \
+		'HPL EAR Sel|HPL' 'HPL Gain HPL Playback Volume|1' 'HPR Gain HPR Playback Volume|1' 'DA AOR Switch|1' 'AO Mixer AOL Switch|1' \
+		'AO Mixer AOR Switch|1' 'DAC Gain DAC Playback Volume|8 8' 'Speaker Function|1' 'Speaker1 Function|1'; do
+		n=${a%%|*}; v=${a#*|}; $C "$n" $v >/dev/null
+	done
+	echo "altavoz on";;
+off)
+	for a in 'Speaker1 Function|0' 'Speaker Function|0' 'HPL Mixer DACLHPL Switch|0' 'HPR Mixer DACRHPR Switch|0' 'S_NORMAL_AP01_P_CODEC SWITCH|0' 'agdsp_access_en|0'; do
+		n=${a%%|*}; v=${a#*|}; $C "$n" $v >/dev/null
+	done
+	echo "altavoz off";;
+test) "$0" on; timeout 8 /usr/local/bin/rgslide-play /dev/snd/pcmC0D2p 1 0 >/dev/null 2>&1; timeout $(( ${2:-3} + 12 )) /usr/local/bin/rgslide-play /dev/snd/pcmC0D2p "${2:-3}" "${3:-1500}" | tail -2; "$0" off;;
+*) echo "uso: $0 on|off|test [s] [amp]"; exit 2;;
+esac

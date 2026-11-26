@@ -128,6 +128,13 @@ Herramienta: `/tmp/ctl2.py` en la Slide (ioctl crudos de `/dev/snd/controlC0`; n
 - SIN CONFIRMAR POR PERSONA: que lo grabado sea la voz (el RMS de reposo coincide con ruido electrico). El micro principal es MIC13; si no se oye, probar `ADD0_DATA_MIC12` (aux_mic1) y `ADD0_DATA_MIC23`.
 - Uso: `scripts/install-audio-mic.sh` (desde el PC con el ODM montado) y `rgslide-audio-mic on|off|test [s]` en la Slide. No hay servicio ni integracion con el menu de Ajustes todavia, y el altavoz (reproduccion) no se ha probado.
 
+## 5e. Reproducción por el altavoz: el DMA avanza (2026-11-26) - MEDIDO / SIN CONFIRMAR POR OIDO
+- Ruta (`audio_route.xml` speaker + lo medido): `S_NORMAL_AP01_P_CODEC SWITCH`=1, `ag_iis0_ext_sel_v2`=`aud_4ad_iis0_da0`, `VBC_IIS_MST_WIDTH_SET` y `VBC_IIS_TX0_WD_SEL`=`WD_16BIT` (TX0 venia en 24 bit), `DSP VBC Profile Select`=961216512, `VBC DAC0 AUD MDG Set`=4096 4096, `VBC_MUX_AP01_DSP_PLY`=`AP01_TO_DSP_ENABLE`, mixers HP (`HPL/HPR Mixer`, `HPL EAR Sel`=HPL, ganancia 1), `DA AOR Switch`, `AO Mixer AOL/AOR`, `DAC Gain`=8 8, `Speaker Function` y `Speaker1 Function`=1.
+- Con eso `hw_ptr` avanza (~4800 frames cada 100 ms) con `NO_PERIOD_WAKEUP`, buffer 96000 B, sin panic.
+- Peculiaridad MEDIDA: el primer PCM tras activar la ruta deja `hw_ptr` clavado (160-640); el segundo funciona siempre (2 de 2 en `rgslide-audio-spk test`, que hace un pase de cebado a amplitud 0). Causa sin investigar.
+- NO verificado: que suene (lo oye una persona) ni el amplificador externo (`Inter PA Config`, ucp1301): se dejo el valor por defecto.
+- Herramientas: `tools/pcmprobe/play.c` (`rgslide-play`), `rootfs/overlay/usr/local/sbin/rgslide-audio-spk on|off|test`, instalacion con `scripts/install-audio-mic.sh`.
+
 ## 6. Advertencia: registros AGCP (0x56xxxxxx)
 No leer ni escribir `0x56xxxxxx` (MCDT, DMA 0x56650000, VBC 0x56510000, IRAM 0x568xxxxx) con devmem/mmap/`/dev/mem` ni con ningún truco: con el dominio sin acceso es un **abort síncrono externo → reinicio** (CITADO e5 FINDINGS §32 y §34 "Trap"; un `sprd_pcm_pointer` leyendo el DMA tumbó una Slide tras 5 h 50 min). Solo son seguros PMU APB `0x64910000` y AON APB `0x64900000` (vía debugfs regmap) y SOLO lectura. Esa regla es la que implementa `agdsp_can_access` (§2).
 
