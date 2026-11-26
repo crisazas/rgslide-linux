@@ -1,0 +1,18 @@
+#!/bin/sh
+# Lanzado en segundo plano por rgslide-bt-prep ($1 = PID principal del servicio).
+# Espera a hci0 (max 150 s), lo enciende, arranca bluetooth.service y deja Pairable/Discoverable=no. Si hci0 no sale: SIGKILL al principal (Restart=on-failure).
+MAIN=$1; i=0
+while [ $i -lt 150 ] && [ ! -e /sys/class/bluetooth/hci0 ]; do sleep 1; i=$((i+1)); done
+if [ ! -e /sys/class/bluetooth/hci0 ]; then
+    echo "rgslide-bt-up: hci0 no aparecio en 150 s; reinicio el servicio" >&2
+    kill -KILL "$MAIN"; exit 1
+fi
+echo "rgslide-bt-up: hci0 tras ${i}s"
+timeout 15 btmgmt --index 0 power on >/dev/null 2>&1
+systemctl start --no-block bluetooth.service
+i=0; while [ $i -lt 30 ] && ! timeout 5 bluetoothctl show 2>/dev/null | grep -q '^Controller'; do sleep 1; i=$((i+1)); done
+timeout 10 bluetoothctl power on >/dev/null 2>&1
+timeout 10 bluetoothctl pairable off >/dev/null 2>&1
+timeout 10 bluetoothctl discoverable off >/dev/null 2>&1
+sleep 2
+echo "rgslide-bt-up: listo ($(timeout 5 bluetoothctl show 2>/dev/null | grep -E 'Powered|Pairable|Discoverable:' | tr -d '\t' | tr '\n' ' '))"
