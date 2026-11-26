@@ -242,3 +242,10 @@ Cómo deshacer: nada cambiado en la Slide ni en el repo salvo este fichero.
 - Curva nueva (`rootfs/overlay/etc/rgslide-fan.conf`): `40:50,52:70,62:110,68:160,74:255`, `FAN_SAFE=68`. Medido: pwm 70 con carga normal mantiene el SoC en 58-62 °C (150 s); los disparos pasivos del kernel están a 70/85 °C y el crítico a 110 °C. Con curva nueva, ruido del micro rms ≈ 20 (antes 150).
 - Mientras se graba voz con carga alta el ventilador subirá y volverá a ensuciar la captura: el micro y el ventilador comparten chasis.
 - Con el ventilador a pwm 50-70, `Speaker Mute` 1/0 (6 capturas alternas): rms 14/13/11/21/14/12, sin diferencia: el micro interno sigue sin captar el siseo del amplificador (el suelo es el propio del micro, ~-60 dBFS). Tono de 1 kHz a amp 12000: ~450 frente a ~14 de reposo (≈30 dB). Las medidas de 5s/5t con el ventilador a 255 estaban contaminadas por él (explica la falta de repetibilidad 477/486/711).
+
+## 5v. Voz sintética por el micro con el ventilador callado (MEDIDO)
+
+- Banco: 5 vocales sintéticas (formantes reales, f0 120 Hz, 4 s) reproducidas por `default` mientras se captura el micro interno (pwm 50). Es altavoz→micro dentro del mismo chasis, no voz humana a 2-5 cm: sirve para el SNR, no para inteligibilidad.
+- Alineación por correlación cruzada (pico/mediana 23-60; corr. forma de onda 0,13-0,28: el camino altavoz→micro colorea mucho). SNR en banda 300-4000 Hz sobre el reposo: amp 1500 → 1-7 dB; amp 5000 → 5-12 dB; amp 14000 → 11-19 dB (a 19,4 dB, e 13,2, i 11,1, o 16,4, u 14,5). El micro capta señal de voz claramente por encima del ruido.
+- Sin persona no se puede medir inteligibilidad; el siseo del amplificador sigue sin ser medible (el micro nunca lo capta): `AMP_MUTE` lo elimina por construcción (GPIO 176 a `lo`), pero que se oiga menos es SUPUESTO hasta que lo confirme el usuario.
+- Rootfs: `/dev/sda73` ext4 rw; los 10 ficheros de audio/ventilador de la Slide son idénticos (sha256) a `rootfs/overlay/` y `audiod` coincide con el compilado del repo. El cambio sobrevivió a un reinicio en frío; solo hace falta reflashear si se regenera el rootfs desde cero.

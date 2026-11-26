@@ -1,7 +1,7 @@
 # PROGRESS
 
 ## Ahora
-- Audio validado tras arranque en frio: tono 515 vs ~1 de reposo, mute/desmute OK, 0 panics. Causa del ruido del MIC = ventilador (curva nueva, docs 5u). AMP_MUTE=1, Inter PA=303, vol 100%=DG20. Falta solo el oido del usuario: estatica del altavoz, voz por mic. El overlay sigue sin reflashear (solo en la Slide por ssh)
+- Audio y mic validados con medidas: voz sintetica SNR 11-19 dB (amp alta), tono 515 vs 1, ruido mic ~14 con ventilador callado (docs 5u/5v), 0 panics en frio, overlay==dispositivo (sha256) y persiste (sda73 ext4). Falta solo oido humano: estatica del altavoz y voz real
 
 ## Siguiente
 - Reflashear rootfs corregido por BROM (el overlay solo esta en la Slide por ssh)
