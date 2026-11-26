@@ -9,5 +9,5 @@ RemainAfterExit=yes
 ExecStart=/usr/local/sbin/rgslide-audio-prep
 
 [Install]
-# NO habilitado por defecto (push-overlay.sh no lo habilita): hasta resolver el panic de hw_params, nadie debe usar los PCM.
+# Registra la tarjeta ALSA (no abre PCM). El panic de hw_params se evita con buffers <= 96000 B (ver docs/agent-agdsp.md); lo abre rgslide-audiod.
 WantedBy=multi-user.target

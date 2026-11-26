@@ -22,7 +22,8 @@ static void si(struct snd_pcm_hw_params *p,int n,unsigned v){struct snd_interval
 #define CH 480
 #define TARGET 4800
 #define RING 48000
-#define LAT 2400
+#define LAT 9600
+#define BUFFR 24000
 #ifndef F_SETPIPE_SZ
 #define F_SETPIPE_SZ 1031
 #endif
@@ -105,10 +106,12 @@ int main(int argc,char**argv)
 		ring_trim(LAT); last_data=now_ms(); fprintf(stderr,"audio abierto\n");
 		while(!stop){
 			unsigned long hw; long av=avail(fd,&hw); if(av<0)break;
-			long queued=19200-av;
+			long queued=BUFFR-av;
 			if(queued<TARGET&&av>=CH){
 				int n=ring_get(buf,CH);
-				if(n>0){if(wr(fd,buf,n)<0)break;} else if(wr(fd,zero,CH)<0)break;
+				if(n>0){if(wr(fd,buf,n)<0)break;}
+				else if(queued<CH){if(wr(fd,zero,CH)<0)break;}   /* relleno solo si el buffer esta a punto de vaciarse */
+				else usleep(4000);
 			} else usleep(4000);
 			if(now_ms()-last_data>3000)break;
 		}
