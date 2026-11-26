@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<gameList>
+	<game>
+		<path>./delve.nds</path>
+		<name>Delve</name>
+		<desc>Juego de exploracion de mazmorras para Nintendo DS (BlocksDS). Codigo MIT; arte y musica CC0.</desc>
+		<image>~/.emulationstation/gamelists/nds/images/delve.png</image>
+		<releasedate>20250101T000000</releasedate>
+		<developer>Michal Pandyra</developer>
+		<genre>Aventura</genre>
+	</game>
+</gameList>

@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<gameList>
+	<game>
+		<path>./adjustris.gb</path>
+		<name>Adjustris</name>
+		<desc>Un Tetris en el que ajustas las piezas a una cuadricula que cambia. Software libre (CC0 1.0).</desc>
+		<image>~/.emulationstation/gamelists/gb/images/adjustris.png</image>
+		<releasedate>20210101T000000</releasedate>
+		<developer>Dave VanEe (tbsp)</developer>
+		<genre>Puzzle</genre>
+	</game>
+	<game>
+		<path>./libbet.gb</path>
+		<name>Libbet and the Magic Floor</name>
+		<desc>Libbet debe pisar las baldosas del suelo magico sin quedarse atrapado. Software libre (zlib).</desc>
+		<image>~/.emulationstation/gamelists/gb/images/libbet.png</image>
+		<releasedate>20190101T000000</releasedate>
+		<developer>Damian Yerrick</developer>
+		<genre>Puzzle</genre>
+	</game>
+	<game>
+		<path>./rgtest.gb</path>
+		<name>RG Test (prueba del proyecto)</name>
+		<desc>ROM minima de comprobacion de la RG Slide: solo comprueba que el emulador arranca.</desc>
+		<image>~/.emulationstation/gamelists/gb/images/rgtest.png</image>
+		<releasedate>20260101T000000</releasedate>
+		<developer>Proyecto rgslide</developer>
+		<genre>Prueba</genre>
+	</game>
+</gameList>

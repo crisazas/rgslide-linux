@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<gameList>
+	<game>
+		<path>./ucity.gbc</path>
+		<name>uCity</name>
+		<desc>Construye y gestiona una ciudad en tu Game Boy Color. Codigo GPL-3.0; graficos y musica CC BY-SA 4.0.</desc>
+		<image>~/.emulationstation/gamelists/gbc/images/ucity.png</image>
+		<releasedate>20180101T000000</releasedate>
+		<developer>Antonio Nino Diaz</developer>
+		<genre>Simulacion</genre>
+	</game>
+</gameList>

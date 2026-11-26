@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<gameList>
+	<game>
+		<path>./glacia.gba</path>
+		<name>Glacia Dungeon</name>
+		<desc>Explora mazmorras heladas en esta aventura hecha para la GBAJam 2022. Software libre (GPL-3.0).</desc>
+		<image>~/.emulationstation/gamelists/gba/images/glacia.png</image>
+		<releasedate>20220101T000000</releasedate>
+		<developer>NotImplementedLife</developer>
+		<genre>Aventura</genre>
+	</game>
+	<game>
+		<path>./notebook.gba</path>
+		<name>Notebook Adventure</name>
+		<desc>Plataformas dibujado sobre las hojas de un cuaderno (Retro Platform Jam #4). Software libre (GPL-3.0).</desc>
+		<image>~/.emulationstation/gamelists/gba/images/notebook.png</image>
+		<releasedate>20230101T000000</releasedate>
+		<developer>NotImplementedLife</developer>
+		<genre>Plataformas</genre>
+	</game>
+</gameList>

@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<gameList>
+	<game>
+		<path>./nova.nes</path>
+		<name>Nova the Squirrel</name>
+		<desc>Una ardilla con poderes recorre niveles de plataformas. Codigo GPL-3.0; recursos CC BY-NC-SA 4.0 (uso no comercial).</desc>
+		<image>~/.emulationstation/gamelists/nes/images/nova.png</image>
+		<releasedate>20180101T000000</releasedate>
+		<developer>NovaSquirrel</developer>
+		<genre>Plataformas</genre>
+	</game>
+	<game>
+		<path>./thwaite.nes</path>
+		<name>Thwaite</name>
+		<desc>Defiende tus ciudades de los misiles que caen, al estilo Missile Command. Software libre (GPL-3.0).</desc>
+		<image>~/.emulationstation/gamelists/nes/images/thwaite.png</image>
+		<releasedate>20110101T000000</releasedate>
+		<developer>Damian Yerrick</developer>
+		<genre>Accion</genre>
+	</game>
+</gameList>
