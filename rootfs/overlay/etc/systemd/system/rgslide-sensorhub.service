@@ -1,0 +1,13 @@
+[Unit]
+Description=Inicializa el sensorhub (lee version para poner mcu_mode=2)
+After=rgslide-cm4.service
+Wants=rgslide-cm4.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/rgslide-sensorhub-init
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target
