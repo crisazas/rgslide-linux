@@ -1,0 +1,13 @@
+# Menu de salida al cerrar ES-DE (EXIT_MODE=ui en /etc/default/rgslide-es).
+# Al pulsar B o Select+Start, rgslide-ui termina y rgslide-esde vuelve a lanzar ES-DE automaticamente.
+title ES-DE cerrado (B = volver a ES-DE)
+status rgslide-ctl status power; rgslide-ctl status wifi; rgslide-ctl status screen | head -n 1
+slider|Brillo|5|100|5|rgslide-ctl brightness get|rgslide-ctl brightness set %d
+slider|Volumen|0|100|5|rgslide-ctl volume get|rgslide-ctl volume set %d
+choice|Pantalla (al volver a ES-DE)|rgslide-ctl display get|rgslide-ctl display set %s|60,120,auto
+choice|Ventilador|rgslide-ctl fan get|rgslide-ctl fan mode %s|auto,off,max
+list|Wifi: buscar redes y conectar|rgslide-ctl wifi list|rgslide-ctl wifi connect %s %p
+run|Red e IP|rgslide-ctl net
+run|Estado completo|rgslide-ctl status all
+confirm|Reiniciar la Slide|rgslide-ctl reboot
+confirm|Apagar la Slide|rgslide-ctl poweroff

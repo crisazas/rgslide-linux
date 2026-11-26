@@ -1,0 +1,23 @@
+[Unit]
+Description=ES-DE Frontend de la RG Slide sobre la Mali por libhybris
+After=rgslide-android.service rgslide-gpu.service rgslide-input.service rgslide-clock.service
+Requires=rgslide-android.service
+Wants=rgslide-input.service rgslide-clock.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=console
+Group=console
+WorkingDirectory=/home/console
+Environment=HOME=/home/console USER=console LOGNAME=console
+ExecStart=/usr/local/bin/rgslide-esde
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

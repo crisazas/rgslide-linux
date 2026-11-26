@@ -1,5 +1,6 @@
-# Que hace rgslide-es cuando ES sale por "QUIT EMULATIONSTATION" (no por Reiniciar ES, Reiniciar sistema ni Apagar).
-# boot-menu = vuelve a la consola de rescate (rgslide-ctl) por la serie USB, sin quedarse colgado en la pantalla (por defecto).
-# restart   = reinicia rgslide-es (ES vuelve a salir solo).
-# vacio     = comportamiento anterior: el servicio termina y se queda la ultima imagen.
-EXIT_MODE=boot-menu
+# Que hace rgslide-esde cuando ES-DE sale por "Quit ES-DE".
+# ui        = abre en pantalla el menu grafico rgslide-ui (exit.menu) con el mando; al pulsar B vuelve a ES-DE (por defecto).
+# restart   = relanza ES-DE directamente sin menu intermedio.
+# boot-menu = arranca el menu de rescate por la serie USB (ttyGS0, rgslide-bootmenu.service).
+# none      = termina el servicio sin relanzar ES-DE.
+EXIT_MODE=ui

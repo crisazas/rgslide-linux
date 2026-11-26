@@ -1,0 +1,45 @@
+#!/bin/bash -l
+# Lanzador de ES-DE Frontend para la RG Slide sobre Mali por libhybris + SDL2-hybris.
+# `-l` carga /etc/profile.d/rgslide-hybris.sh (variables de hybris y LD_PRELOAD=libtlspad.so).
+# Al salir de ES-DE ("Quit ES-DE"), atiende EXIT_MODE en /etc/default/rgslide-es para no dejar la pantalla congelada:
+#   ui (defecto) = abre el menu grafico rgslide-ui (exit.menu) con el mando; al pulsar B vuelve a ES-DE.
+#   restart      = relanza ES-DE directamente.
+#   boot-menu    = arranca rgslide-bootmenu.service por la serie USB (ttyGS0).
+#   vacio        = termina el servicio.
+export SDL_VIDEODRIVER=hybris
+export LD_LIBRARY_PATH="/opt/es-de/lib:/usr/local/lib/aarch64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+while true; do
+    REFRESH=$(sed -n 's/^REFRESH=//p' /etc/default/rgslide-display 2>/dev/null | tail -n 1 | tr -d "\"' ")
+    case "$REFRESH" in
+        120|auto) export HYBRIS_DRM_REFRESH=120 ;;
+        *) unset HYBRIS_DRM_REFRESH ;;
+    esac
+
+    mkdir -p /run/rgslide 2>/dev/null && echo menu >/run/rgslide/session 2>/dev/null || true
+    /opt/es-de/bin/es-de "$@"
+    ret=$?
+
+    EXIT_MODE=$(sed -n 's/^EXIT_MODE=//p' /etc/default/rgslide-es 2>/dev/null | tail -n 1 | tr -d "\"' ")
+    [ -n "$EXIT_MODE" ] || EXIT_MODE=ui
+    case "$EXIT_MODE" in
+        ui)
+            if [ -x /usr/local/bin/rgslide-ui ] && [ -r /usr/share/rgslide/ui/exit.menu ]; then
+                echo panel >/run/rgslide/session 2>/dev/null || true
+                unset HYBRIS_DRM_REFRESH
+                /usr/local/bin/rgslide-ui /usr/share/rgslide/ui/exit.menu || true
+                continue
+            fi
+            continue ;;
+        restart)
+            continue ;;
+        boot-menu)
+            sudo -n systemctl start --no-block rgslide-bootmenu.service 2>/dev/null || true
+            break ;;
+        none)
+            break ;;
+        *)
+            continue ;;
+    esac
+done
+exit "$ret"

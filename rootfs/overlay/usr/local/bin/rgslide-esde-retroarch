@@ -1,0 +1,21 @@
+#!/bin/sh
+# Wrapper de RetroArch invocado por ES-DE (es_find_rules.xml).
+# ES-DE compila con DEINIT_ON_LAUNCH=ON, por lo que libera DRM master antes de llamar aqui.
+# Si llega como `-L NUCLEO ROM`, delega en rgslide-es-launch (que usa hotkey-launch.py para el panel Back+Select).
+if [ "$1" = "-L" ] && [ -n "${2:-}" ] && [ -n "${3:-}" ] && [ -x /usr/local/bin/rgslide-es-launch ]; then
+    exec /usr/local/bin/rgslide-es-launch "$2" "$3"
+fi
+
+REFRESH=$(sed -n 's/^REFRESH=//p' /etc/default/rgslide-display 2>/dev/null | tail -n 1 | tr -d "\"' ")
+case "$REFRESH" in
+    120) export HYBRIS_DRM_REFRESH=120 ;;
+    *) unset HYBRIS_DRM_REFRESH ;;
+esac
+
+if [ -x /usr/local/bin/rgslide-retroarch ]; then
+    if [ -r /etc/retroarch-es.cfg ]; then
+        exec /usr/local/bin/rgslide-retroarch --appendconfig=/etc/retroarch-es.cfg "$@"
+    fi
+    exec /usr/local/bin/rgslide-retroarch "$@"
+fi
+exec retroarch "$@"
