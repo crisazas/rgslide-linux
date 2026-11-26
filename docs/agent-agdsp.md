@@ -135,6 +135,11 @@ Herramienta: `/tmp/ctl2.py` en la Slide (ioctl crudos de `/dev/snd/controlC0`; n
 - NO verificado: que suene (lo oye una persona) ni el amplificador externo (`Inter PA Config`, ucp1301): se dejo el valor por defecto.
 - Herramientas: `tools/pcmprobe/play.c` (`rgslide-play`), `rootfs/overlay/usr/local/sbin/rgslide-audio-spk on|off|test`, instalacion con `scripts/install-audio-mic.sh`.
 
+## 5f. Volumen (2026-11-26) - MEDIDO
+- `rgslide-volume get|set N|up|down|apply` (0-100 %) guarda el valor en `/var/lib/rgslide/volume` y lo aplica a `VBC DAC0 DG Set` (0-127) como `N*64/100` (tope de prudencia, SUPUESTO: sin medir SPL). Sube `agdsp_access_en` solo mientras escribe (el dominio dormido da abort).
+- Medido: `set 30` -> DG 19 19 leido por ioctl; `up/down` de 5 en 5; `set 150` -> 100; PMU 0x544 vuelve a 00070700; 0 panics. `rgslide-ctl volume` y el deslizador de Ajustes ya lo usan; `rgslide-ctl status` muestra `Volume: 20`.
+- `rgslide-audio-spk on` aplica el volumen guardado (ya no fija DG a 10).
+
 ## 6. Advertencia: registros AGCP (0x56xxxxxx)
 No leer ni escribir `0x56xxxxxx` (MCDT, DMA 0x56650000, VBC 0x56510000, IRAM 0x568xxxxx) con devmem/mmap/`/dev/mem` ni con ningún truco: con el dominio sin acceso es un **abort síncrono externo → reinicio** (CITADO e5 FINDINGS §32 y §34 "Trap"; un `sprd_pcm_pointer` leyendo el DMA tumbó una Slide tras 5 h 50 min). Solo son seguros PMU APB `0x64910000` y AON APB `0x64900000` (vía debugfs regmap) y SOLO lectura. Esa regla es la que implementa `agdsp_can_access` (§2).
 
