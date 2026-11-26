@@ -1,7 +1,8 @@
 #!/bin/sh
 # Volumen de la Slide: 0-100 %. Se guarda en /var/lib/rgslide/volume y se aplica a "VBC DAC0 DG Set" (0-127) del DSP de audio.
 # Uso: rgslide-volume get|set N|up|down|apply        (apply = reescribe el valor guardado; lo llama rgslide-audio-spk on)
-# El 100 % equivale a DG=64 (la mitad del rango): tope de prudencia, el altavoz no se ha medido con SPL (SUPUESTO).
+# DG es una ATENUACION (MEDIDO: amplitud captada 1049 con DG=3, 130 con DG=25, 9 con DG=64; ~0,7 dB/paso). Android usa DG=25 para musica por altavoz.
+# Mapa: 100 % -> DG=20 (algo mas fuerte que Android), 0 % -> DG=64 (casi mudo). dg = 64 - N*44/100.
 # Escribir en el VBC con el dominio AUDCP dormido puede dar abort: se sube agdsp_access_en solo mientras se escribe.
 F=/var/lib/rgslide/volume
 CTL=/usr/local/lib/rgslide/ctl.py
@@ -9,7 +10,7 @@ CTL=/usr/local/lib/rgslide/ctl.py
 cur() { v=$(cat "$F" 2>/dev/null); case "$v" in ''|*[!0-9]*) v=20;; esac; echo "$v"; }
 apply() {
 	[ -r "$CTL" ] || { echo "falta $CTL (scripts/install-audio-mic.sh)" >&2; return 1; }
-	dg=$(( $1 * 64 / 100 ))
+	dg=$(( 64 - $1 * 44 / 100 ))
 	/usr/local/sbin/rgslide-agdsp-access get vol || return 1
 	python3 "$CTL" set "VBC DAC0 DG Set" "$dg" "$dg" >/dev/null 2>&1; rc=$?
 	/usr/local/sbin/rgslide-agdsp-access put vol

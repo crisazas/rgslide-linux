@@ -28,6 +28,7 @@ static void si(struct snd_pcm_hw_params *p,int n,unsigned v){struct snd_interval
 #define IDLE_PCM_MS 15000   /* tras el ultimo sonido el PCM sigue abierto este tiempo (baja latencia en menus) */
 #define IDLE_ROUTE_MS 180000 /* y la ruta del altavoz se apaga tras este reposo total */
 #define BUFFR 24000
+#define MUTE_MS 1200        /* con AMP_MUTE=1: silencio digital seguido tras el cual se activa Speaker Mute (amplificador apagado) */
 #define SILMS IDLE_PCM_MS   /* silencio digital seguido tras el cual se cierra el PCM y se apaga el amplificador */
 #ifndef F_SETPIPE_SZ
 #define F_SETPIPE_SZ 1031
@@ -39,8 +40,9 @@ static long now_ms(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);ret
 static short ring[RING*2]; static long rhead, rtail; /* en frames, crecen sin parar */
 static pthread_mutex_t mu=PTHREAD_MUTEX_INITIALIZER; static volatile long last_data, last_sound;
 static int fifo_rd;
-static int always_on;   /* /etc/rgslide/audio.conf: ALWAYS_ON=1 mantiene la ruta y el PCM abiertos (sin latencia de apertura) */
-static void load_conf(void){FILE*f=fopen("/etc/rgslide/audio.conf","r");char l[128];always_on=0;if(!f)return;while(fgets(l,sizeof l,f)){if(!strncmp(l,"ALWAYS_ON=1",11))always_on=1;}fclose(f);}
+static int always_on, amp_mute;   /* AMP_MUTE=1: con silencio digital se activa "Speaker Mute" (apaga el amplificador, GPIO 176) y se quita al llegar sonido */
+static int mute_state=0, ctl_fd=-1; static unsigned mute_numid;   /* /etc/rgslide/audio.conf: ALWAYS_ON=1 mantiene la ruta y el PCM abiertos (sin latencia de apertura) */
+static void load_conf(void){FILE*f=fopen("/etc/rgslide/audio.conf","r");char l[128];always_on=0;if(!f)return;while(fgets(l,sizeof l,f)){if(!strncmp(l,"ALWAYS_ON=1",11))always_on=1; if(!strncmp(l,"AMP_MUTE=1",10))amp_mute=1;}fclose(f);}
 static volatile long st_under, st_drop, st_in, st_out;
 static long ring_frames(void){return rtail-rhead;}
 static void ring_put(const short*b,int fr)
@@ -91,6 +93,20 @@ static int pcm_open(void)
 static void pcm_close(int fd){ioctl(fd,SNDRV_PCM_IOCTL_DROP);ioctl(fd,SNDRV_PCM_IOCTL_HW_FREE);close(fd);}
 static long avail(int fd,unsigned long*hw){struct snd_pcm_status st;memset(&st,0,sizeof st);if(ioctl(fd,SNDRV_PCM_IOCTL_STATUS,&st)<0)return -1;if(hw)*hw=st.hw_ptr;return (long)st.avail;}
 static int wr(int fd,short*b,int frames){struct snd_xferi x={.buf=b,.frames=frames};return ioctl(fd,SNDRV_PCM_IOCTL_WRITEI_FRAMES,&x);}
+static int ctl_open(void){ if(ctl_fd>=0)return 0; ctl_fd=open("/dev/snd/controlC0",O_RDWR); return ctl_fd<0?-1:0; }
+static unsigned find_numid(const char*name){
+	struct snd_ctl_elem_list l; memset(&l,0,sizeof l); if(ioctl(ctl_fd,SNDRV_CTL_IOCTL_ELEM_LIST,&l)<0)return 0;
+	unsigned tot=l.count; struct snd_ctl_elem_id*ids=calloc(tot,sizeof *ids); if(!ids)return 0;
+	memset(&l,0,sizeof l); l.space=tot; l.pids=ids; unsigned r=0;
+	if(ioctl(ctl_fd,SNDRV_CTL_IOCTL_ELEM_LIST,&l)==0) for(unsigned i=0;i<l.used;i++) if(!strcmp((char*)ids[i].name,name)){r=ids[i].numid;break;}
+	free(ids); return r;
+}
+static void set_mute(int v){
+	if(!amp_mute||mute_state==v)return; if(ctl_open()<0)return;
+	if(!mute_numid&&!(mute_numid=find_numid("Speaker Mute")))return;
+	struct snd_ctl_elem_value ev; memset(&ev,0,sizeof ev); ev.id.numid=mute_numid; ev.value.integer.value[0]=v;
+	if(ioctl(ctl_fd,SNDRV_CTL_IOCTL_ELEM_WRITE,&ev)==0){mute_state=v;fprintf(stderr,"Speaker Mute=%d\n",v);}
+}
 static void route(const char*m){char c[96];snprintf(c,sizeof c,"/usr/local/sbin/rgslide-audio-spk %s >/dev/null 2>&1",m);if(system(c)){}}
 
 int main(int argc,char**argv)
@@ -133,6 +149,7 @@ int main(int argc,char**argv)
 		}
 		if(fd<0){route("off");route_on=0;usleep(500000);continue;}
 		ring_trim(OPENKEEP); last_data=now_ms(); long lastlog=now_ms(); st_under=st_drop=st_in=st_out=0; fprintf(stderr,"audio abierto (anillo=%ld frames, %ld ms desde el primer sonido)\n",ring_frames(),now_ms()-last_sound);
+		if(amp_mute&&now_ms()-last_sound>MUTE_MS)set_mute(1);
 		while(!stop){
 			unsigned long hw; long av=avail(fd,&hw); if(av<0)break;
 			long queued=BUFFR-av;
@@ -143,10 +160,11 @@ int main(int argc,char**argv)
 				else if(queued<CH){st_under++;if(wr(fd,zero,CH)<0)break;}   /* relleno solo si el buffer esta a punto de vaciarse */
 				else usleep(4000);
 			} else usleep(4000);
+			if(amp_mute){ if(now_ms()-last_sound>MUTE_MS)set_mute(1); else set_mute(0); }   /* el PCM sigue abierto: solo se apaga/enciende el amplificador */
 			if(!always_on&&now_ms()-last_sound>SILMS)break;
 			if(now_ms()-lastlog>5000){lastlog=now_ms();fprintf(stderr,"in=%ld out=%ld vaciados=%ld descartados=%ld anillo=%ld cola=%ld\n",st_in,st_out,st_under,st_drop,ring_frames(),BUFFR-av);}
 		}
-		pcm_close(fd); closed_at=now_ms(); fprintf(stderr,"audio cerrado\n");
+		pcm_close(fd); set_mute(0); closed_at=now_ms(); fprintf(stderr,"audio cerrado\n");
 	}
 	return 0;
 }

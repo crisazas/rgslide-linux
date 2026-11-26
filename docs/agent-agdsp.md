@@ -209,3 +209,11 @@ No leer ni escribir `0x56xxxxxx` (MCDT, DMA 0x56650000, VBC 0x56510000, IRAM 0x5
 | causa de "hw_ptr no avanza" | no está en el arranque del DSP; ver e5: DSP perfiles, `VBC DAC0 DG Set`, period timer | CITADO |
 
 Cómo deshacer: nada cambiado en la Slide ni en el repo salvo este fichero.
+
+## 5q. Siseo en reposo: `Speaker Mute` como interruptor del amplificador, y `VBC DAC0 DG` es una atenuación
+
+- HAL (`audio.primary.whale.so`, REA/Ghidra): `codec_mute_all_pa_off(mute)` = `Virt Output Switch`=1 + 4× `set_mute_control` (Speaker/Speaker2/HeadPhone/Earpiece Mute); al desmutear, al revés. `get_ucp1301_type` falla siempre (el chip I2C `6-0058` no responde). MEDIDO.
+- `Speaker Mute`=1 pone GPIO 176 a `lo` (amplificador apagado) en ~40 ms y =0 lo devuelve a `hi`; el PCM sigue abierto y el 1.er tono tras desmutear suena completo desde la 1.ª ventana de 50 ms (200 vs 5 de reposo, 3 repeticiones). MEDIDO.
+- `rgslide-audiod` con `AMP_MUTE=1` (`/etc/rgslide/audio.conf`) activa el mute tras 1,2 s de silencio digital y lo quita al llegar sonido. Que el siseo desaparezca a oído: SUPUESTO hasta que el usuario lo confirme (el micro interno no lo capta).
+- `VBC DAC0 DG Set` es ATENUACIÓN: amplitud 1049 con DG=3, 130 con DG=25, 9 con DG=64 (MEDIDO). `rgslide-volume` ahora mapea 100 % -> DG=20 y 0 % -> DG=64 (antes 100 % era DG=64, casi mudo). Android usa DG=25.
+- El THD medido con el micro pegado al altavoz no sirve (92-137 % en todo): no usarlo para juzgar distorsión.

@@ -1,7 +1,7 @@
 # PROGRESS
 
 ## Ahora
-- Audio: mic captura por DSP y altavoz mueve el DMA (rgslide-audio-mic/spk/volume); falta que el usuario confirme a oido el tono y que el mic oye su voz. Volumen en Ajustes OK. Resto verificado en frio, 0 panics. Siguiente: llamar al usuario
+- Audio: AMP_MUTE=1 instalado (amplificador apagado en silencio, MEDIDO); falta que el usuario confirme que se fue la estatica. Volumen 100%=DG20 (antes DG64, casi mudo). Mic: voz entra, sin confirmar a oido
 
 ## Siguiente
 - Reflashear rootfs corregido por BROM (el overlay solo esta en la Slide por ssh)
