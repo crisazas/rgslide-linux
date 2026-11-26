@@ -133,7 +133,8 @@ Herramienta: `/tmp/ctl2.py` en la Slide (ioctl crudos de `/dev/snd/controlC0`; n
 - Con eso `hw_ptr` avanza (~4800 frames cada 100 ms) con `NO_PERIOD_WAKEUP`, buffer 96000 B, sin panic.
 - Peculiaridad MEDIDA: el primer PCM tras activar la ruta deja `hw_ptr` clavado (160-640); el segundo funciona (`rgslide-audio-spk test` hace un pase de cebado a amplitud 0).
 - Causa real de un fallo posterior (MEDIDO): `rgslide-volume apply` soltaba `agdsp_access_en` (=0) al terminar y el DMA se quedaba clavado en 160. Corregido: `apply` solo suelta el acceso si no estaba ya activo. Con eso 4 de 4 pruebas avanzan.
-- NO verificado: que suene (lo oye una persona) ni el amplificador externo (`Inter PA Config`, ucp1301): se dejo el valor por defecto.
+- CONFIRMADO POR EL USUARIO (2026-11-26): con la ruta de abajo **se oye el tono de 440 Hz** por el altavoz. Antes, con `DAC Gain`=0 y sin `HP Virt Switch`, solo se oian chasquidos breves (el amplificador se encendia, `hook_general_spk gpio 176 on:1`, pero no pasaba senal). Lo que cambio: `HP Virt Switch`=1 (esta en la ruta `speaker` de Android) y `DAC Gain DAC Playback Volume`=1 1 (rango 0-2; Android no lo toca). No se aisló cual de los dos lo arregla (SUPUESTO: HP Virt).
+- Sin tocar: `Inter PA Config` (2 por defecto), `HPL/HPR Gain`=1.
 - Herramientas: `tools/pcmprobe/play.c` (`rgslide-play`), `rootfs/overlay/usr/local/sbin/rgslide-audio-spk on|off|test`, instalacion con `scripts/install-audio-mic.sh`.
 
 ## 5f. Volumen (2026-11-26) - MEDIDO

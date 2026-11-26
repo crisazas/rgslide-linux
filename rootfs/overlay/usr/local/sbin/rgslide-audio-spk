@@ -11,13 +11,13 @@ on)
 		'VBC_IIS_TX0_WD_SEL|WD_16BIT' 'DSP VBC Profile Select|961216512' 'VBC DAC0 AUD MDG Set|4096 4096' \
 		'VBC_MUX_AP01_DSP_PLY|AP01_TO_DSP_ENABLE' 'DAC LRCLK Select|invert' 'HPL Mixer DACLHPL Switch|1' 'HPR Mixer DACRHPR Switch|1' \
 		'HPL EAR Sel|HPL' 'HPL Gain HPL Playback Volume|1' 'HPR Gain HPR Playback Volume|1' 'DA AOR Switch|1' 'AO Mixer AOL Switch|1' \
-		'AO Mixer AOR Switch|1' 'DAC Gain DAC Playback Volume|8 8' 'Speaker Function|1' 'Speaker1 Function|1'; do
+		'AO Mixer AOR Switch|1' 'HP Virt Switch|1' 'DAC Gain DAC Playback Volume|1 1' 'Speaker Function|1' 'Speaker1 Function|1'; do
 		n=${a%%|*}; v=${a#*|}; $C "$n" $v >/dev/null
 	done
 	/usr/local/sbin/rgslide-volume apply >/dev/null 2>&1
 	echo "altavoz on";;
 off)
-	for a in 'Speaker1 Function|0' 'Speaker Function|0' 'HPL Mixer DACLHPL Switch|0' 'HPR Mixer DACRHPR Switch|0' 'S_NORMAL_AP01_P_CODEC SWITCH|0' 'agdsp_access_en|0'; do
+	for a in 'Speaker1 Function|0' 'Speaker Function|0' 'HP Virt Switch|0' 'HPL Mixer DACLHPL Switch|0' 'HPR Mixer DACRHPR Switch|0' 'S_NORMAL_AP01_P_CODEC SWITCH|0' 'agdsp_access_en|0'; do
 		n=${a%%|*}; v=${a#*|}; $C "$n" $v >/dev/null
 	done
 	echo "altavoz off";;
