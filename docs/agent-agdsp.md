@@ -120,6 +120,14 @@ Herramienta: `/tmp/ctl2.py` en la Slide (ioctl crudos de `/dev/snd/controlC0`; n
 - SUPUESTO: el kernel no valida el contenido de los campos, solo cabecera y tamaño; si el DSP rechazara el contenido lo veriamos como `aud_send_cmd` fallido al enviar el perfil (`vbc_profile_put` -> `aud_send_block_param`), aun no probado.
 - Falta: `audio_structure` (ídem, `Audio Structure Profile Update`), el estado de mixer de `audio_route.xml` y abrir el PCM de captura con buffer <= 7680 B.
 
+## 5d. Captura del micrófono funcionando por el DSP (2026-11-26) - MEDIDO
+- Recorrido: `rgslide-audio-prep` -> `agdsp_access_en`=1 -> `DSP VBC Profile Update` y `Audio Structure Profile Update` (firmware generado con `xml2bin.py`) -> mixer de `audio_route.xml` (main_mic: `ADD0 DATA SEL`=`ADD0_DATA_MIC13`, `ADC_1 Mixer MIC1PGA_1`, `Mic Function`, mas `S_CAPTURE_DSP_CODEC SWITCH`, `ag_iis1_ext_sel_v2`=`aud_4ad_iis0_ad0`, `VBC_MUX_ADC0_IIS_PORT_SEL`=`VBC_IIS_PORT_IIS1`, `VBC ADC0 DG Set`=17 17, `ADC LRCLK Select`=invert, ganancia 6) -> `FE_ST_CAPTURE_DSP` (`pcmC0D4c`), mono S16_LE 48 kHz, buffer 7680 B.
+- El DSP contesta a los comandos de captura (`aud_send_cmd out` cmd 4, 6, 5 con `ret-value:0`).
+- Con `NO_PERIOD_WAKEUP` el DMA avanza (`hw_ptr` +4800 B cada 100 ms) y `cap` lee por `STATUS` en vez de bloquear en `READI`. Sin ese flag no llegan las IRQ de periodo y `READI` da EIO o se cuelga (rc=124): mismo comportamiento que el HAL de Android (`PCM_NOIRQ`).
+- Medido en 20 s con alguien hablando y dando palmadas: reposo RMS ~31; 11 de 200 ventanas de 100 ms > 5x el reposo; pico RMS 338, pico absoluto 2154; DC -30. 0 panics. PMU 0x544 baja a 0 durante la captura y vuelve a 00070700.
+- SIN CONFIRMAR POR PERSONA: que lo grabado sea la voz (el RMS de reposo coincide con ruido electrico). El micro principal es MIC13; si no se oye, probar `ADD0_DATA_MIC12` (aux_mic1) y `ADD0_DATA_MIC23`.
+- Uso: `scripts/install-audio-mic.sh` (desde el PC con el ODM montado) y `rgslide-audio-mic on|off|test [s]` en la Slide. No hay servicio ni integracion con el menu de Ajustes todavia, y el altavoz (reproduccion) no se ha probado.
+
 ## 6. Advertencia: registros AGCP (0x56xxxxxx)
 No leer ni escribir `0x56xxxxxx` (MCDT, DMA 0x56650000, VBC 0x56510000, IRAM 0x568xxxxx) con devmem/mmap/`/dev/mem` ni con ningún truco: con el dominio sin acceso es un **abort síncrono externo → reinicio** (CITADO e5 FINDINGS §32 y §34 "Trap"; un `sprd_pcm_pointer` leyendo el DMA tumbó una Slide tras 5 h 50 min). Solo son seguros PMU APB `0x64910000` y AON APB `0x64900000` (vía debugfs regmap) y SOLO lectura. Esa regla es la que implementa `agdsp_can_access` (§2).
 
