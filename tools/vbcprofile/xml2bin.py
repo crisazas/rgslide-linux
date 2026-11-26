@@ -4,7 +4,7 @@ Formato (medido en vbc_profile_loading/vbc_profile_put del .ko): 16 B 'audio_pro
 Cada campo del XML lleva `id` = desplazamiento absoluto en los datos; los u32 con hijos son campos de bits (offset, bits, val)."""
 import struct, sys, xml.etree.ElementTree as ET
 
-SIZES = {"u32": 4}
+SIZES = {"u32": 4, "u16": 2, "u8": 1}
 def size_of(t):
     if t in SIZES: return SIZES[t]
     if t.startswith("t"): return int(t[1:]) // 8
@@ -28,11 +28,10 @@ def main(src, dst):
                 for k in kids:
                     o = int(k.get("offset")); b = int(k.get("bits")); val = int(k.get("val"), 16)
                     v |= (val & ((1 << b) - 1)) << o
-                data[off:off + 4] = struct.pack("<I", v)
+                data[off:off + n] = (v & ((1 << (8 * n)) - 1)).to_bytes(n, "little")
             else:
-                val = int(c.get("val", "0x0"), 16)
-                if n <= 4: data[off:off + n] = val.to_bytes(n, "little")
-                elif val: data[off:off + n] = val.to_bytes(n, "little")
+                val = int(c.get("val", "0x0"), 16) & ((1 << (8 * n)) - 1)
+                if val: data[off:off + n] = val.to_bytes(n, "little")
             covered += n
     if modes != num_mode: raise SystemExit("modos %d != num_mode %d" % (modes, num_mode))
     if covered != len(data): raise SystemExit("cobertura %d != %d" % (covered, len(data)))
