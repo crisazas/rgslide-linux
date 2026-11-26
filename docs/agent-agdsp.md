@@ -287,3 +287,9 @@ Cómo deshacer: nada cambiado en la Slide ni en el repo salvo este fichero.
 - Banco: mezclador DAC->HP apagado (`HPL/HPR Mixer DACL/RHPL Switch`=0, el amplificador y el DAC siguen encendidos) frente a encendido, 5 rondas, 3 s de espera. Resultado (rms apagado/encendido): 12,6/14,0, 12,1/13,9, 17,6/11,8, 13,8/15,9, 14,7/15,9.
 - Con el mezclador cerrado el ruido solo baja ~1-2 rms (dentro del ruido de la medida): la mayor parte del siseo NO viene de la señal del DAC, entra en la etapa analogica (referencia/alimentacion del codec) o es del propio amplificador interno.
 - Junto con 5z (PA on/off sin diferencia), la unica via que queda es la alimentacion/referencia analogica del codec: `avdd18`, `avdd12`, `vdd28` estan siempre encendidos y sin consumidores declarados.
+
+## 5ab. Alimentacion del codec: DCDC_WPA apagado y sin usuarios (MEDIDO)
+
+- `ump9620_regulator` si esta cargado (12 usos) y expone `avdd18` (1,805 V), `avdd12` (1,2 V), `vdd28` (2,8 V) y `DCDC_WPA` (3,398 V). Los tres primeros estan encendidos con 1 usuario cada uno; **`DCDC_WPA` esta `disabled` con `num_users=0`**, tambien con la ruta del altavoz encendida y el PCM en `RUNNING`.
+- `DCDC_WPA` es el rail del amplificador externo: Android declara `spk-ext-pa-gpio` y el nodo `ucp1301` (que aqui no responde por I2C) y carga ese mismo modulo. En el DT vivo de Debian el nodo del codec (`audio-codec@56360000`) **no declara ningun `*-supply`**, asi que nada pide ese rail.
+- Otros candidatos descartados en la misma tanda: `CLK 26M IN SEL` (0/1, rms 17,3/15,3, sin cambio) y el selector de reloj del I2S. El siseo se mantiene en 12-20 rms con ventilador a pwm 50.
