@@ -1,7 +1,7 @@
 # PROGRESS
 
 ## Ahora
-- Todo verificado en frio (0 panics, ES/hotkeyd/sensorhub/brillo/BT activos, wifi, 120 Hz, tema carbon, ES en ingles, atajo Select+Home validado). Audio/mic sin resolver: el HAL de Android hace la misma secuencia que nuestro start, falta el estado previo del AUDCP (docs/agent-agdsp.md). Falta llamar al usuario
+- Audio: mic captura por DSP y altavoz mueve el DMA (rgslide-audio-mic/spk/volume); falta que el usuario confirme a oido el tono y que el mic oye su voz. Volumen en Ajustes OK. Resto verificado en frio, 0 panics. Siguiente: llamar al usuario
 
 ## Siguiente
 - Reflashear rootfs corregido por BROM (el overlay solo esta en la Slide por ssh)
@@ -11,6 +11,7 @@
 - Regla: ningun binario glibc que llame a GL por hybris puede tener PT_TLS (-DDT_NO_POOL en RetroArch)
 - PENDIENTE: decodificador de video por hardware (vpu.ko/jpg.ko, ioctls propios de Unisoc, ver docs/video-decoder.md). No afecta a la emulacion (medido: ningun nucleo ni retroarch enlaza libav*); solo previsualizaciones de ES. No cargar vpu/jpg sin arranque estable.
 - Habilitar rgslide-ch y rgslide-bt y probarlos en frio (hecho: instalados sin habilitar; ver docs/agent-sensors.md y docs/agent-bt.md)
+- Audio en juegos: RetroArch usa alsa por defecto y el PCM solo avanza con NO_PERIOD_WAKEUP y buffer<=96000 B; hace falta plugin ALSA o driver propio (no probado, riesgo de panic). ES tiene audio null
 
 ## No olvidar
 - Subagentes no commitean. Dump/out no se versionan.
