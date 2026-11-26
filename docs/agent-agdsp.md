@@ -180,6 +180,10 @@ Herramienta: `/tmp/ctl2.py` en la Slide (ioctl crudos de `/dev/snd/controlC0`; n
 - `codec@1000 { hp-use-inter-pa = <1>; ... }` (`live.dts` l.3287): el altavoz va por la ruta HP del codec con `Inter PA`. El phandle del `ucp1301` (0x24a) no se referencia desde ningun dai-link ni nodo `sound@0`. Que el chip no responda por I2C (`-5`) es irrelevante para el sonido.
 - Banco de pruebas objetivo: `tools/pcmprobe/seqplay.c` (secuencias de tonos sobre un PCM abierto una vez) + `rgslide-cap` (micro) + Goertzel; respuesta altavoz->aire->micro con el perfil base: SNR 55 dB a 1 kHz, 45 dB a 2 y 5 kHz, 36 dB a 3 kHz, 32 dB a 600 Hz, **21 dB a 300 Hz**; THD 8 % a 1 kHz. (El micro y el altavoz estan pegados: es una medida relativa, no absoluta.)
 
+## 5n. PELIGRO medido: DROP+PREPARE sin cerrar el PCM cuelga la Slide (2026-11-26)
+- `tools/pcmprobe/openprobe.c` modo 1 (si `hw_ptr` se atasca tras `START`, hacer `SNDRV_PCM_IOCTL_DROP` + `PREPARE` sin cerrar el fd) **reinicio la Slide entera** (cuelgue sin panic en `pstore`; salio solo, 139 s de uptime despues; todos los servicios volvieron). NO repetir. Recuperar un PCM atascado se hace SOLO cerrando (`DROP` + `HW_FREE` + `close`) y reabriendo, que es lo que ya hace `rgslide-audiod`.
+- La primera apertura del PCM tras `rgslide-audio-spk on` se atasca siempre (3 de 3; con espera de 0, 4 y 10 s tras el `on`: da igual) y la segunda arranca: el kernel registra lo mismo en las dos (solo cambian direcciones). Causa sin resolver; la mitigacion (cebar con una apertura de amplitud 0) funciona.
+
 ## 6. Advertencia: registros AGCP (0x56xxxxxx)
 No leer ni escribir `0x56xxxxxx` (MCDT, DMA 0x56650000, VBC 0x56510000, IRAM 0x568xxxxx) con devmem/mmap/`/dev/mem` ni con ningún truco: con el dominio sin acceso es un **abort síncrono externo → reinicio** (CITADO e5 FINDINGS §32 y §34 "Trap"; un `sprd_pcm_pointer` leyendo el DMA tumbó una Slide tras 5 h 50 min). Solo son seguros PMU APB `0x64910000` y AON APB `0x64900000` (vía debugfs regmap) y SOLO lectura. Esa regla es la que implementa `agdsp_can_access` (§2).
 
