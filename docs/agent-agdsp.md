@@ -1,36 +1,51 @@
-# AGDSP: arranque del DSP de audio — conclusión (2026-11-26) — SIN RESOLVER
+# AGDSP: qué hacen start/stop, qué es PMU 0x544 y si el DSP corre (2026-11-26)
 
-Alcance: lo medido en la Slide con `scripts/agdsp-probe.sh` (`RGSLIDE_OK=1`: dd + stop + start, sin abrir ningún PCM) y el análisis estático de `docs/agent-audio.md`. 0 panics.
+Etiquetas: **MEDIDO** (en el PC o leído de la Slide sin tocar nada), **CITADO** (fuente externa), **SUPUESTO** (inferencia).
+Alcance: estático en el PC + lecturas de `ssh` (journal, `/proc/interrupts`, `/dev`). No se escribió nada en la Slide. Desensamblados en `/tmp/opencode/aud/{ab.s,aa.s,sipc.s,dd.s}` (`aarch64-linux-gnu-objdump -dr` sobre `dump/live/dlkm/*.ko`).
 
-## MEDIDO
-- La tarjeta `sprdphonesc2730` se registra y `/sys/devices/platform/audiocp_boot/start` devuelve rc=0.
-- Tras `start` cambia AON `0x140` (bootvector): las escrituras llegan al bloque AON.
-- **No cambian**: PMU `0x544` (`00070700`, sys=7 core=7) ni AON `0x78` (`80009620`).
-- **No aparece** ninguna línea `aud_send_cmd` ni `wait dsp` en dmesg tras `start`.
-- Los relojes `audcp-*` siguen en enable_count 0.
-- `start_store` ignora el retorno de `regmap_update_bits_base`: rc=0 no prueba nada.
-- El `Failed to open channel 0,dst=0,rval=-19` sale por diseño (dst 0 = AP) y no indica DSP parado.
+## 1. `stop_store` y `start_store` (sprd_audcp_boot.ko @0x6d0 / @0x810) - MEDIDO
 
-## CONCLUSIÓN
-El DSP no arranca con la receta de `start`. El mejor candidato sigue siendo `bootprotect` (AON `0x78`, bit 31 puesto por el LK) ignorando la escritura de `0x9620`, o que el bloque AUDCP no tenga alimentación/reloj raíz hasta que lo pida otro agente (Trusty/pm_sys). Ninguno de los dos está probado: las dos son hipótesis (SUPUESTO).
+`regmap_update_bits_base(map, reg, mask, val, ...)`: `w2`=mask, `w3`=val. `mvn w3,w2` = **limpiar** los bits de la máscara; `mov w3,w2` = **poner** los bits. Ningún retorno se comprueba y no hay esperas.
 
-## Contraste con otros proyectos (MEDIDO en sus DTS publicados)
-- Los DTS de Android del RG556 y del RG-Cube (gist de TheGammaSqueeze, misma T820) tienen el mismo `audiocp_boot`: `corereset 0xb88`, `sysreset 0xb98`, `sysshutdown 0x3d0`, `coreshutdown 0x3d4`, `deepsleep 0x818`, `reset_sel 0xba8`, `corestatus/sysstatus 0x544`, `bootprotect 0x78`, `bootvector 0x140`, `bootaddress_sel 0x144`. Es decir, coincide con lo que escribimos: el DT no es la causa.
-- `rg-rotate-linux` (ums512, otro SoC) sí arranca el AGDSP en mainline, pero su driver no está en `third_party` (el submódulo `vendor/` está vacío) y los registros de ums512 son otros; no se puede comparar paso a paso.
+Campos (orden de `.rodata+0x660`, struct: regmap en `+0..+88`, reg en `+240..`, máscara en `+300..`) y DT vivo (`audiocp_boot`, syscon 0x04 = PMU APB `0x64910000`, 0x02 = AON APB `0x64900000`):
 
-## Cronología en GammaOS (MEDIDO, `dump/live/dmesg-gamma-now.txt`)
-- 9,48 s arranca `vendor.audio-hal`; 9,63 s `aud_pipe_open`; 9,71 s arranca `vendor.modem_control` (carga `pm_sys`, el CM4); 10,07 s `modem_control modem run = 1`; 10,41 s primeros `aud_send_msg` (`dst=1`, canal 4).
-- Entre el HAL y el primer mensaje no hay ningún log de kernel del `start`; el único dato intermedio es el `Skip verify chain_partition[l_agdsp]` de Trusty a 10,07 s mientras verifica `pm_sys`.
-- No se puede decir si el DSP exige que el CM4 esté ya corriendo (SUPUESTO). En la Slide el CM4 sí corre (`mcu_mode=2`), y aun así `start` no mueve `0x544`.
+| campo | syscon / reg | máscara | significado |
+|---|---|---|---|
+| sysshutdown | PMU 0x3d0 | 0x2000000 (b25) | apagado automático del sistema AUDCP |
+| coreshutdown | PMU 0x3d4 | 0x2000000 (b25) | idem del core DSP |
+| deepsleep | PMU 0x818 | 0x8 (b3) | deep sleep forzado de AGCP |
+| corereset | PMU 0xb88 | 0x1 | reset del core DSP |
+| sysreset | PMU 0xb98 | 0x400000 | reset del sistema AUDCP |
+| reset_sel | PMU 0xba8 | 0xffffffff | selector de reset (por software) |
+| sysstatus / corestatus | PMU 0x544 | 0x1f00 / 0x1f0000 | estado de potencia (solo lectura) |
+| sleepstatus | PMU 0x860 | 0xf000 | estado de sueño |
+| bootprotect | AON 0x78 | 0xffff | **clave** de arranque, no un bit |
+| bootvector | AON 0x140 | 0xffffffff | vector de arranque |
+| bootaddress_sel | AON 0x144 | 0x1 | selecciona el vector anterior |
 
-## Qué NO se hizo
-- No se leyó ni escribió ningún registro `0x56xxxxxx` (sin alimentación podría colgar el bus).
-- No se probó a quitar `bootprotect` por SMC/Trusty, ni a replicar el orden de arranque del HAL de Android (en GammaOS el primer `aud_send_cmd` con respuesta es a 14,83 s y no deja log de kernel intermedio).
-- No se abrió PCM de reproducción ni de captura.
+Fuera de `audiocp_boot`, de `agdsp-access`: PMU 0x850 b3 (`audcp_pmu_sleep_ctrl`) y AON 0x14c b5 (`ap_access_ena`).
 
-## Consecuencia
-Sin DSP no hay reproducción ni captura: **audio y micrófono quedan sin funcionar**. El micrófono interno tampoco está identificado (faltan `audio_route.xml`/`audio_params` del Android).
+**stop_store** (offset de `agdsp_store` a 0), en orden:
+1. reset_sel &= ~0xffffffff (→ 0)
+2. corereset limpiar; 3. sysreset limpiar (pulso bajo)
+4. deepsleep poner; 5. sysshutdown poner; 6. coreshutdown poner
+7. corereset poner; 8. sysreset poner
 
-## Siguiente paso (con alguien delante, riesgo medio)
-1. Trazar en Android (stock, si se vuelve a poder) qué escribe el HAL/Trusty antes del primer `aud_send_cmd`: SMC a Trusty o escrituras a `0x78`.
-2. Solo entonces repetir `agdsp-probe.sh` con ese paso previo. Parar ante cualquier `Unable to handle kernel`.
+Estado final = DSP **parado y en reset**. Cuadra con lo medido tras stop: 3d0=03010103 (b25), 3d4=03010301, 818=0001002c (b3), b88=1, b98=0x400000, ba8=0.
+
+**start_store**, en orden:
+- `memset_io` a 0 de: IRAM AON `0x65006400` (solo si `dsp-reboot-mode`=0), ring smsg `0xaf980400` y params `0xaf980000`.
+1. reset_sel → 0
+2. corereset poner; 3. sysreset poner
+4. sysshutdown limpiar; 5. coreshutdown limpiar; 6. deepsleep limpiar
+7. bootprotect: `AON 0x78[15:0] = 0x9620`
+8. (solo si modo=0) bootvector: `AON 0x140 = (0xafa00000 + 0x80) >> 1 = 0x57d00040`
+9. bootaddress_sel poner (`AON 0x144 |= 1`)
+10. corereset **limpiar**; 11. sysreset **limpiar** (se sueltan al final)
+
+El propio probe imprime `dsp reboot by DDR!`: no hay propiedad `dsp-reboot-mode` → modo 0 → pasos 8 y la memset de IRAM sí se ejecutan.
+
+**Respuesta a la pregunta 1**: `start` es la secuencia inversa de `stop` (suelta apagado, deep sleep y, al final, los dos resets), y deja los registros iguales a los de antes del stop. **No deja el reset asertado**; sobre el papel el DSP queda corriendo. Verificación con la medida de hoy:
+- tras start: 3d0=01010103, 3d4=01010301, 818=00010024, b88=0, b98=0, ba8=0 (el LK dejaba ffbfffff; el driver escribe 0) - MEDIDO.
+- **AON 0x140 = 0x57d00040 = (0xafa00000+0x80)>>1** exacto - MEDIDO. Es la prueba de que `start_store` se ejecutó entero y de que la escritura en AON **sí surte efecto**.
+- AON 0x78 queda `0x80009620`: los 16 bits bajos ya valían 0x9620 (clave que el LK ya había puesto) y el bit 31 no está en la máscara (ver §3).
