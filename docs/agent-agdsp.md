@@ -255,3 +255,9 @@ Cómo deshacer: nada cambiado en la Slide ni en el repo salvo este fichero.
 - Problema medido: con el umbral corto (1,2 s) y la condición de cola, el relleno de ceros del propio demonio dejaba la cola en ~600-770 muestras y el mute oscilaba (43 cambios en 6 min, pitidos de relé y cortes en pausas musicales).
 - Regla actual: cierra tras `IDLE_PCM_MS` (15 s) de silencio **y** con la cola ya consumida por el DAC; abre en cuanto llega sonido (<1,2 s). MEDIDO: reposo largo = 2 cambios en 30 s; pausa de 3 s entre tonos = mute 0 durante toda la pausa; ataques completos desde la primera ventana de 50 ms.
 - El sensor de sonido no distingue el siseo del audio real (ambos superan el umbral de 64), así que con ALWAYS_ON el amplificador sigue abierto hasta 15 s tras el último sonido. Quitarlo del todo deja la estática siempre audible.
+
+## 5w. `AMP_MUTE` sin oscilar: cierre solo tras 15 s de silencio
+
+- Problema medido: con el umbral corto (1,2 s) y la condicion de cola, el relleno de ceros del propio demonio dejaba la cola en ~600-770 muestras y el mute oscilaba (43 cambios en 6 min: pitidos de rele y cortes en pausas musicales).
+- Regla actual: cierra tras `IDLE_PCM_MS` (15 s) de silencio **y** con la cola ya consumida por el DAC; abre en cuanto llega sonido (<1,2 s). MEDIDO: reposo largo = 2 cambios en 30 s; pausa de 3 s entre tonos = mute 0 durante toda la pausa; ataques completos desde la primera ventana de 50 ms.
+- El sensor de sonido no distingue el siseo del audio real (ambos superan el umbral de 64), asi que con ALWAYS_ON el amplificador sigue abierto hasta 15 s tras el ultimo sonido. Quitarlo del todo deja la estatica siempre audible.
