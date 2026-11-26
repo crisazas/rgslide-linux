@@ -1,5 +1,5 @@
 [Unit]
-Description=Atajo de Ajustes de la RG Slide (L3+R3 mantenido dentro de un juego)
+Description=Atajo de Ajustes de la RG Slide (Select+Home mantenido dentro de un juego)
 After=rgslide-input.service rgslide-mdev.service
 Wants=rgslide-input.service
 
