@@ -1,7 +1,7 @@
 # PROGRESS
 
 ## Ahora
-- Panic de arranque apsys_dvfs (carrera del modulo de fabrica, 2 de 14 arranques; NO es de ch/bt; sin arreglar). rgslide-ch y rgslide-bt instalados y DESHABILITADOS. BT: hci0 sube con btmgmt power on; sensores: CH en frio no da datos. Por persona: ventilador, giro, A2DP, botones, atajo 20+Start
+- Brillo hecho (rgslide-brightness). Sensores en frio OK (rgslide-sensorhub). Tema ES carbon instalado (aspecto sin ver). Subagentes en marcha: investigacion audio/mic, menu de control rgslide-ctl en ES. Panic apsys_dvfs: 1 arranque sin panic con el serializado, no concluyente. BT/mic/audio pendientes. Al terminar TODO: llamar al usuario (agentring)
 
 ## Siguiente
 - Reflashear rootfs corregido por BROM (el overlay solo esta en la Slide por ssh)
