@@ -1,6 +1,7 @@
 /* rgslide-ui: menus de ajustes con el mando para la RG Slide (SDL2 driver hybris + GLES2, sin teclado).
  * Uso: rgslide-ui FICHERO.menu              menu declarativo (ver docs/agent-control.md)
  *      rgslide-ui --view TITULO CMD [SEG]   ejecuta CMD y muestra su salida (se repite cada SEG s si se da)
+ * Idioma es|en: ver lang.h (los textos de los .menu son claves en espanol que se traducen con tr()).
  * Mando: hat/stick = mover, A = aceptar, B = volver, X = refrescar/espacio, Y = capas del teclado, L/R = pagina, Select+Start = salir. */
 #include <SDL.h>
 #include <SDL_opengles2.h>
@@ -14,6 +15,7 @@
 #include <unistd.h>
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "stb_truetype.h"
+#include "lang.h"
 
 #define SW 1280
 #define SH 960
@@ -270,7 +272,7 @@ static void load_menu(const char *path)
 	while (fgets(line, sizeof line, fp)) {
 		line[strcspn(line, "\r\n")] = 0;
 		if (!*line || *line == '#') continue;
-		if (!strncmp(line, "title ", 6)) { title = xstrdup(line + 6); continue; }
+		if (!strncmp(line, "title ", 6)) { title = xstrdup(tr(line + 6)); continue; }
 		if (!strncmp(line, "status ", 7)) { statcmd = xstrdup(line + 7); continue; }
 		char *f[8], *cp = xstrdup(line);
 		int n = split(cp, f, 8);
@@ -283,6 +285,7 @@ static void load_menu(const char *path)
 			it.type = T_CHOICE; it.label = f[1]; it.get = f[2]; it.set = f[3];
 			for (char *o = strtok(f[4], ","); o; o = strtok(0, ",")) { it.opt = realloc(it.opt, (it.nopt + 1) * sizeof *it.opt); it.opt[it.nopt++] = o; }
 		} else { fprintf(stderr, "rgslide-ui: linea ignorada: %s\n", line); continue; }
+		it.label = (char *)tr(it.label);
 		items = realloc(items, (nitems + 1) * sizeof *items);
 		items[nitems++] = it;
 	}
@@ -428,7 +431,7 @@ static void draw_status(int *y)
 	rect(20, *y, SW - 40, lines * 34 + 16, C_BOX);
 	char *cp = xstrdup(stat_text), *s = cp;
 	int row = 0;
-	if (!*cp) text(&fn, 36, *y + 8, "Leyendo estado...", C_DIM, 64);
+	if (!*cp) text(&fn, 36, *y + 8, tr("Leyendo estado..."), C_DIM, 64);
 	while (*s && row < lines) {
 		char *e = strchr(s, '\n'); if (e) *e = 0;
 		text(&fn, 36, *y + 8 + row * 34, s, C_OK, 64);
@@ -455,11 +458,11 @@ static void draw_menu(void)
 			rect(640, yy + 17, 400, 16, C_BOX); rect(640, yy + 17, 400 * frac, 16, i == sel ? C_OK : C_DIM);
 			char b[16]; snprintf(b, sizeof b, "%d", it->val); text(&fn, 1060, yy + 9, b, C_TXT, 6);
 		} else if (it->type == T_CHOICE && it->nopt) {
-			char b[96]; snprintf(b, sizeof b, "< %s >", it->opt[it->cur]); text(&fn, 640, yy + 9, b, i == sel ? C_OK : C_DIM, 30);
+			char b[96]; snprintf(b, sizeof b, "< %s >", tr(it->opt[it->cur])); text(&fn, 640, yy + 9, b, i == sel ? C_OK : C_DIM, 30);
 		} else if (it->type == T_LIST) text(&fn, 1180, yy + 9, ">", C_DIM, 2);
 	}
 	Item *it = nitems ? &items[sel] : 0;
-	footer(it && (it->type == T_SLIDER || it->type == T_CHOICE) ? "Izq/Der: cambiar    B: salir" : "A: aceptar    B: salir");
+	footer(tr(it && (it->type == T_SLIDER || it->type == T_CHOICE) ? "Izq/Der: cambiar    B: salir" : "A: aceptar    B: salir"));
 }
 
 static void draw_view(void)
@@ -487,17 +490,17 @@ static void draw_view(void)
 	free(w); free(wl); free(cp);
 	static const char *spin[] = {"|", "/", "-", "\\"};
 	char h[128];
-	snprintf(h, sizeof h, "%s  Arriba/Abajo: desplazar   L/R: pagina   Y: repetir   A/B: volver", jmain.active ? spin[(SDL_GetTicks() / 150) % 4] : " ");
+	snprintf(h, sizeof h, "%s  %s", jmain.active ? spin[(SDL_GetTicks() / 150) % 4] : " ", tr("Arriba/Abajo: desplazar   L/R: pagina   Y: repetir   A/B: volver"));
 	footer(h);
-	if (jmain.active && !*vtext) text(&fn, 30, 100, "Ejecutando...", C_WARN, 30);
+	if (jmain.active && !*vtext) text(&fn, 30, 100, tr("Ejecutando..."), C_WARN, 30);
 }
 
 static void draw_pick(void)
 {
 	bar(pl_title);
 	int rows = (SH - 84 - 48 - 16) / 52;
-	if (pl_loading) text(&fn, 40, 110, "Buscando...", C_WARN, 30);
-	else if (!pl_n) text(&fn, 40, 110, "(sin resultados)", C_DIM, 30);
+	if (pl_loading) text(&fn, 40, 110, tr("Buscando..."), C_WARN, 30);
+	else if (!pl_n) text(&fn, 40, 110, tr("(sin resultados)"), C_DIM, 30);
 	if (pl_sel < pl_top) pl_top = pl_sel;
 	if (pl_sel >= pl_top + rows) pl_top = pl_sel - rows + 1;
 	for (int i = pl_top; i < pl_n && i < pl_top + rows; i++) {
@@ -505,7 +508,7 @@ static void draw_pick(void)
 		if (i == pl_sel) rect(20, yy, SW - 40, 48, C_SEL);
 		text(&fn, 40, yy + 8, pl_lab[i], C_TXT, 66);
 	}
-	footer("Arriba/Abajo: elegir   A: aceptar   X: buscar de nuevo   B: volver");
+	footer(tr("Arriba/Abajo: elegir   A: aceptar   X: buscar de nuevo   B: volver"));
 }
 
 static void draw_osk(void)
@@ -525,9 +528,10 @@ static void draw_osk(void)
 	for (int c = 0; c < 4; c++) {
 		float x = x0 + c * 270, y = y0 + 4 * ch + 10;
 		rect(x + 4, y + 4, 262, ch - 8, osk_r == 4 && osk_c == c ? C_SEL : C_BOX);
-		text(&fn, x + 131 - (int)strlen(OSKACT[c]) * fn.adv / 2, y + 30, OSKACT[c], C_TXT, 12);
+		const char *oa = tr(OSKACT[c]);
+		text(&fn, x + 131 - lang_cols(oa) * fn.adv / 2, y + 30, oa, C_TXT, 12);
 	}
-	footer("A: escribir   B: borrar   X: espacio   Y: mayus/simbolos");
+	footer(tr("A: escribir   B: borrar   X: espacio   Y: mayus/simbolos"));
 }
 
 static void draw_confirm(void)
@@ -536,8 +540,8 @@ static void draw_confirm(void)
 	rect(0, 0, SW, SH, (float[]){0, 0, 0, 0.6f});
 	rect(240, 330, 800, 260, C_BAR);
 	text(&fb, 280, 360, items[sel].label, C_TXT, 36);
-	text(&fn, 280, 450, "Seguro?", C_WARN, 20);
-	text(&fn, 280, 520, "A: si, continuar        B: no, volver", C_TXT, 50);
+	text(&fn, 280, 450, tr("Seguro?"), C_WARN, 20);
+	text(&fn, 280, 520, tr("A: si, continuar        B: no, volver"), C_TXT, 50);
 }
 
 static void render(void)
@@ -562,7 +566,7 @@ static void tick(void)
 	if (job_poll(&jmain)) {
 		if (mode == M_VIEW) {
 			vtext = xstrdup(jmain.buf);
-			if (WIFEXITED(jmain.status) && WEXITSTATUS(jmain.status)) { char b[64]; snprintf(b, sizeof b, "\n[codigo de salida %d]\n", WEXITSTATUS(jmain.status)); vtext = realloc(vtext, strlen(vtext) + strlen(b) + 1); strcat(vtext, b); }
+			if (WIFEXITED(jmain.status) && WEXITSTATUS(jmain.status)) { char b[96], c[64]; snprintf(c, sizeof c, tr("[codigo de salida %d]"), WEXITSTATUS(jmain.status)); snprintf(b, sizeof b, "\n%s\n", c); vtext = realloc(vtext, strlen(vtext) + strlen(b) + 1); strcat(vtext, b); }
 			vwas_running = 0; vnext = now + vrefresh * 1000;
 		} else if (mode == M_PICK) { pl_loading = 0; pick_parse(jmain.buf); }
 	}
@@ -584,6 +588,7 @@ static void tick(void)
 
 int main(int argc, char **argv)
 {
+	lang_init();
 	if (argc < 2) { fprintf(stderr, "uso: rgslide-ui FICHERO.menu | --view TITULO CMD [SEG]\n"); return 1; }
 	if (!strcmp(argv[1], "--view") && argc >= 4) {
 		viewonly = 1;
@@ -601,8 +606,8 @@ int main(int argc, char **argv)
 	for (int i = 0; i < SDL_NumJoysticks(); i++) SDL_JoystickOpen(i);
 	gl_init();
 	signal(SIGPIPE, SIG_IGN);
-	if (viewonly) view_open(argv[2], argv[3], argc > 4 ? atoi(argv[4]) : 0, M_VIEW);
-	else { text(&fb, 32, 400, "Cargando...", C_TXT, 20); flush(); SDL_GL_SwapWindow(win); for (int i = 0; i < nitems; i++) item_refresh(&items[i]); }
+	if (viewonly) view_open(tr(argv[2]), argv[3], argc > 4 ? atoi(argv[4]) : 0, M_VIEW);
+	else { text(&fb, 32, 400, tr("Cargando..."), C_TXT, 20); flush(); SDL_GL_SwapWindow(win); for (int i = 0; i < nitems; i++) item_refresh(&items[i]); }
 	int hat = 0, axm = 0, prev = 0, selb = 0, stab = 0;
 	Uint32 next_rep = 0;
 	while (!quit) {

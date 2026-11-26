@@ -7,6 +7,7 @@
 #      rgslide-ctl fan [get|status|mode auto|off|max|N]
 #      rgslide-ctl display [get|set 60|120|auto]   (frecuencia de pantalla; se aplica al reiniciar ES)
 #      rgslide-ctl net | time [sync|adjust +-MIN|tz ZONA|get|zone] | reboot | poweroff
+#      rgslide-ctl lang [show|get|set auto|es|en|apply [DIR]]   (idioma es/en; apply = gamelist.xml traducido de ~/roms/settings; ver docs/agent-lang.md)
 # Las listas (wifi list/saved, bt scan/devices) imprimen "valor<TAB>texto<TAB>pregunta-de-clave" para rgslide-ui.
 PATH=$PATH:/usr/local/sbin:/usr/sbin:/sbin
 export PATH
@@ -19,11 +20,44 @@ TAB=$(printf '\t')
 PS=/sys/class/power_supply/battery
 DISPCONF=/etc/default/rgslide-display
 
-die() { echo "$*" >&2; exit 1; }
+die() { tt "$*" >&2; echo >&2; exit 1; }
+dief() { tf "$@" >&2; echo >&2; exit 1; }
 run() { if [ "$DRY" = 1 ]; then echo "[dry-run] $*"; else "$@"; fi; }
 wcli() { sudo -n /usr/sbin/wpa_cli -i "$IF" "$@" 2>&1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 num() { case "$1" in ''|*[!0-9]*) return 1;; esac; }
+
+# ---------- idioma (es|en): RGSLIDE_LANG > /etc/default/rgslide-lang > LC_ALL/LC_MESSAGES/LANG > /etc/default/locale > /etc/locale.conf ----------
+# Sin nada definido: es. C/POSIX u otro idioma: en. Los textos son claves en espanol; $LANGDIR/<idioma>.tr (clave=texto) las traduce y, si falta la clave, sale la clave.
+LANGDIR=${RGSLIDE_LANGDIR:-/usr/share/rgslide/lang}
+LANGCFG=/etc/default/rgslide-lang
+lang_cfg() { sed -n 's/^RGSLIDE_LANG=//p' $LANGCFG 2>/dev/null | tail -n 1 | tr -d "\"' "; }
+lang_sys() {
+	for v in "$LC_ALL" "$LC_MESSAGES" "$LANG"; do [ -n "$v" ] && { echo "$v"; return; }; done
+	for f in /etc/default/locale /etc/locale.conf; do
+		v=$(sed -n 's/^LANG=//p' $f 2>/dev/null | tail -n 1 | tr -d "\"' "); [ -n "$v" ] && { echo "$v"; return; }
+	done
+}
+lang_show() {
+	case "$RGSLIDE_LANG" in es|en) echo "$RGSLIDE_LANG"; return;; esac
+	case "$(lang_cfg)" in es) echo es; return;; en) echo en; return;; esac
+	case "$(lang_sys)" in "") echo es;; es|es_*|es.*|es@*) echo es;; *) echo en;; esac
+}
+LANGCODE=$(lang_show)
+TRDATA=$(printf '\n'; cat "$LANGDIR/$LANGCODE.tr" 2>/dev/null)
+tt() {
+	case "$TRDATA" in
+	*"
+$1="*) v=${TRDATA#*"
+$1="}; printf %s "${v%%"
+"*}";;
+	*) printf %s "$1";;
+	esac
+}
+tf() { f=$(tt "$1"); shift; printf "$f" "$@"; }
+say() { tt "$1"; echo; }
+sayf() { tf "$@"; echo; }
+row() { l=$(tt "$1"); n=$(printf %s "$l" | LC_ALL=C tr -d '\200-\277' | wc -c); pad=$((11 - n)); [ $pad -lt 1 ] && pad=1; printf '%s%*s%s\n' "$l" $pad "" "$2"; }
 
 # ---------- estado ----------
 cur_ssid() { wcli status | sed -n 's/^ssid=//p' | head -n1; }
@@ -43,31 +77,31 @@ st_power() {
 	cap=$(cat $PS/capacity 2>/dev/null); stt=$(cat $PS/status 2>/dev/null); v=$(cat $PS/voltage_now 2>/dev/null); bt=$(cat $PS/temp 2>/dev/null)
 	[ -n "$v" ] && v="$((v / 1000000)).$(((v % 1000000) / 10000))" || v="?"
 	[ -n "$bt" ] && bt="$((bt / 10)).$((bt % 10))" || bt="?"
-	case "$stt" in Charging) stt="cargando";; Discharging) stt="en bateria";; Full) stt="completa";; "Not charging") stt="no carga (enchufada)";; esac
-	echo "Bateria    ${cap:-?}%  $stt  ${v} V  (bat ${bt} C)"
-	echo "Temp. SoC  $(soc_temp) C   Ventilador: $(fan_brief)"
+	case "$stt" in Charging) stt=$(tt "cargando");; Discharging) stt=$(tt "en bateria");; Full) stt=$(tt "completa");; "Not charging") stt=$(tt "no carga (enchufada)");; esac
+	row "Bateria" "${cap:-?}%  $stt  ${v} V  ($(tt bat) ${bt} C)"
+	row "Temp. SoC" "$(soc_temp) C   $(tt Ventilador): $(fan_brief)"
 }
 st_wifi() {
 	ss=$(cur_ssid); a=$(ip4 $IF)
 	if [ -n "$ss" ]; then
 		rs=$(wcli signal_poll | sed -n 's/^RSSI=//p')
-		echo "Wifi       $ss  ${rs:-?} dBm  ${a:-sin IP}"
-	else echo "Wifi       sin conexion ($(cur_state))"; fi
-	echo "USB        $(ip4 sipa_usb0)"
+		row "Wifi" "$ss  ${rs:-?} dBm  ${a:-$(tt 'sin IP')}"
+	else row "Wifi" "$(tt 'sin conexion') ($(cur_state))"; fi
+	row "USB" "$(ip4 sipa_usb0)"
 }
 st_bt() {
 	p=$(timeout 4 bluetoothctl show 2>/dev/null | sed -n 's/^[[:space:]]*Powered: //p')
-	case "$p" in yes) n=$(timeout 4 bluetoothctl devices Connected 2>/dev/null | grep -c '^Device'); echo "Bluetooth  encendido ($n conectados)";;
-		no) echo "Bluetooth  apagado";; *) echo "Bluetooth  no disponible (hci0 no esta listo)";; esac
+	case "$p" in yes) n=$(timeout 4 bluetoothctl devices Connected 2>/dev/null | grep -c '^Device'); row "Bluetooth" "$(tf 'encendido (%s conectados)' "$n")";;
+		no) row "Bluetooth" "$(tt apagado)";; *) row "Bluetooth" "$(tt 'no disponible (hci0 no esta listo)')";; esac
 }
 st_screen() {
 	b=$(rgslide-brightness get 2>/dev/null); v=$(vol_get)
-	echo "Brillo     ${b:-n/d}%   Volumen: $v   Pantalla: $(disp_get) Hz"
+	row "Brillo" "${b:-n/d}%   $(tt Volumen): $v   $(tt Pantalla): $(disp_get) Hz"
 }
-st_time() { echo "Hora       $(date '+%Y-%m-%d %H:%M:%S %Z')   ($(timedatectl show -p Timezone --value 2>/dev/null))"; }
+st_time() { row "Hora" "$(date '+%Y-%m-%d %H:%M:%S %Z')   ($(timedatectl show -p Timezone --value 2>/dev/null))"; }
 st_sys() {
-	echo "Memoria    $(free -m | awk '/^Mem:/{printf "%d/%d MB", $3, $2}')   Disco libre $(df -h / | awk 'NR==2{print $4}')"
-	echo "Encendida  $(uptime -p 2>/dev/null)"
+	row "Memoria" "$(free -m | awk '/^Mem:/{printf "%d/%d MB", $3, $2}')   $(tt 'Disco libre') $(df -h / | awk 'NR==2{print $4}')"
+	row "Encendida" "$(awk '{s=int($1); d=int(s/86400); h=int(s%86400/3600); m=int(s%3600/60); if (d) printf "%d d ", d; printf "%d h %d min", h, m}' /proc/uptime 2>/dev/null)"
 }
 
 cmd_status() {
@@ -90,11 +124,12 @@ net_id() { saved_list | awk -F"$TAB" -v s="$1" '$2==s{print $1; exit}'; }
 wifi_list() {
 	wcli scan >/dev/null; sleep 4
 	saved=$(saved_list | cut -f2 | tr '\n' '|')
-	wcli scan_results | tail -n +2 | sort -t "$TAB" -k3,3nr | awk -F"$TAB" -v saved="|$saved" '
+	wcli scan_results | tail -n +2 | sort -t "$TAB" -k3,3nr | awk -F"$TAB" -v saved="|$saved" -v open="$(tt abierta)" -v sg=" [$(tt guardada)]" -v pt="$(tt 'Clave de %s')" '
 		$5=="" || $5 ~ /\\/ || seen[$5]++ {next}
 		{ sec = ($4 ~ /WPA|WEP|RSN|SAE/); sv = index(saved, "|" $5 "|") > 0
-		  t = ($4 ~ /SAE/ && $4 !~ /PSK/) ? "WPA3" : ($4 ~ /WPA2|RSN/ ? "WPA2" : ($4 ~ /WPA/ ? "WPA" : ($4 ~ /WEP/ ? "WEP" : "abierta")))
-		  printf "%s\t%-26s %4d dBm  %-7s%s\t%s\n", $5, $5, $3, t, (sv ? " [guardada]" : ""), (sec && !sv ? "Clave de " $5 : "") }'
+		  t = ($4 ~ /SAE/ && $4 !~ /PSK/) ? "WPA3" : ($4 ~ /WPA2|RSN/ ? "WPA2" : ($4 ~ /WPA/ ? "WPA" : ($4 ~ /WEP/ ? "WEP" : open)))
+		  i = index(pt, "%s"); pw = substr(pt, 1, i - 1) $5 substr(pt, i + 2)
+		  printf "%s\t%-26s %4d dBm  %-7s%s\t%s\n", $5, $5, $3, t, (sv ? sg : ""), (sec && !sv ? pw : "") }'
 }
 
 wifi_saved() { saved_list | awk -F"$TAB" '$2!=""{printf "%s\t%s\t\n", $2, $2}'; }
@@ -102,10 +137,10 @@ wifi_saved() { saved_list | awk -F"$TAB" '$2!=""{printf "%s\t%s\t\n", $2, $2}'; 
 wifi_status() {
 	ss=$(cur_ssid)
 	if [ -n "$ss" ]; then
-		echo "Conectado a: $ss"
-		wcli signal_poll | awk -F= '/RSSI/{print "Senal: " $2 " dBm"} /LINKSPEED/{print "Velocidad: " $2 " Mbps"} /FREQUENCY/{print "Frecuencia: " $2 " MHz"}'
+		sayf 'Conectado a: %s' "$ss"
+		wcli signal_poll | awk -F= -v a="$(tt Senal)" -v b="$(tt Velocidad)" -v c="$(tt Frecuencia)" '/RSSI/{print a ": " $2 " dBm"} /LINKSPEED/{print b ": " $2 " Mbps"} /FREQUENCY/{print c ": " $2 " MHz"}'
 		echo "IP: $(ip4 $IF)"
-	else echo "Sin conexion (estado: $(cur_state))"; fi
+	else sayf 'Sin conexion (estado: %s)' "$(cur_state)"; fi
 }
 
 wifi_connect() {
@@ -126,10 +161,10 @@ wifi_connect() {
 		return 0
 	fi
 	if [ -n "$id" ] && [ -z "$psk" ]; then
-		echo "Usando la red guardada '$ssid'..."
+		sayf "Usando la red guardada '%s'..." "$ssid"
 	else
 		tmp=$(mktemp); sudo -n mkdir -p $STATE
-		sudo -n cat "$CONF" > "$tmp" || die "no puedo leer $CONF"
+		sudo -n cat "$CONF" > "$tmp" || dief "no puedo leer %s" "$CONF"
 		sudo -n cp "$CONF" $STATE/wpa.conf.prev
 		conf_drop "$ssid" < "$tmp" > "$tmp.new"
 		if [ -n "$psk" ]; then
@@ -140,7 +175,7 @@ wifi_connect() {
 		sudo -n cp "$tmp.new" "$CONF"; rm -f "$tmp" "$tmp.new"
 		wcli reconfigure >/dev/null; sleep 1
 		id=$(net_id "$ssid")
-		echo "Red '$ssid' guardada. Conectando..."
+		sayf "Red '%s' guardada. Conectando..." "$ssid"
 	fi
 	[ -n "$id" ] || die "no encuentro la red en wpa_supplicant"
 	if [ "$ssid" != "$prev" ] || [ "$(cur_state)" != COMPLETED ]; then wcli select_network "$id" >/dev/null; fi
@@ -152,16 +187,16 @@ wifi_connect() {
 	if [ "$(cur_state)" = COMPLETED ] && [ "$(cur_ssid)" = "$ssid" ]; then
 		i=0; while [ $i -lt 15 ] && [ -z "$(ip4 $IF)" ]; do sleep 1; i=$((i + 1)); done
 		a=$(ip4 $IF)
-		[ -n "$a" ] && { echo "Conectado a '$ssid'. IP: $a"; return 0; }
-		echo "Asociado a '$ssid' pero sin IP (DHCP no responde)."; return 1
+		[ -n "$a" ] && { sayf "Conectado a '%s'. IP: %s" "$ssid" "$a"; return 0; }
+		sayf "Asociado a '%s' pero sin IP (DHCP no responde)." "$ssid"; return 1
 	fi
-	echo "No se pudo conectar a '$ssid' (clave incorrecta o fuera de alcance)."
+	sayf "No se pudo conectar a '%s' (clave incorrecta o fuera de alcance)." "$ssid"
 	if [ -f $STATE/wpa.conf.prev ] && [ -n "$psk" ]; then
 		sudo -n cp $STATE/wpa.conf.prev "$CONF"; wcli reconfigure >/dev/null
-		echo "Se ha restaurado la configuracion anterior."
+		say "Se ha restaurado la configuracion anterior."
 	fi
 	if [ -n "$prev" ] && [ "$prev" != "$ssid" ]; then
-		pid=$(net_id "$prev"); [ -n "$pid" ] && wcli select_network "$pid" >/dev/null && echo "Volviendo a '$prev'."
+		pid=$(net_id "$prev"); [ -n "$pid" ] && wcli select_network "$pid" >/dev/null && sayf "Volviendo a '%s'." "$prev"
 	fi
 	return 1
 }
@@ -170,13 +205,13 @@ wifi_forget() {
 	ssid=$1; [ -n "$ssid" ] || die "falta el nombre de la red"
 	n=$(saved_list | grep -c .)
 	if { [ "$ssid" = "$(cur_ssid)" ] || [ "$n" -le 1 ]; } && [ "$2" != "--force" ]; then
-		echo "'$ssid' es la red actual o la unica guardada: olvidarla te dejaria sin conexion. Usa --force."; return 1
+		sayf "'%s' es la red actual o la unica guardada: olvidarla te dejaria sin conexion. Usa --force." "$ssid"; return 1
 	fi
 	[ "$DRY" = 1 ] && { echo "[dry-run] olvidaria '$ssid' de $CONF"; return 0; }
 	tmp=$(mktemp); sudo -n cat "$CONF" | conf_drop "$ssid" > "$tmp"
 	sudo -n cp "$CONF" $STATE/wpa.conf.prev; sudo -n cp "$tmp" "$CONF"; rm -f "$tmp"
 	wcli reconfigure >/dev/null
-	echo "Red '$ssid' olvidada."
+	sayf "Red '%s' olvidada." "$ssid"
 }
 
 cmd_wifi() {
@@ -190,13 +225,13 @@ cmd_wifi() {
 }
 
 # ---------- bluetooth ----------
-bt_ready() { timeout 4 bluetoothctl show 2>/dev/null | grep -q '^Controller' || { echo "Bluetooth no disponible (hci0 no esta listo; rgslide-bt?)"; return 1; }; }
+bt_ready() { timeout 4 bluetoothctl show 2>/dev/null | grep -q '^Controller' || { say "Bluetooth no disponible (hci0 no esta listo; rgslide-bt?)"; return 1; }; }
 bt_get() { timeout 4 bluetoothctl show 2>/dev/null | sed -n 's/^[[:space:]]*Powered: yes/on/p;s/^[[:space:]]*Powered: no/off/p' | head -n1; }
 bt_devs() {
 	conn=$(timeout 5 bluetoothctl devices Connected 2>/dev/null | awk '{print $2}' | tr '\n' ' ')
-	timeout 5 bluetoothctl devices $1 2>/dev/null | awk -v conn=" $conn" '/^Device /{m=$2; $1=""; $2=""; sub(/^  */,""); n=$0
+	timeout 5 bluetoothctl devices $1 2>/dev/null | awk -v conn=" $conn" -v cx="  [$(tt conectado)]" '/^Device /{m=$2; $1=""; $2=""; sub(/^  */,""); n=$0
 		if (n == "" || n ~ /^[0-9A-F]{2}(-[0-9A-F]{2}){5}$/) next
-		printf "%s\t%s  (%s)%s\t\n", m, n, m, (index(conn, " " m " ") ? "  [conectado]" : "")}'
+		printf "%s\t%s  (%s)%s\t\n", m, n, m, (index(conn, " " m " ") ? cx : "")}'
 }
 cmd_bt() {
 	sub=$1; [ $# -gt 0 ] && shift
@@ -228,25 +263,25 @@ cmd_bt() {
 
 # ---------- brillo, volumen, ventilador ----------
 cmd_brightness() {
-	have rgslide-brightness || { echo "no disponible (falta rgslide-brightness)"; return 1; }
+	have rgslide-brightness || { say "no disponible (falta rgslide-brightness)"; return 1; }
 	case "${1:-get}" in
 	get|up|down) rgslide-brightness "${1:-get}";;
 	set) num "$2" || die "brightness set N (0-100)"; run rgslide-brightness set "$2";;
 	*) die "brightness [get|set N|up|down]";;
 	esac
 }
-vol_get() { have rgslide-volume && rgslide-volume get 2>/dev/null || echo "no disponible"; }
+vol_get() { have rgslide-volume && rgslide-volume get 2>/dev/null || tt "no disponible"; }
 cmd_volume() {
-	have rgslide-volume || { echo "no disponible (sin audio: falta rgslide-volume)"; return 1; }
+	have rgslide-volume || { say "no disponible (sin audio: falta rgslide-volume)"; return 1; }
 	case "${1:-get}" in
 	get|up|down) rgslide-volume "${1:-get}";;
 	set) num "$2" || die "volume set N (0-100)"; run rgslide-volume set "$2";;
 	*) die "volume [get|set N|up|down]";;
 	esac
 }
-fan_brief() { have rgslide-fan && rgslide-fan status 2>/dev/null | sed -n 's/^modo=\([^ ]*\) pwm1=\([^ ]*\).*/\1 (pwm \2)/p' || echo "no disponible"; }
+fan_brief() { have rgslide-fan && rgslide-fan status 2>/dev/null | sed -n 's/^modo=\([^ ]*\) pwm1=\([^ ]*\).*/\1 (pwm \2)/p' || tt "no disponible"; }
 cmd_fan() {
-	have rgslide-fan || { echo "no disponible (falta rgslide-fan)"; return 1; }
+	have rgslide-fan || { say "no disponible (falta rgslide-fan)"; return 1; }
 	case "${1:-status}" in
 	get) rgslide-fan status | sed -n 's/^modo=\([^ ]*\) .*/\1/p';;
 	status) rgslide-fan status;;
@@ -268,9 +303,9 @@ cmd_display() {
 		if [ "$DRY" = 1 ]; then echo "[dry-run] REFRESH=$2 en $DISPCONF"; return 0; fi
 		cur=$(sed -e "s/^REFRESH=.*/REFRESH=$2/" "$DISPCONF" 2>/dev/null)
 		[ -n "$cur" ] && echo "$cur" | grep -q "^REFRESH=$2\$" || cur=$(printf '# Frecuencia de pantalla (rgslide-ctl display set 60|120|auto)\nREFRESH=%s' "$2")
-		echo "$cur" | sudo -n tee "$DISPCONF" >/dev/null || die "no pude escribir $DISPCONF"
-		echo "Pantalla: $2. Se aplica al REINICIAR ES (no en caliente)."
-		if [ "$2" = auto ]; then echo "auto = ES a 120 Hz, juegos (RetroArch) a 60 Hz."; fi
+		echo "$cur" | sudo -n tee "$DISPCONF" >/dev/null || dief "no pude escribir %s" "$DISPCONF"
+		sayf "Pantalla: %s. Se aplica al REINICIAR ES (no en caliente)." "$2"
+		if [ "$2" = auto ]; then say "auto: ES a 120 Hz, juegos (RetroArch) a 60 Hz."; fi
 		;;
 	*) die "display [get|set 60|120|auto]";;
 	esac
@@ -279,12 +314,13 @@ cmd_display() {
 # ---------- red y hora ----------
 cmd_net() {
 	ip -br -4 addr show | awk '$1 ~ /^(wlan0|sipa_usb0|usb0|eth)/ && $3 != ""{printf "%-12s %s\n", $1, $3}'
-	echo "Ruta por defecto: $(ip route | awk '/^default/{print $3 " por " $5; exit}')"
+	sayf "Ruta por defecto: %s por %s" "$(ip route | awk '/^default/{print $3; exit}')" "$(ip route | awk '/^default/{print $5; exit}')"
 	echo "DNS: $(resolvectl dns 2>/dev/null | awk -F': ' '/wlan0/{print $2}')"
-	echo "Nombre: $(hostname)"
+	sayf "Nombre: %s" "$(hostname)"
 	python3 -c 'import socket,sys
-try: socket.create_connection(("1.1.1.1",443),timeout=4).close(); print("Internet: si (1.1.1.1 responde)")
-except OSError: print("Internet: no")' 2>/dev/null
+try: socket.create_connection(("1.1.1.1",443),timeout=4).close()
+except OSError: sys.exit(1)' 2>/dev/null
+	case $? in 0) say "Internet: si (1.1.1.1 responde)";; 1) say "Internet: no";; esac
 }
 
 web_epoch() {
@@ -301,7 +337,7 @@ EOF
 }
 time_set() {
 	[ "$DRY" = 1 ] && { echo "[dry-run] date -u -s @$1 y rgslide-clock save"; return 0; }
-	sudo -n date -u -s "@$1" >/dev/null && sudo -n rgslide-clock save && echo "Hora puesta: $(date '+%Y-%m-%d %H:%M:%S %Z')"
+	sudo -n date -u -s "@$1" >/dev/null && sudo -n rgslide-clock save && sayf "Hora puesta: %s" "$(date '+%Y-%m-%d %H:%M:%S %Z')"
 }
 cmd_time() {
 	sub=$1; [ $# -gt 0 ] && shift
@@ -309,8 +345,8 @@ cmd_time() {
 	""|get) st_time;;
 	zone) timedatectl show -p Timezone --value;;
 	sync)
-		e=$(web_epoch); [ -n "$e" ] || { echo "Sin internet: no se pudo leer la hora de la red."; return 1; }
-		d=$(( e - $(date +%s) )); echo "Diferencia con internet: $d s"
+		e=$(web_epoch); [ -n "$e" ] || { say "Sin internet: no se pudo leer la hora de la red."; return 1; }
+		d=$(( e - $(date +%s) )); sayf "Diferencia con internet: %s s" "$d"
 		time_set "$e";;
 	adjust)
 		case "$1" in [+-][0-9]*) ;; *) die "time adjust +-MINUTOS";; esac
@@ -324,10 +360,43 @@ cmd_time() {
 cmd_power() {
 	what=$1
 	if [ "$DRY" = 1 ]; then echo "[dry-run] sync; sudo systemctl $what  (no se ejecuta)"; return 0; fi
-	echo "Sincronizando discos..."; sync
-	[ "$what" = reboot ] && echo "Reiniciando..." || echo "Apagando..."
+	say "Sincronizando discos..."; sync
+	[ "$what" = reboot ] && say "Reiniciando..." || say "Apagando..."
 	sudo -n rgslide-clock save 2>/dev/null
 	sudo -n systemctl "$what"
+}
+
+# ---------- idioma ----------
+cmd_lang() {
+	case "${1:-show}" in
+	show) echo "$LANGCODE";;
+	get) v=$(lang_cfg); case "$v" in es|en) echo "$v";; *) echo auto;; esac;;
+	set)
+		case "$2" in auto|es|en) ;; *) die "lang set auto|es|en";; esac
+		if [ "$DRY" = 1 ]; then echo "[dry-run] RGSLIDE_LANG=$2 en $LANGCFG"; return 0; fi
+		printf '# Idioma de rgslide-ctl, rgslide-ui y EmulationStation: auto (el del sistema) | es | en\nRGSLIDE_LANG=%s\n' "$2" | sudo -n tee "$LANGCFG" >/dev/null || dief "no pude escribir %s" "$LANGCFG"
+		sayf "Idioma: %s. Se aplica al volver a abrir el menu (EmulationStation: al reiniciarlo)." "$2"
+		RGSLIDE_LANG=$2 sh "$0" lang apply >/dev/null 2>&1;;
+	apply)
+		d=${2:-$HOME/roms/settings}; [ -d "$d" ] || dief "no existe %s" "$d"
+		g=$d/gamelist.xml; tmp=$(mktemp)
+		{
+			echo '<?xml version="1.0"?>'; echo '<gameList>'
+			for f in "$d"/*.sh; do
+				[ -e "$f" ] || continue
+				b=$(basename "$f" .sh); n=$(tt "$b"); ds=$(tt "Panel de control de la Slide")
+				n=$(printf %s "$n" | sed 's/&/\&amp;/g;s/</\&lt;/g;s/>/\&gt;/g')
+				x=$(printf %s "$b" | sed 's/&/\&amp;/g;s/</\&lt;/g;s/>/\&gt;/g')
+				echo "	<game>"; echo "		<path>./$x.sh</path>"; echo "		<name>$n</name>"
+				case "$b" in "00 "*) echo "		<desc>$ds</desc>";; esac
+				echo "	</game>"
+			done
+			echo '</gameList>'
+		} > "$tmp"
+		if [ "$DRY" = 1 ]; then echo "[dry-run] escribiria $g:"; cat "$tmp"; rm -f "$tmp"; return 0; fi
+		cat "$tmp" > "$g"; rm -f "$tmp"; sayf "Nombres de Ajustes escritos en %s (%s)." "$g" "$LANGCODE";;
+	*) die "lang [show|get|set auto|es|en|apply [DIR]]";;
+	esac
 }
 
 c=$1; [ $# -gt 0 ] && shift
@@ -340,6 +409,7 @@ volume) cmd_volume "$@";;
 fan) cmd_fan "$@";;
 display) cmd_display "$@";;
 net) cmd_net;;
+lang) cmd_lang "$@";;
 time) cmd_time "$@";;
 reboot) cmd_power reboot;;
 poweroff) cmd_power poweroff;;

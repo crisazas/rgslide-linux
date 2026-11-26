@@ -1,0 +1,553 @@
+diff --git a/es-app/src/SystemData.cpp b/es-app/src/SystemData.cpp
+index 49f58e1..e467b7a 100644
+--- a/es-app/src/SystemData.cpp
++++ b/es-app/src/SystemData.cpp
+@@ -5,6 +5,7 @@
+ #include "FileFilterIndex.h"
+ #include "FileSorts.h"
+ #include "Gamelist.h"
++#include "Lang.h"
+ #include "Log.h"
+ #include "platform.h"
+ #include "Settings.h"
+@@ -24,7 +25,7 @@ std::ranlux48 SystemData::sURNG = std::ranlux48(std::random_device()());
+ 
+ 
+ SystemData::SystemData(const std::string& name, const std::string& fullName, SystemEnvironmentData* envData, const std::string& themeFolder, bool CollectionSystem) :
+-	mName(name), mFullName(fullName), mEnvData(envData), mThemeFolder(themeFolder), mIsCollectionSystem(CollectionSystem), mIsGameSystem(true)
++	mName(name), mFullName(_(fullName)), mEnvData(envData), mThemeFolder(themeFolder), mIsCollectionSystem(CollectionSystem), mIsGameSystem(true)
+ {
+ 	mFilterIndex = new FileFilterIndex();
+ 
+diff --git a/es-app/src/guis/GuiMenu.cpp b/es-app/src/guis/GuiMenu.cpp
+index b116edd..fcc4bc2 100644
+--- a/es-app/src/guis/GuiMenu.cpp
++++ b/es-app/src/guis/GuiMenu.cpp
+@@ -22,6 +22,7 @@
+ #include "FileSorts.h"
+ #include "views/gamelist/IGameListView.h"
+ #include "guis/GuiInfoPopup.h"
++#include "Lang.h"
+ 
+ GuiMenu::GuiMenu(Window* window) : GuiComponent(window), mMenu(window, "MAIN MENU"), mVersion(window)
+ {
+@@ -74,7 +75,7 @@ void GuiMenu::openScraperSettings()
+ 	openAndSave = [s, openAndSave] { s->save(); openAndSave(); };
+ 	row.makeAcceptInputHandler(openAndSave);
+ 
+-	auto scrape_now = std::make_shared<TextComponent>(mWindow, "SCRAPE NOW", Font::get(FONT_SIZE_MEDIUM), 0x777777FF);
++	auto scrape_now = std::make_shared<TextComponent>(mWindow, _("SCRAPE NOW"), Font::get(FONT_SIZE_MEDIUM), 0x777777FF);
+ 	auto bracket = makeArrow(mWindow);
+ 	row.addElement(scrape_now, true);
+ 	row.addElement(bracket, false);
+@@ -227,7 +228,7 @@ void GuiMenu::openUISettings()
+ 	// screensaver
+ 	ComponentListRow screensaver_row;
+ 	screensaver_row.elements.clear();
+-	screensaver_row.addElement(std::make_shared<TextComponent>(mWindow, "SCREENSAVER SETTINGS", Font::get(FONT_SIZE_MEDIUM), 0x777777FF), true);
++	screensaver_row.addElement(std::make_shared<TextComponent>(mWindow, _("SCREENSAVER SETTINGS"), Font::get(FONT_SIZE_MEDIUM), 0x777777FF), true);
+ 	screensaver_row.addElement(makeArrow(mWindow), false);
+ 	screensaver_row.makeAcceptInputHandler(std::bind(&GuiMenu::openScreensaverOptions, this));
+ 	s->addRow(screensaver_row);
+@@ -348,7 +349,7 @@ void GuiMenu::openUISettings()
+ 			}
+ 
+ 			//Display popup to inform user
+-			GuiInfoPopup* popup = new GuiInfoPopup(window, "Files sorted", 4000);
++			GuiInfoPopup* popup = new GuiInfoPopup(window, _("Files sorted"), 4000);
+ 			window->setInfoPopup(popup);
+ 		}
+ 	});
+@@ -550,7 +551,7 @@ void GuiMenu::openQuitMenu()
+ 		} else {
+ 			row.makeAcceptInputHandler(restart_es_fx);
+ 		}
+-		row.addElement(std::make_shared<TextComponent>(window, "RESTART EMULATIONSTATION", Font::get(FONT_SIZE_MEDIUM), 0x777777FF), true);
++		row.addElement(std::make_shared<TextComponent>(window, _("RESTART EMULATIONSTATION"), Font::get(FONT_SIZE_MEDIUM), 0x777777FF), true);
+ 		s->addRow(row);
+ 
+ 		if(Settings::getInstance()->getBool("ShowExit"))
+@@ -568,7 +569,7 @@ void GuiMenu::openQuitMenu()
+ 			} else {
+ 				row.makeAcceptInputHandler(quit_es_fx);
+ 			}
+-			row.addElement(std::make_shared<TextComponent>(window, "QUIT EMULATIONSTATION", Font::get(FONT_SIZE_MEDIUM), 0x777777FF), true);
++			row.addElement(std::make_shared<TextComponent>(window, _("QUIT EMULATIONSTATION"), Font::get(FONT_SIZE_MEDIUM), 0x777777FF), true);
+ 			s->addRow(row);
+ 		}
+ 	}
+@@ -589,7 +590,7 @@ void GuiMenu::openQuitMenu()
+ 	} else {
+ 		row.makeAcceptInputHandler(reboot_sys_fx);
+ 	}
+-	row.addElement(std::make_shared<TextComponent>(window, "RESTART SYSTEM", Font::get(FONT_SIZE_MEDIUM), 0x777777FF), true);
++	row.addElement(std::make_shared<TextComponent>(window, _("RESTART SYSTEM"), Font::get(FONT_SIZE_MEDIUM), 0x777777FF), true);
+ 	s->addRow(row);
+ 
+ 	auto static shutdown_sys_fx = [] {
+@@ -608,7 +609,7 @@ void GuiMenu::openQuitMenu()
+ 	} else {
+ 		row.makeAcceptInputHandler(shutdown_sys_fx);
+ 	}
+-	row.addElement(std::make_shared<TextComponent>(window, "SHUTDOWN SYSTEM", Font::get(FONT_SIZE_MEDIUM), 0x777777FF), true);
++	row.addElement(std::make_shared<TextComponent>(window, _("SHUTDOWN SYSTEM"), Font::get(FONT_SIZE_MEDIUM), 0x777777FF), true);
+ 	s->addRow(row);
+ 	mWindow->pushGui(s);
+ }
+@@ -644,7 +645,7 @@ void GuiMenu::addEntry(const char* name, unsigned int color, bool add_arrow, con
+ 
+ 	// populate the list
+ 	ComponentListRow row;
+-	row.addElement(std::make_shared<TextComponent>(mWindow, name, font, color), true);
++	row.addElement(std::make_shared<TextComponent>(mWindow, _(name), font, color), true);
+ 
+ 	if(add_arrow)
+ 	{
+diff --git a/es-app/src/views/SystemView.cpp b/es-app/src/views/SystemView.cpp
+index 03b56bb..249a7fc 100644
+--- a/es-app/src/views/SystemView.cpp
++++ b/es-app/src/views/SystemView.cpp
+@@ -4,6 +4,7 @@
+ #include "guis/GuiMsgBox.h"
+ #include "views/UIModeController.h"
+ #include "views/ViewController.h"
++#include "Lang.h"
+ #include "Log.h"
+ #include "Scripting.h"
+ #include "Settings.h"
+@@ -63,7 +64,7 @@ void SystemView::populate()
+ 			{
+ 				// no logo in theme; use text
+ 				TextComponent* text = new TextComponent(mWindow,
+-					(*it)->getName(),
++					_((*it)->getName()),
+ 					Font::get(FONT_SIZE_LARGE),
+ 					0x000000FF,
+ 					ALIGN_CENTER);
+diff --git a/es-core/CMakeLists.txt b/es-core/CMakeLists.txt
+index c22459f..ea41fa6 100644
+--- a/es-core/CMakeLists.txt
++++ b/es-core/CMakeLists.txt
+@@ -10,6 +10,7 @@ set(CORE_HEADERS
+ 	${CMAKE_CURRENT_SOURCE_DIR}/src/ImageIO.h
+ 	${CMAKE_CURRENT_SOURCE_DIR}/src/InputConfig.h
+ 	${CMAKE_CURRENT_SOURCE_DIR}/src/InputManager.h
++	${CMAKE_CURRENT_SOURCE_DIR}/src/Lang.h
+ 	${CMAKE_CURRENT_SOURCE_DIR}/src/Log.h
+ 	${CMAKE_CURRENT_SOURCE_DIR}/src/MameNames.h
+ 	${CMAKE_CURRENT_SOURCE_DIR}/src/platform.h
+@@ -91,6 +92,7 @@ set(CORE_SOURCES
+ 	${CMAKE_CURRENT_SOURCE_DIR}/src/InputConfig.cpp
+ 	${CMAKE_CURRENT_SOURCE_DIR}/src/InputManager.cpp
+ 	${CMAKE_CURRENT_SOURCE_DIR}/src/Log.cpp
++	${CMAKE_CURRENT_SOURCE_DIR}/src/Lang.cpp
+ 	${CMAKE_CURRENT_SOURCE_DIR}/src/MameNames.cpp
+ 	${CMAKE_CURRENT_SOURCE_DIR}/src/platform.cpp
+ 	${CMAKE_CURRENT_SOURCE_DIR}/src/PowerSaver.cpp
+diff --git a/es-core/src/Lang.cpp b/es-core/src/Lang.cpp
+new file mode 100644
+index 0000000..40174b2
+--- /dev/null
++++ b/es-core/src/Lang.cpp
+@@ -0,0 +1,95 @@
++#include "Lang.h"
++
++#include <cstdlib>
++#include <fstream>
++#include <unordered_map>
++
++namespace
++{
++	std::string cleanValue(const std::string& s)
++	{
++		std::string o;
++		for(char c : s)
++			if(c != '"' && c != '\'' && c != ' ' && c != '\t' && c != '\r' && c != '\n')
++				o += c;
++		return o;
++	}
++
++	std::string fileVar(const char* path, const std::string& key)
++	{
++		std::ifstream f(path);
++		std::string line, val;
++		while(std::getline(f, line))
++			if(line.compare(0, key.size() + 1, key + "=") == 0)
++				val = cleanValue(line.substr(key.size() + 1));
++		return val;
++	}
++
++	std::string detect()
++	{
++		const char* e = getenv("RGSLIDE_LANG");
++		if(e && (std::string(e) == "es" || std::string(e) == "en"))
++			return e;
++		std::string v = fileVar("/etc/default/rgslide-lang", "RGSLIDE_LANG");
++		if(v == "es" || v == "en")
++			return v;
++		v.clear();
++		const char* envs[3] = { getenv("LC_ALL"), getenv("LC_MESSAGES"), getenv("LANG") };
++		for(int i = 0; i < 3 && v.empty(); i++)
++			if(envs[i] && *envs[i])
++				v = envs[i];
++		if(v.empty())
++			v = fileVar("/etc/default/locale", "LANG");
++		if(v.empty())
++			v = fileVar("/etc/locale.conf", "LANG");
++		if(v.empty())
++			return "es";
++		if(v.compare(0, 2, "es") == 0 && (v.size() == 2 || v[2] == '_' || v[2] == '.' || v[2] == '@'))
++			return "es";
++		return "en";
++	}
++
++	struct Table
++	{
++		std::string code;
++		std::unordered_map<std::string, std::string> map;
++
++		Table()
++		{
++			code = detect();
++			const char* dir = getenv("RGSLIDE_LANGDIR");
++			std::ifstream f(std::string(dir && *dir ? dir : "/usr/share/rgslide/lang") + "/" + code + ".tr");
++			std::string line;
++			while(std::getline(f, line))
++			{
++				while(!line.empty() && (line.back() == '\r' || line.back() == '\n'))
++					line.pop_back();
++				size_t eq = line.find('=');
++				if(line.empty() || line[0] == '#' || eq == std::string::npos || eq == 0)
++					continue;
++				map[line.substr(0, eq)] = line.substr(eq + 1);
++			}
++		}
++	};
++
++	Table& table()
++	{
++		static Table t;
++		return t;
++	}
++}
++
++namespace Lang
++{
++	const std::string& code()
++	{
++		return table().code;
++	}
++
++	std::string tr(const std::string& key)
++	{
++		auto& m = table().map;
++		auto it = m.find(key);
++		return it == m.end() ? key : it->second;
++	}
++}
+diff --git a/es-core/src/Lang.h b/es-core/src/Lang.h
+new file mode 100644
+index 0000000..b19e4cf
+--- /dev/null
++++ b/es-core/src/Lang.h
+@@ -0,0 +1,18 @@
++#pragma once
++#ifndef ES_CORE_LANG_H
++#define ES_CORE_LANG_H
++
++#include <string>
++
++// Idioma de la interfaz (es|en) para la RG Slide. La clave es el texto original en ingles; Lang::tr() devuelve la traduccion de
++// <dir>/<idioma>.tr (lineas clave=texto, '#' comentario; dir = $RGSLIDE_LANGDIR o /usr/share/rgslide/lang) o la propia clave si no hay.
++// Idioma: RGSLIDE_LANG > /etc/default/rgslide-lang > LC_ALL/LC_MESSAGES/LANG > /etc/default/locale > /etc/locale.conf; sin nada: es; C/otro: en.
++namespace Lang
++{
++	const std::string& code();
++	std::string tr(const std::string& key);
++}
++
++inline std::string _(const std::string& key) { return Lang::tr(key); }
++
++#endif // ES_CORE_LANG_H
+diff --git a/es-core/src/components/ButtonComponent.cpp b/es-core/src/components/ButtonComponent.cpp
+index d0f47ce..6a1da0b 100644
+--- a/es-core/src/components/ButtonComponent.cpp
++++ b/es-core/src/components/ButtonComponent.cpp
+@@ -2,6 +2,7 @@
+ 
+ #include "resources/Font.h"
+ #include "utils/StringUtil.h"
++#include "Lang.h"
+ 
+ ButtonComponent::ButtonComponent(Window* window, const std::string& text, const std::string& helpText, const std::function<void()>& func) : GuiComponent(window),
+ 	mBox(window, ":/button.png"),
+@@ -39,8 +40,8 @@ bool ButtonComponent::input(InputConfig* config, Input input)
+ 
+ void ButtonComponent::setText(const std::string& text, const std::string& helpText)
+ {
+-	mText = Utils::String::toUpper(text);
+-	mHelpText = helpText;
++	mText = Utils::String::toUpper(_(text));
++	mHelpText = _(helpText);
+ 
+ 	mTextCache = std::unique_ptr<TextCache>(mFont->buildTextCache(mText, 0, 0, getCurTextColor()));
+ 
+diff --git a/es-core/src/components/HelpComponent.cpp b/es-core/src/components/HelpComponent.cpp
+index 1d7ef55..65d79f4 100644
+--- a/es-core/src/components/HelpComponent.cpp
++++ b/es-core/src/components/HelpComponent.cpp
+@@ -5,6 +5,7 @@
+ #include "components/TextComponent.h"
+ #include "resources/TextureResource.h"
+ #include "utils/StringUtil.h"
++#include "Lang.h"
+ #include "Log.h"
+ #include "Settings.h"
+ 
+@@ -77,7 +78,7 @@ void HelpComponent::updateGrid()
+ 		icon->setResize(0, height);
+ 		icons.push_back(icon);
+ 
+-		auto lbl = std::make_shared<TextComponent>(mWindow, Utils::String::toUpper(it->second), font, mStyle.textColor);
++		auto lbl = std::make_shared<TextComponent>(mWindow, Utils::String::toUpper(_(it->second)), font, mStyle.textColor);
+ 		labels.push_back(lbl);
+ 
+ 		width += icon->getSize().x() + lbl->getSize().x() + ICON_TEXT_SPACING + ENTRY_SPACING;
+diff --git a/es-core/src/components/MenuComponent.cpp b/es-core/src/components/MenuComponent.cpp
+index 2e60b59..53e4742 100644
+--- a/es-core/src/components/MenuComponent.cpp
++++ b/es-core/src/components/MenuComponent.cpp
+@@ -1,6 +1,7 @@
+ #include "components/MenuComponent.h"
+ 
+ #include "components/ButtonComponent.h"
++#include "Lang.h"
+ 
+ #define BUTTON_GRID_VERT_PADDING 32
+ #define BUTTON_GRID_HORIZ_PADDING 10
+@@ -34,7 +35,7 @@ MenuComponent::MenuComponent(Window* window, const char* title, const std::share
+ 
+ void MenuComponent::setTitle(const char* title, const std::shared_ptr<Font>& font)
+ {
+-	mTitle->setText(Utils::String::toUpper(title));
++	mTitle->setText(Utils::String::toUpper(_(title)));
+ 	mTitle->setFont(font);
+ }
+ 
+diff --git a/es-core/src/components/MenuComponent.h b/es-core/src/components/MenuComponent.h
+index ad2f69d..02ad4e6 100644
+--- a/es-core/src/components/MenuComponent.h
++++ b/es-core/src/components/MenuComponent.h
+@@ -7,6 +7,7 @@
+ #include "components/NinePatchComponent.h"
+ #include "components/TextComponent.h"
+ #include "utils/StringUtil.h"
++#include "Lang.h"
+ 
+ class ButtonComponent;
+ class ImageComponent;
+@@ -28,7 +29,7 @@ public:
+ 	inline void addWithLabel(const std::string& label, const std::shared_ptr<GuiComponent>& comp, bool setCursorHere = false, bool invert_when_selected = true)
+ 	{
+ 		ComponentListRow row;
+-		row.addElement(std::make_shared<TextComponent>(mWindow, Utils::String::toUpper(label), Font::get(FONT_SIZE_MEDIUM), 0x777777FF), true);
++		row.addElement(std::make_shared<TextComponent>(mWindow, Utils::String::toUpper(_(label)), Font::get(FONT_SIZE_MEDIUM), 0x777777FF), true);
+ 		row.addElement(comp, false, invert_when_selected);
+ 		addRow(row, setCursorHere);
+ 	}
+diff --git a/es-core/src/components/OptionListComponent.h b/es-core/src/components/OptionListComponent.h
+index bf922ac..10aa5da 100644
+--- a/es-core/src/components/OptionListComponent.h
++++ b/es-core/src/components/OptionListComponent.h
+@@ -3,6 +3,7 @@
+ #define ES_CORE_COMPONENTS_OPTION_LIST_COMPONENT_H
+ 
+ #include "GuiComponent.h"
++#include "Lang.h"
+ #include "Log.h"
+ #include "Window.h"
+ 
+@@ -48,7 +49,7 @@ private:
+ 			for(auto it = mParent->mEntries.begin(); it != mParent->mEntries.end(); it++)
+ 			{
+ 				row.elements.clear();
+-				row.addElement(std::make_shared<TextComponent>(mWindow, Utils::String::toUpper(it->name), font, 0x777777FF), true);
++				row.addElement(std::make_shared<TextComponent>(mWindow, Utils::String::toUpper(_(it->name)), font, 0x777777FF), true);
+ 
+ 				OptionListData& e = *it;
+ 
+@@ -293,7 +294,7 @@ private:
+ 		{
+ 			// display # selected
+ 			std::stringstream ss;
+-			ss << getSelectedObjects().size() << " SELECTED";
++			ss << getSelectedObjects().size() << " " << _("SELECTED");
+ 			mText.setText(ss.str());
+ 			mText.setSize(0, mText.getSize().y());
+ 			setSize(mText.getSize().x() + mRightArrow.getSize().x() + 24, mText.getSize().y());
+@@ -305,7 +306,7 @@ private:
+ 			{
+ 				if(it->selected)
+ 				{
+-					mText.setText(Utils::String::toUpper(it->name));
++					mText.setText(Utils::String::toUpper(_(it->name)));
+ 					mText.setSize(0, mText.getSize().y());
+ 					setSize(mText.getSize().x() + mLeftArrow.getSize().x() + mRightArrow.getSize().x() + 24, mText.getSize().y());
+ 					if(mParent) // hack since theres no "on child size changed" callback atm...
+diff --git a/es-core/src/guis/GuiDetectDevice.cpp b/es-core/src/guis/GuiDetectDevice.cpp
+index 45d9a6b..b60ba2c 100644
+--- a/es-core/src/guis/GuiDetectDevice.cpp
++++ b/es-core/src/guis/GuiDetectDevice.cpp
+@@ -5,6 +5,7 @@
+ #include "utils/FileSystemUtil.h"
+ #include "utils/StringUtil.h"
+ #include "InputManager.h"
++#include "Lang.h"
+ #include "PowerSaver.h"
+ #include "Window.h"
+ 
+@@ -21,7 +22,7 @@ GuiDetectDevice::GuiDetectDevice(Window* window, bool firstRun, const std::funct
+ 	addChild(&mGrid);
+ 
+ 	// title
+-	mTitle = std::make_shared<TextComponent>(mWindow, firstRun ? "WELCOME" : "CONFIGURE INPUT",
++	mTitle = std::make_shared<TextComponent>(mWindow, _(firstRun ? "WELCOME" : "CONFIGURE INPUT"),
+ 		Font::get(FONT_SIZE_LARGE), 0x555555FF, ALIGN_CENTER);
+ 	mGrid.setEntry(mTitle, Vector2i(0, 0), false, true, Vector2i(1, 1), GridFlags::BORDER_BOTTOM);
+ 
+@@ -30,17 +31,17 @@ GuiDetectDevice::GuiDetectDevice(Window* window, bool firstRun, const std::funct
+ 	int numDevices = InputManager::getInstance()->getNumJoysticks();
+ 
+ 	if(numDevices > 0)
+-		deviceInfo << numDevices << " GAMEPAD" << (numDevices > 1 ? "S" : "") << " DETECTED";
++		deviceInfo << numDevices << " " << _(numDevices > 1 ? "GAMEPADS DETECTED" : "GAMEPAD DETECTED");
+ 	else
+-		deviceInfo << "NO GAMEPADS DETECTED";
++		deviceInfo << _("NO GAMEPADS DETECTED");
+ 	mDeviceInfo = std::make_shared<TextComponent>(mWindow, deviceInfo.str(), Font::get(FONT_SIZE_SMALL), 0x999999FF, ALIGN_CENTER);
+ 	mGrid.setEntry(mDeviceInfo, Vector2i(0, 1), false, true);
+ 
+ 	// message
+-	mMsg1 = std::make_shared<TextComponent>(mWindow, "HOLD A BUTTON ON YOUR DEVICE TO CONFIGURE IT.", Font::get(FONT_SIZE_SMALL), 0x777777FF, ALIGN_CENTER);
++	mMsg1 = std::make_shared<TextComponent>(mWindow, _("HOLD A BUTTON ON YOUR DEVICE TO CONFIGURE IT."), Font::get(FONT_SIZE_SMALL), 0x777777FF, ALIGN_CENTER);
+ 	mGrid.setEntry(mMsg1, Vector2i(0, 2), false, true);
+ 
+-	const char* msg2str = firstRun ? "PRESS F4 TO QUIT AT ANY TIME." : "PRESS ESC TO CANCEL.";
++	const std::string msg2str = _(firstRun ? "PRESS F4 TO QUIT AT ANY TIME." : "PRESS ESC TO CANCEL.");
+ 	mMsg2 = std::make_shared<TextComponent>(mWindow, msg2str, Font::get(FONT_SIZE_SMALL), 0x777777FF, ALIGN_CENTER);
+ 	mGrid.setEntry(mMsg2, Vector2i(0, 3), false, true);
+ 
+diff --git a/es-core/src/guis/GuiInputConfig.cpp b/es-core/src/guis/GuiInputConfig.cpp
+index 3945aee..88b10ca 100644
+--- a/es-core/src/guis/GuiInputConfig.cpp
++++ b/es-core/src/guis/GuiInputConfig.cpp
+@@ -4,6 +4,7 @@
+ #include "components/MenuComponent.h"
+ #include "guis/GuiMsgBox.h"
+ #include "InputManager.h"
++#include "Lang.h"
+ #include "Log.h"
+ #include "Window.h"
+ 
+@@ -68,20 +69,20 @@ GuiInputConfig::GuiInputConfig(Window* window, InputConfig* target, bool reconfi
+ 	// 0 is a spacer row
+ 	mGrid.setEntry(std::make_shared<GuiComponent>(mWindow), Vector2i(0, 0), false);
+ 
+-	mTitle = std::make_shared<TextComponent>(mWindow, "CONFIGURING", Font::get(FONT_SIZE_LARGE), 0x555555FF, ALIGN_CENTER);
++	mTitle = std::make_shared<TextComponent>(mWindow, _("CONFIGURING"), Font::get(FONT_SIZE_LARGE), 0x555555FF, ALIGN_CENTER);
+ 	mGrid.setEntry(mTitle, Vector2i(0, 1), false, true);
+ 
+ 	std::stringstream ss;
+ 	if(target->getDeviceId() == DEVICE_KEYBOARD)
+-		ss << "KEYBOARD";
++		ss << _("KEYBOARD");
+ 	else if(target->getDeviceId() == DEVICE_CEC)
+ 		ss << "CEC";
+ 	else
+-		ss << "GAMEPAD " << (target->getDeviceId() + 1);
++		ss << _("GAMEPAD") << " " << (target->getDeviceId() + 1);
+ 	mSubtitle1 = std::make_shared<TextComponent>(mWindow, Utils::String::toUpper(ss.str()), Font::get(FONT_SIZE_MEDIUM), 0x555555FF, ALIGN_CENTER);
+ 	mGrid.setEntry(mSubtitle1, Vector2i(0, 2), false, true);
+ 
+-	mSubtitle2 = std::make_shared<TextComponent>(mWindow, "HOLD ANY BUTTON TO SKIP", Font::get(FONT_SIZE_SMALL), 0x999999FF, ALIGN_CENTER);
++	mSubtitle2 = std::make_shared<TextComponent>(mWindow, _("HOLD ANY BUTTON TO SKIP"), Font::get(FONT_SIZE_SMALL), 0x999999FF, ALIGN_CENTER);
+ 	mSubtitle2->setOpacity(GUI_INPUT_CONFIG_LIST[0].skippable * 255);
+ 	mGrid.setEntry(mSubtitle2, Vector2i(0, 3), false, true);
+ 
+@@ -105,10 +106,10 @@ GuiInputConfig::GuiInputConfig(Window* window, InputConfig* target, bool reconfi
+ 		spacer->setSize(16, 0);
+ 		row.addElement(spacer, false);
+ 
+-		auto text = std::make_shared<TextComponent>(mWindow, GUI_INPUT_CONFIG_LIST[i].dispName, Font::get(FONT_SIZE_MEDIUM), 0x777777FF);
++		auto text = std::make_shared<TextComponent>(mWindow, _(GUI_INPUT_CONFIG_LIST[i].dispName), Font::get(FONT_SIZE_MEDIUM), 0x777777FF);
+ 		row.addElement(text, true);
+ 
+-		auto mapping = std::make_shared<TextComponent>(mWindow, "-NOT DEFINED-", Font::get(FONT_SIZE_MEDIUM, FONT_PATH_LIGHT), 0x999999FF, ALIGN_RIGHT);
++		auto mapping = std::make_shared<TextComponent>(mWindow, _("-NOT DEFINED-"), Font::get(FONT_SIZE_MEDIUM, FONT_PATH_LIGHT), 0x999999FF, ALIGN_RIGHT);
+ 		setNotDefined(mapping); // overrides text and color set above
+ 		row.addElement(mapping, true);
+ 		mMappings.push_back(mapping);
+@@ -193,7 +194,7 @@ GuiInputConfig::GuiInputConfig(Window* window, InputConfig* target, bool reconfi
+ 		Input input;
+ 		if (!mTargetConfig->getInputByName("HotKeyEnable", &input)) {
+ 			mWindow->pushGui(new GuiMsgBox(mWindow,
+-				"YOU DIDN'T CHOOSE A HOTKEY ENABLE BUTTON. THIS IS REQUIRED FOR EXITING GAMES WITH A CONTROLLER. DO YOU WANT TO USE THE SELECT BUTTON DEFAULT ? PLEASE ANSWER YES TO USE SELECT OR NO TO NOT SET A HOTKEY ENABLE BUTTON.",
++				_("YOU DIDN'T CHOOSE A HOTKEY ENABLE BUTTON. THIS IS REQUIRED FOR EXITING GAMES WITH A CONTROLLER. DO YOU WANT TO USE THE SELECT BUTTON DEFAULT ? PLEASE ANSWER YES TO USE SELECT OR NO TO NOT SET A HOTKEY ENABLE BUTTON."),
+ 				"YES", [this, okFunction] {
+ 					Input input;
+ 					mTargetConfig->getInputByName("Select", &input);
+@@ -256,7 +257,7 @@ void GuiInputConfig::update(int deltaTime)
+ 				// crossed the second boundary, update text
+ 				const auto& text = mMappings.at(mHeldInputId);
+ 				std::stringstream ss;
+-				ss << "HOLD FOR " << HOLD_TO_SKIP_MS/1000 - curSec << "S TO SKIP";
++				ss << Utils::String::replace(_("HOLD FOR %dS TO SKIP"), "%d", std::to_string(HOLD_TO_SKIP_MS/1000 - curSec));
+ 				text->setText(ss.str());
+ 				text->setColor(0x777777FF);
+ 			}
+@@ -288,13 +289,13 @@ void GuiInputConfig::rowDone()
+ 
+ void GuiInputConfig::setPress(const std::shared_ptr<TextComponent>& text)
+ {
+-	text->setText("PRESS ANYTHING");
++	text->setText(_("PRESS ANYTHING"));
+ 	text->setColor(0x656565FF);
+ }
+ 
+ void GuiInputConfig::setNotDefined(const std::shared_ptr<TextComponent>& text)
+ {
+-	text->setText("-NOT DEFINED-");
++	text->setText(_("-NOT DEFINED-"));
+ 	text->setColor(0x999999FF);
+ }
+ 
+@@ -306,7 +307,7 @@ void GuiInputConfig::setAssignedTo(const std::shared_ptr<TextComponent>& text, I
+ 
+ void GuiInputConfig::error(const std::shared_ptr<TextComponent>& text, const std::string& /*msg*/)
+ {
+-	text->setText("ALREADY TAKEN");
++	text->setText(_("ALREADY TAKEN"));
+ 	text->setColor(0x656565FF);
+ }
+ 
+diff --git a/es-core/src/guis/GuiMsgBox.cpp b/es-core/src/guis/GuiMsgBox.cpp
+index 9db9fff..ad1f95b 100644
+--- a/es-core/src/guis/GuiMsgBox.cpp
++++ b/es-core/src/guis/GuiMsgBox.cpp
+@@ -2,6 +2,7 @@
+ 
+ #include "components/ButtonComponent.h"
+ #include "components/MenuComponent.h"
++#include "Lang.h"
+ 
+ #define HORIZONTAL_PADDING_PX 20
+ 
+@@ -14,7 +15,7 @@ GuiMsgBox::GuiMsgBox(Window* window, const std::string& text,
+ 	float width = Renderer::getScreenWidth() * 0.6f; // max width
+ 	float minWidth = Renderer::getScreenWidth() * 0.3f; // minimum width
+ 
+-	mMsg = std::make_shared<TextComponent>(mWindow, text, Font::get(FONT_SIZE_MEDIUM), 0x777777FF, ALIGN_CENTER);
++	mMsg = std::make_shared<TextComponent>(mWindow, _(text), Font::get(FONT_SIZE_MEDIUM), 0x777777FF, ALIGN_CENTER);
+ 	mGrid.setEntry(mMsg, Vector2i(0, 0), false, false);
+ 
+ 	// create the buttons
