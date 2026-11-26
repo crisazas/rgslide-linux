@@ -1,7 +1,7 @@
 # PROGRESS
 
 ## Ahora
-- Audio: AMP_MUTE=1 (amp apagado en silencio), Inter PA=303, vol 100%=DG20. Falta oido del usuario: estatica en reposo, ruido en reproduccion (si persiste: HPL=3-4 y DG bajo, docs 5t), voz por mic. Mic: ruido propio rms~150 sin palanca software (docs 5r/5s)
+- Audio: causa del ruido del MIC = ventilador (pwm 255 -> rms 230; pwm 50 -> rms 20). Curva nueva 40:50..74:255, FAN_SAFE=68 (docs 5u). AMP_MUTE=1, Inter PA=303, vol 100%=DG20. Falta oido del usuario: estatica altavoz en reposo, ruido en reproduccion, voz por mic
 
 ## Siguiente
 - Reflashear rootfs corregido por BROM (el overlay solo esta en la Slide por ssh)

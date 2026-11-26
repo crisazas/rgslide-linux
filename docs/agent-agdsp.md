@@ -234,3 +234,10 @@ Cómo deshacer: nada cambiado en la Slide ni en el repo salvo este fichero.
 
 - `HPL/HPR Gain` (1-6), `DAC Gain` (1-3) y `VBC DAC0 DG` (0-20) cambian el nivel del tono captado (p. ej. HPL=1/DG20 ≈ 480; HPL=3/DG4 ≈ 980; HPL=6/DG20 ≈ 150), pero la misma configuración (HPL=1, DG=20) dio 477, 486 y 711 en tres pasadas: la medida con el micro pegado al altavoz no es repetible, no sirve para elegir ganancias por SNR.
 - Se deja la ruta como está (HPL/HPR=1, DAC=1, DG=20 al 100 %, `Inter PA Config`=303). Si a oído el altavoz sigue ruidoso en reproducción, probar HPL=3-4 con DG más bajo (más ganancia analógica, menos atenuación digital) comparando a oído, no con el micro.
+
+## 5u. CAUSA DEL RUIDO DEL MICRÓFONO: el ventilador (MEDIDO)
+
+- `/etc/rgslide-fan.conf` estaba en `FAN_MODE=max` (pwm 255) y el micro del borde inferior capta el ventilador. Ruido en reposo (rms): pwm 0 → 14, 50 → 18, 70 → 22, 90 → 170, 110 → 56, 130 → 70, 160 → 152, 255 → 230-300, curva automática antigua → 153. Con el ventilador parado el ruido es ~10× menor.
+- Esto explica todo lo anterior: la banda ancha 400-1600 Hz, que subiera con carga de CPU (la curva subía el pwm), que no dependiera del amplificador, de ES ni del backlight, y que el micro "se intuyera con ruido".
+- Curva nueva (`rootfs/overlay/etc/rgslide-fan.conf`): `40:50,52:70,62:110,68:160,74:255`, `FAN_SAFE=68`. Medido: pwm 70 con carga normal mantiene el SoC en 58-62 °C (150 s); los disparos pasivos del kernel están a 70/85 °C y el crítico a 110 °C. Con curva nueva, ruido del micro rms ≈ 20 (antes 150).
+- Mientras se graba voz con carga alta el ventilador subirá y volverá a ensuciar la captura: el micro y el ventilador comparten chasis.
