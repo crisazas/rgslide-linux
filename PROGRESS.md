@@ -1,7 +1,7 @@
 # PROGRESS
 
 ## Ahora
-- Audio: AMP_MUTE=1 instalado (amp apagado en silencio, MEDIDO); falta que el usuario confirme que se fue la estatica. Vol 100%=DG20. Mic: ruido en reposo rms~150 de la propia cadena analogica (docs 5r); voz entra, sin confirmar a oido
+- Audio: AMP_MUTE=1 (amp apagado en silencio), Inter PA=303, vol 100%=DG20. Falta oido del usuario: estatica en reposo, ruido en reproduccion (si persiste: HPL=3-4 y DG bajo, docs 5t), voz por mic. Mic: ruido propio rms~150 sin palanca software (docs 5r/5s)
 
 ## Siguiente
 - Reflashear rootfs corregido por BROM (el overlay solo esta en la Slide por ssh)

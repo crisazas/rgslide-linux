@@ -229,3 +229,8 @@ Cómo deshacer: nada cambiado en la Slide ni en el repo salvo este fichero.
 
 - El ruido del micro (rms ≈ 150, picos 410/516/826/1240 Hz, autocorrelación a 52 Hz) NO depende de: amplificador (Speaker Mute), ES, backlight, frecuencia de CPU, `Mic Function`. Sí sube con carga de CPU (rms 231) y con el altavoz y su demonio parados (rms 458 con `rgslide-audio-spk off`): el rail analógico del códec se ensucia con la actividad del SoC. No se ha encontrado palanca por software.
 - `Inter PA Config` valía 2 (Android, Music/Handsfree/Playback: DTRI_F=7, DEMI=1, mode=0, EMI_rate=1 = 0x12F = 303). Ahora `rgslide-audio-spk on` lo fija a 303. Sin cambio medible en el tono; es el valor de Android (EMI/modulación del amplificador interno), mejora esperable a oído: SUPUESTO.
+
+## 5t. Barrido de ganancias del altavoz (MEDIDO, sin conclusión)
+
+- `HPL/HPR Gain` (1-6), `DAC Gain` (1-3) y `VBC DAC0 DG` (0-20) cambian el nivel del tono captado (p. ej. HPL=1/DG20 ≈ 480; HPL=3/DG4 ≈ 980; HPL=6/DG20 ≈ 150), pero la misma configuración (HPL=1, DG=20) dio 477, 486 y 711 en tres pasadas: la medida con el micro pegado al altavoz no es repetible, no sirve para elegir ganancias por SNR.
+- Se deja la ruta como está (HPL/HPR=1, DAC=1, DG=20 al 100 %, `Inter PA Config`=303). Si a oído el altavoz sigue ruidoso en reproducción, probar HPL=3-4 con DG más bajo (más ganancia analógica, menos atenuación digital) comparando a oído, no con el micro.
