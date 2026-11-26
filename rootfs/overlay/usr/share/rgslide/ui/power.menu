@@ -1,0 +1,4 @@
+title Energia
+status rgslide-ctl status power
+confirm|Reiniciar la Slide|rgslide-ctl reboot
+confirm|Apagar la Slide|rgslide-ctl poweroff

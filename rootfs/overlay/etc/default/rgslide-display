@@ -1,0 +1,6 @@
+# Frecuencia de pantalla de la RG Slide. Lo leen rgslide-es y rgslide-es-launch al (re)lanzar ES o un juego.
+# REFRESH=60    todo a 60 Hz (por defecto; no se exporta nada)
+# REFRESH=120   ES y RetroArch a 120 Hz (HYBRIS_DRM_REFRESH=120)
+# REFRESH=auto  ES a 120 Hz, RetroArch a 60 Hz (120 Hz en RetroArch NO esta probado)
+# Cambio con: rgslide-ctl display set 60|120|auto   (se aplica al REINICIAR ES, no en caliente)
+REFRESH=60

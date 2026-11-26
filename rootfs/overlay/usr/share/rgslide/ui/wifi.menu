@@ -1,0 +1,6 @@
+title Wifi
+status rgslide-ctl status wifi
+list|Buscar redes y conectar|rgslide-ctl wifi list|rgslide-ctl wifi connect %s %p
+list|Olvidar una red guardada|rgslide-ctl wifi saved|rgslide-ctl wifi forget %s
+run|Detalle de la conexion|rgslide-ctl wifi status
+run|Red e IP|rgslide-ctl net

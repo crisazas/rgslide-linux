@@ -1,0 +1,8 @@
+title Bluetooth
+status rgslide-ctl status bt
+choice|Bluetooth|rgslide-ctl bt get|rgslide-ctl bt power %s|off,on
+list|Buscar y emparejar un dispositivo|rgslide-ctl bt scan 10|rgslide-ctl bt pair %s
+list|Conectar un dispositivo emparejado|rgslide-ctl bt devices|rgslide-ctl bt connect %s
+list|Desconectar un dispositivo|rgslide-ctl bt devices|rgslide-ctl bt disconnect %s
+list|Olvidar un dispositivo|rgslide-ctl bt devices|rgslide-ctl bt remove %s
+run|Detalle del adaptador|rgslide-ctl bt status

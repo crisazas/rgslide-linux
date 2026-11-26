@@ -2,4 +2,7 @@
 # Lanza RetroArch desde EmulationStation y devuelve la pantalla. ES libera el contexto GL antes (la plataforma "drm" de hybris solo admite
 # un programa con la pantalla a la vez), asi que RetroArch puede abrir la suya. Uso: rgslide-es-launch NUCLEO.so ROM
 CORE=$1; ROM=$2
+# Frecuencia (/etc/default/rgslide-display): 120 = RetroArch a 120 Hz; 60 y auto = a 60 Hz (sin variable).
+REFRESH=$(sed -n 's/^REFRESH=//p' /etc/default/rgslide-display 2>/dev/null | tail -n 1 | tr -d "\"' ")
+case "$REFRESH" in 120) export HYBRIS_DRM_REFRESH=120;; *) unset HYBRIS_DRM_REFRESH;; esac
 exec /usr/local/bin/rgslide-retroarch --appendconfig=/etc/retroarch-es.cfg -L "$CORE" "$ROM"

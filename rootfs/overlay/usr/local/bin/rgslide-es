@@ -4,6 +4,9 @@
 export LD_LIBRARY_PATH=/opt/emulationstation/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
 while true; do
     rm -f /tmp/es-restart /tmp/es-sysrestart /tmp/es-shutdown
+    # Frecuencia de pantalla (/etc/default/rgslide-display): 60 = sin variable; 120 y auto = ES a 120 Hz.
+    REFRESH=$(sed -n 's/^REFRESH=//p' /etc/default/rgslide-display 2>/dev/null | tail -n 1 | tr -d "\"' ")
+    case "$REFRESH" in 120|auto) export HYBRIS_DRM_REFRESH=120;; *) unset HYBRIS_DRM_REFRESH;; esac
     /opt/emulationstation/emulationstation "$@"
     ret=$?
     [ -f /tmp/es-restart ] && continue

@@ -1,0 +1,7 @@
+title Pantalla, sonido y ventilador
+status rgslide-ctl status screen
+slider|Brillo|5|100|5|rgslide-ctl brightness get|rgslide-ctl brightness set %d
+slider|Volumen|0|100|5|rgslide-ctl volume get|rgslide-ctl volume set %d
+choice|Pantalla (al reiniciar ES)|rgslide-ctl display get|rgslide-ctl display set %s|60,120,auto
+choice|Ventilador|rgslide-ctl fan get|rgslide-ctl fan mode %s|auto,off,max
+run|Detalle del ventilador y temperatura|rgslide-ctl fan status

@@ -1,0 +1,22 @@
+# Panel de control de la RG Slide (rgslide-ui). Formato: ver docs/agent-control.md
+title Ajustes de la Slide
+status rgslide-ctl status power; rgslide-ctl status wifi; rgslide-ctl status bt; rgslide-ctl status screen | head -n 1; rgslide-ctl status time
+slider|Brillo|5|100|5|rgslide-ctl brightness get|rgslide-ctl brightness set %d
+slider|Volumen|0|100|5|rgslide-ctl volume get|rgslide-ctl volume set %d
+choice|Pantalla (al reiniciar ES)|rgslide-ctl display get|rgslide-ctl display set %s|60,120,auto
+choice|Ventilador|rgslide-ctl fan get|rgslide-ctl fan mode %s|auto,off,max
+choice|Bluetooth|rgslide-ctl bt get|rgslide-ctl bt power %s|off,on
+list|Wifi: buscar redes y conectar|rgslide-ctl wifi list|rgslide-ctl wifi connect %s %p
+list|Wifi: olvidar una red guardada|rgslide-ctl wifi saved|rgslide-ctl wifi forget %s
+list|Bluetooth: buscar y emparejar|rgslide-ctl bt scan 10|rgslide-ctl bt pair %s
+list|Bluetooth: conectar un dispositivo emparejado|rgslide-ctl bt devices|rgslide-ctl bt connect %s
+run|Red e IP|rgslide-ctl net
+run|Estado completo|rgslide-ctl status all
+run|Hora: sincronizar con internet|rgslide-ctl time sync
+run|Hora: adelantar 1 hora|rgslide-ctl time adjust +60
+run|Hora: atrasar 1 hora|rgslide-ctl time adjust -60
+run|Hora: adelantar 10 minutos|rgslide-ctl time adjust +10
+run|Hora: atrasar 10 minutos|rgslide-ctl time adjust -10
+choice|Zona horaria|rgslide-ctl time zone|rgslide-ctl time tz %s|Europe/Madrid,Atlantic/Canary,UTC,America/Mexico_City,America/Bogota,America/Argentina/Buenos_Aires,America/New_York
+confirm|Reiniciar la Slide|rgslide-ctl reboot
+confirm|Apagar la Slide|rgslide-ctl poweroff

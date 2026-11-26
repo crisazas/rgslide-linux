@@ -1,0 +1,347 @@
+#!/bin/sh
+# rgslide-ctl: control de la RG Slide desde la linea de ordenes y desde el sistema "Ajustes" de EmulationStation (rgslide-ui).
+# Uso: rgslide-ctl [--dry-run] status [all|wifi|bt|screen|time|power]
+#      rgslide-ctl wifi list|saved|status|connect SSID [CLAVE]|forget SSID [--force]
+#      rgslide-ctl bt get|status|power on|off|scan [SEG]|devices|pair MAC|connect MAC|disconnect MAC|remove MAC
+#      rgslide-ctl brightness [get|set N|up|down]    rgslide-ctl volume [get|set N|up|down]
+#      rgslide-ctl fan [get|status|mode auto|off|max|N]
+#      rgslide-ctl display [get|set 60|120|auto]   (frecuencia de pantalla; se aplica al reiniciar ES)
+#      rgslide-ctl net | time [sync|adjust +-MIN|tz ZONA|get|zone] | reboot | poweroff
+# Las listas (wifi list/saved, bt scan/devices) imprimen "valor<TAB>texto<TAB>pregunta-de-clave" para rgslide-ui.
+PATH=$PATH:/usr/local/sbin:/usr/sbin:/sbin
+export PATH
+DRY=0
+[ "$1" = "--dry-run" ] && { DRY=1; shift; }
+IF=wlan0
+CONF=/etc/wpa_supplicant/wpa_supplicant-nl80211-wlan0.conf
+STATE=/var/lib/rgslide
+TAB=$(printf '\t')
+PS=/sys/class/power_supply/battery
+DISPCONF=/etc/default/rgslide-display
+
+die() { echo "$*" >&2; exit 1; }
+run() { if [ "$DRY" = 1 ]; then echo "[dry-run] $*"; else "$@"; fi; }
+wcli() { sudo -n /usr/sbin/wpa_cli -i "$IF" "$@" 2>&1; }
+have() { command -v "$1" >/dev/null 2>&1; }
+num() { case "$1" in ''|*[!0-9]*) return 1;; esac; }
+
+# ---------- estado ----------
+cur_ssid() { wcli status | sed -n 's/^ssid=//p' | head -n1; }
+cur_state() { wcli status | sed -n 's/^wpa_state=//p' | head -n1; }
+ip4() { ip -4 -o addr show dev "$1" 2>/dev/null | awk '{sub(/\/.*/,"",$4); print $4; exit}'; }
+
+soc_temp() {
+	for z in /sys/class/thermal/thermal_zone*; do
+		if [ "$(cat "$z/type" 2>/dev/null)" = soc-thmzone ]; then
+			t=$(cat "$z/temp" 2>/dev/null) && [ -n "$t" ] && { echo "$((t / 1000)).$(((t % 1000) / 100))"; return; }
+		fi
+	done
+	echo "?"
+}
+
+st_power() {
+	cap=$(cat $PS/capacity 2>/dev/null); stt=$(cat $PS/status 2>/dev/null); v=$(cat $PS/voltage_now 2>/dev/null); bt=$(cat $PS/temp 2>/dev/null)
+	[ -n "$v" ] && v="$((v / 1000000)).$(((v % 1000000) / 10000))" || v="?"
+	[ -n "$bt" ] && bt="$((bt / 10)).$((bt % 10))" || bt="?"
+	case "$stt" in Charging) stt="cargando";; Discharging) stt="en bateria";; Full) stt="completa";; "Not charging") stt="no carga (enchufada)";; esac
+	echo "Bateria    ${cap:-?}%  $stt  ${v} V  (bat ${bt} C)"
+	echo "Temp. SoC  $(soc_temp) C   Ventilador: $(fan_brief)"
+}
+st_wifi() {
+	ss=$(cur_ssid); a=$(ip4 $IF)
+	if [ -n "$ss" ]; then
+		rs=$(wcli signal_poll | sed -n 's/^RSSI=//p')
+		echo "Wifi       $ss  ${rs:-?} dBm  ${a:-sin IP}"
+	else echo "Wifi       sin conexion ($(cur_state))"; fi
+	echo "USB        $(ip4 sipa_usb0)"
+}
+st_bt() {
+	p=$(timeout 4 bluetoothctl show 2>/dev/null | sed -n 's/^[[:space:]]*Powered: //p')
+	case "$p" in yes) n=$(timeout 4 bluetoothctl devices Connected 2>/dev/null | grep -c '^Device'); echo "Bluetooth  encendido ($n conectados)";;
+		no) echo "Bluetooth  apagado";; *) echo "Bluetooth  no disponible (hci0 no esta listo)";; esac
+}
+st_screen() {
+	b=$(rgslide-brightness get 2>/dev/null); v=$(vol_get)
+	echo "Brillo     ${b:-n/d}%   Volumen: $v   Pantalla: $(disp_get) Hz"
+}
+st_time() { echo "Hora       $(date '+%Y-%m-%d %H:%M:%S %Z')   ($(timedatectl show -p Timezone --value 2>/dev/null))"; }
+st_sys() {
+	echo "Memoria    $(free -m | awk '/^Mem:/{printf "%d/%d MB", $3, $2}')   Disco libre $(df -h / | awk 'NR==2{print $4}')"
+	echo "Encendida  $(uptime -p 2>/dev/null)"
+}
+
+cmd_status() {
+	case "${1:-all}" in
+	all) st_power; st_wifi; st_bt; st_screen; st_time; st_sys;;
+	wifi) st_wifi;; bt) st_bt;; screen) st_screen; st_power;; time) st_time;; power) st_power; st_sys;;
+	*) die "status: all|wifi|bt|screen|time|power";;
+	esac
+}
+
+# ---------- wifi ----------
+conf_drop() {
+	awk -v s="$1" '/^network=\{/{inb=1; b=$0 "\n"; keep=1; next}
+		inb{b=b $0 "\n"; if ($0 ~ /^[ \t]*ssid=/) { v=$0; sub(/^[ \t]*ssid=/, "", v); if (v == "\"" s "\"") keep=0 }
+			if ($0 ~ /^\}/) { if (keep) printf "%s", b; inb=0 } next} {print}'
+}
+saved_list() { wcli list_networks | tail -n +2 | awk -F"$TAB" '{print $1 "\t" $2}'; }
+net_id() { saved_list | awk -F"$TAB" -v s="$1" '$2==s{print $1; exit}'; }
+
+wifi_list() {
+	wcli scan >/dev/null; sleep 4
+	saved=$(saved_list | cut -f2 | tr '\n' '|')
+	wcli scan_results | tail -n +2 | sort -t "$TAB" -k3,3nr | awk -F"$TAB" -v saved="|$saved" '
+		$5=="" || $5 ~ /\\/ || seen[$5]++ {next}
+		{ sec = ($4 ~ /WPA|WEP|RSN|SAE/); sv = index(saved, "|" $5 "|") > 0
+		  t = ($4 ~ /SAE/ && $4 !~ /PSK/) ? "WPA3" : ($4 ~ /WPA2|RSN/ ? "WPA2" : ($4 ~ /WPA/ ? "WPA" : ($4 ~ /WEP/ ? "WEP" : "abierta")))
+		  printf "%s\t%-26s %4d dBm  %-7s%s\t%s\n", $5, $5, $3, t, (sv ? " [guardada]" : ""), (sec && !sv ? "Clave de " $5 : "") }'
+}
+
+wifi_saved() { saved_list | awk -F"$TAB" '$2!=""{printf "%s\t%s\t\n", $2, $2}'; }
+
+wifi_status() {
+	ss=$(cur_ssid)
+	if [ -n "$ss" ]; then
+		echo "Conectado a: $ss"
+		wcli signal_poll | awk -F= '/RSSI/{print "Senal: " $2 " dBm"} /LINKSPEED/{print "Velocidad: " $2 " Mbps"} /FREQUENCY/{print "Frecuencia: " $2 " MHz"}'
+		echo "IP: $(ip4 $IF)"
+	else echo "Sin conexion (estado: $(cur_state))"; fi
+}
+
+wifi_connect() {
+	ssid=$1; psk=$2
+	[ -n "$ssid" ] || die "falta el nombre de la red"
+	case "$ssid" in *\"*|*\\*) die "SSID con comillas o barras: no soportado";; esac
+	if [ -n "$psk" ]; then
+		[ ${#psk} -ge 8 ] && [ ${#psk} -le 63 ] || die "la clave debe tener entre 8 y 63 caracteres"
+		case "$psk" in *\"*|*\\*) die "clave con comillas o barras: no soportado";; esac
+	fi
+	prev=$(cur_ssid); id=$(net_id "$ssid")
+	[ -n "$prev" ] || prev=$(saved_list | awk -F"$TAB" -v s="$ssid" '$2!=s && $2!=""{print $2; exit}')
+	if [ -z "$id" ] && [ -z "$psk" ]; then
+		wcli scan_results | awk -F"$TAB" -v s="$ssid" '$5==s{print $4}' | grep -q 'WPA\|WEP\|RSN\|SAE' && die "red protegida: falta la clave"
+	fi
+	if [ "$DRY" = 1 ]; then
+		echo "[dry-run] conectaria a '$ssid' (guardada: ${id:-no}; red actual: ${prev:-ninguna}); se escribiria $CONF y se haria wpa_cli select_network"
+		return 0
+	fi
+	if [ -n "$id" ] && [ -z "$psk" ]; then
+		echo "Usando la red guardada '$ssid'..."
+	else
+		tmp=$(mktemp); sudo -n mkdir -p $STATE
+		sudo -n cat "$CONF" > "$tmp" || die "no puedo leer $CONF"
+		sudo -n cp "$CONF" $STATE/wpa.conf.prev
+		conf_drop "$ssid" < "$tmp" > "$tmp.new"
+		if [ -n "$psk" ]; then
+			{ echo "network={"; echo "	ssid=\"$ssid\""; echo "	scan_ssid=1"; wpa_passphrase "$ssid" "$psk" | grep -v '^[[:space:]]*#psk=' | grep 'psk=' | sed 's/^[[:space:]]*/	/'; echo "	key_mgmt=WPA-PSK"; echo "}"; } >> "$tmp.new"
+		else
+			{ echo "network={"; echo "	ssid=\"$ssid\""; echo "	scan_ssid=1"; echo "	key_mgmt=NONE"; echo "}"; } >> "$tmp.new"
+		fi
+		sudo -n cp "$tmp.new" "$CONF"; rm -f "$tmp" "$tmp.new"
+		wcli reconfigure >/dev/null; sleep 1
+		id=$(net_id "$ssid")
+		echo "Red '$ssid' guardada. Conectando..."
+	fi
+	[ -n "$id" ] || die "no encuentro la red en wpa_supplicant"
+	if [ "$ssid" != "$prev" ] || [ "$(cur_state)" != COMPLETED ]; then wcli select_network "$id" >/dev/null; fi
+	i=0
+	while [ $i -lt 25 ]; do
+		[ "$(cur_state)" = COMPLETED ] && [ "$(cur_ssid)" = "$ssid" ] && break
+		sleep 1; i=$((i + 1))
+	done
+	if [ "$(cur_state)" = COMPLETED ] && [ "$(cur_ssid)" = "$ssid" ]; then
+		i=0; while [ $i -lt 15 ] && [ -z "$(ip4 $IF)" ]; do sleep 1; i=$((i + 1)); done
+		a=$(ip4 $IF)
+		[ -n "$a" ] && { echo "Conectado a '$ssid'. IP: $a"; return 0; }
+		echo "Asociado a '$ssid' pero sin IP (DHCP no responde)."; return 1
+	fi
+	echo "No se pudo conectar a '$ssid' (clave incorrecta o fuera de alcance)."
+	if [ -f $STATE/wpa.conf.prev ] && [ -n "$psk" ]; then
+		sudo -n cp $STATE/wpa.conf.prev "$CONF"; wcli reconfigure >/dev/null
+		echo "Se ha restaurado la configuracion anterior."
+	fi
+	if [ -n "$prev" ] && [ "$prev" != "$ssid" ]; then
+		pid=$(net_id "$prev"); [ -n "$pid" ] && wcli select_network "$pid" >/dev/null && echo "Volviendo a '$prev'."
+	fi
+	return 1
+}
+
+wifi_forget() {
+	ssid=$1; [ -n "$ssid" ] || die "falta el nombre de la red"
+	n=$(saved_list | grep -c .)
+	if { [ "$ssid" = "$(cur_ssid)" ] || [ "$n" -le 1 ]; } && [ "$2" != "--force" ]; then
+		echo "'$ssid' es la red actual o la unica guardada: olvidarla te dejaria sin conexion. Usa --force."; return 1
+	fi
+	[ "$DRY" = 1 ] && { echo "[dry-run] olvidaria '$ssid' de $CONF"; return 0; }
+	tmp=$(mktemp); sudo -n cat "$CONF" | conf_drop "$ssid" > "$tmp"
+	sudo -n cp "$CONF" $STATE/wpa.conf.prev; sudo -n cp "$tmp" "$CONF"; rm -f "$tmp"
+	wcli reconfigure >/dev/null
+	echo "Red '$ssid' olvidada."
+}
+
+cmd_wifi() {
+	sub=$1; [ $# -gt 0 ] && shift
+	case "$sub" in
+	list) wifi_list;; saved) wifi_saved;; status|"") wifi_status;;
+	connect) wifi_connect "$1" "$2";;
+	forget) wifi_forget "$1" "$2";;
+	*) die "wifi: list|saved|status|connect SSID [CLAVE]|forget SSID";;
+	esac
+}
+
+# ---------- bluetooth ----------
+bt_ready() { timeout 4 bluetoothctl show 2>/dev/null | grep -q '^Controller' || { echo "Bluetooth no disponible (hci0 no esta listo; rgslide-bt?)"; return 1; }; }
+bt_get() { timeout 4 bluetoothctl show 2>/dev/null | sed -n 's/^[[:space:]]*Powered: yes/on/p;s/^[[:space:]]*Powered: no/off/p' | head -n1; }
+bt_devs() {
+	conn=$(timeout 5 bluetoothctl devices Connected 2>/dev/null | awk '{print $2}' | tr '\n' ' ')
+	timeout 5 bluetoothctl devices $1 2>/dev/null | awk -v conn=" $conn" '/^Device /{m=$2; $1=""; $2=""; sub(/^  */,""); n=$0
+		if (n == "" || n ~ /^[0-9A-F]{2}(-[0-9A-F]{2}){5}$/) next
+		printf "%s\t%s  (%s)%s\t\n", m, n, m, (index(conn, " " m " ") ? "  [conectado]" : "")}'
+}
+cmd_bt() {
+	sub=$1; [ $# -gt 0 ] && shift
+	case "$sub" in
+	get) bt_ready >/dev/null && bt_get || echo off;;
+	status|"") bt_ready || return 1; st_bt; timeout 5 bluetoothctl show | grep -E 'Name|Alias|Address' | sed 's/^[[:space:]]*/  /';;
+	power)
+		bt_ready || return 1
+		case "$1" in on|off) run timeout 15 bluetoothctl power "$1";; *) die "bt power on|off";; esac;;
+	scan)
+		bt_ready || return 1
+		n=${1:-10}; num "$n" || n=10
+		[ "$(bt_get)" = on ] || timeout 15 bluetoothctl power on >/dev/null 2>&1
+		timeout $((n + 5)) bluetoothctl --timeout "$n" scan on >/dev/null 2>&1
+		bt_devs "" ;;
+	devices) bt_ready >/dev/null || exit 0; bt_devs Paired;;
+	pair)
+		bt_ready || return 1; [ -n "$1" ] || die "bt pair MAC"
+		[ "$DRY" = 1 ] && { echo "[dry-run] pair/trust/connect $1"; return 0; }
+		timeout 45 bluetoothctl pair "$1" 2>&1 | grep -E 'Pairing|Failed|successful|Already|not available' | head -n 3
+		timeout 10 bluetoothctl trust "$1" 2>&1 | tail -n 1
+		timeout 25 bluetoothctl connect "$1" 2>&1 | tail -n 2;;
+	connect|disconnect|remove)
+		bt_ready || return 1; [ -n "$1" ] || die "bt $sub MAC"
+		run timeout 25 bluetoothctl "$sub" "$1" 2>&1 | tail -n 2;;
+	*) die "bt: get|status|power on|off|scan [SEG]|devices|pair MAC|connect MAC|disconnect MAC|remove MAC";;
+	esac
+}
+
+# ---------- brillo, volumen, ventilador ----------
+cmd_brightness() {
+	have rgslide-brightness || { echo "no disponible (falta rgslide-brightness)"; return 1; }
+	case "${1:-get}" in
+	get|up|down) rgslide-brightness "${1:-get}";;
+	set) num "$2" || die "brightness set N (0-100)"; run rgslide-brightness set "$2";;
+	*) die "brightness [get|set N|up|down]";;
+	esac
+}
+vol_get() { have rgslide-volume && rgslide-volume get 2>/dev/null || echo "no disponible"; }
+cmd_volume() {
+	have rgslide-volume || { echo "no disponible (sin audio: falta rgslide-volume)"; return 1; }
+	case "${1:-get}" in
+	get|up|down) rgslide-volume "${1:-get}";;
+	set) num "$2" || die "volume set N (0-100)"; run rgslide-volume set "$2";;
+	*) die "volume [get|set N|up|down]";;
+	esac
+}
+fan_brief() { have rgslide-fan && rgslide-fan status 2>/dev/null | sed -n 's/^modo=\([^ ]*\) pwm1=\([^ ]*\).*/\1 (pwm \2)/p' || echo "no disponible"; }
+cmd_fan() {
+	have rgslide-fan || { echo "no disponible (falta rgslide-fan)"; return 1; }
+	case "${1:-status}" in
+	get) rgslide-fan status | sed -n 's/^modo=\([^ ]*\) .*/\1/p';;
+	status) rgslide-fan status;;
+	mode) [ -n "$2" ] || die "fan mode auto|off|max|N"; run sudo -n rgslide-fan mode "$2"; [ "$DRY" = 1 ] || rgslide-fan status;;
+	*) die "fan [get|status|mode auto|off|max|N]";;
+	esac
+}
+
+# ---------- frecuencia de pantalla ----------
+disp_get() {
+	v=$(sed -n 's/^REFRESH=//p' "$DISPCONF" 2>/dev/null | tail -n 1 | tr -d "\"' ")
+	case "$v" in 60|120|auto) echo "$v";; *) echo 60;; esac
+}
+cmd_display() {
+	case "${1:-get}" in
+	get) disp_get;;
+	set)
+		case "$2" in 60|120|auto) ;; *) die "display set 60|120|auto";; esac
+		if [ "$DRY" = 1 ]; then echo "[dry-run] REFRESH=$2 en $DISPCONF"; return 0; fi
+		cur=$(sed -e "s/^REFRESH=.*/REFRESH=$2/" "$DISPCONF" 2>/dev/null)
+		[ -n "$cur" ] && echo "$cur" | grep -q "^REFRESH=$2\$" || cur=$(printf '# Frecuencia de pantalla (rgslide-ctl display set 60|120|auto)\nREFRESH=%s' "$2")
+		echo "$cur" | sudo -n tee "$DISPCONF" >/dev/null || die "no pude escribir $DISPCONF"
+		echo "Pantalla: $2. Se aplica al REINICIAR ES (no en caliente)."
+		if [ "$2" = auto ]; then echo "auto = ES a 120 Hz, juegos (RetroArch) a 60 Hz."; fi
+		;;
+	*) die "display [get|set 60|120|auto]";;
+	esac
+}
+
+# ---------- red y hora ----------
+cmd_net() {
+	ip -br -4 addr show | awk '$1 ~ /^(wlan0|sipa_usb0|usb0|eth)/ && $3 != ""{printf "%-12s %s\n", $1, $3}'
+	echo "Ruta por defecto: $(ip route | awk '/^default/{print $3 " por " $5; exit}')"
+	echo "DNS: $(resolvectl dns 2>/dev/null | awk -F': ' '/wlan0/{print $2}')"
+	echo "Nombre: $(hostname)"
+	python3 -c 'import socket,sys
+try: socket.create_connection(("1.1.1.1",443),timeout=4).close(); print("Internet: si (1.1.1.1 responde)")
+except OSError: print("Internet: no")' 2>/dev/null
+}
+
+web_epoch() {
+	python3 - <<'EOF'
+import urllib.request, email.utils, calendar
+for u in ("http://example.com", "http://www.google.com", "http://cloudflare.com"):
+    try:
+        r = urllib.request.urlopen(urllib.request.Request(u, method="HEAD"), timeout=8)
+        print(calendar.timegm(email.utils.parsedate(r.headers["Date"])))
+        break
+    except Exception:
+        pass
+EOF
+}
+time_set() {
+	[ "$DRY" = 1 ] && { echo "[dry-run] date -u -s @$1 y rgslide-clock save"; return 0; }
+	sudo -n date -u -s "@$1" >/dev/null && sudo -n rgslide-clock save && echo "Hora puesta: $(date '+%Y-%m-%d %H:%M:%S %Z')"
+}
+cmd_time() {
+	sub=$1; [ $# -gt 0 ] && shift
+	case "$sub" in
+	""|get) st_time;;
+	zone) timedatectl show -p Timezone --value;;
+	sync)
+		e=$(web_epoch); [ -n "$e" ] || { echo "Sin internet: no se pudo leer la hora de la red."; return 1; }
+		d=$(( e - $(date +%s) )); echo "Diferencia con internet: $d s"
+		time_set "$e";;
+	adjust)
+		case "$1" in [+-][0-9]*) ;; *) die "time adjust +-MINUTOS";; esac
+		time_set $(( $(date +%s) + ${1#+} * 60 ));;
+	tz) [ -n "$1" ] || die "time tz ZONA (p.ej. Europe/Madrid)"; run sudo -n timedatectl set-timezone "$1" && st_time;;
+	*) die "time: get|zone|sync|adjust +-MIN|tz ZONA";;
+	esac
+}
+
+# ---------- energia ----------
+cmd_power() {
+	what=$1
+	if [ "$DRY" = 1 ]; then echo "[dry-run] sync; sudo systemctl $what  (no se ejecuta)"; return 0; fi
+	echo "Sincronizando discos..."; sync
+	[ "$what" = reboot ] && echo "Reiniciando..." || echo "Apagando..."
+	sudo -n rgslide-clock save 2>/dev/null
+	sudo -n systemctl "$what"
+}
+
+c=$1; [ $# -gt 0 ] && shift
+case "$c" in
+status|"") cmd_status "$@";;
+wifi) cmd_wifi "$@";;
+bt) cmd_bt "$@";;
+brightness) cmd_brightness "$@";;
+volume) cmd_volume "$@";;
+fan) cmd_fan "$@";;
+display) cmd_display "$@";;
+net) cmd_net;;
+time) cmd_time "$@";;
+reboot) cmd_power reboot;;
+poweroff) cmd_power poweroff;;
+*) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 2;;
+esac

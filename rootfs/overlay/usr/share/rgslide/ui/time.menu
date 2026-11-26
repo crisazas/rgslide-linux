@@ -1,0 +1,8 @@
+title Hora y fecha
+status rgslide-ctl status time
+run|Sincronizar con internet|rgslide-ctl time sync
+run|Adelantar 1 hora|rgslide-ctl time adjust +60
+run|Atrasar 1 hora|rgslide-ctl time adjust -60
+run|Adelantar 10 minutos|rgslide-ctl time adjust +10
+run|Atrasar 10 minutos|rgslide-ctl time adjust -10
+choice|Zona horaria|rgslide-ctl time zone|rgslide-ctl time tz %s|Europe/Madrid,Atlantic/Canary,UTC,America/Mexico_City,America/Bogota,America/Argentina/Buenos_Aires,America/New_York
