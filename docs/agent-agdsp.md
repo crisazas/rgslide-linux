@@ -224,3 +224,8 @@ Cómo deshacer: nada cambiado en la Slide ni en el repo salvo este fichero.
 - `ADC_1 Gain ADC_1 Capture Volume` guarda solo 3 bits (9 se lee 1, 12 se lee 4) y no es lineal: ruido rms 5 / 22 / 172 con 0 / 3 / 6. El tono de prueba escala igual (6 / 28 / 215), así que la relación señal/ruido no mejora bajando la ganancia: el ruido está antes del ADC.
 - `VBC ADC0 DG Set` (10, 25, 50) no cambia ni el tono ni el ruido: no está en la ruta de captura.
 - Conclusión: con 6 (valor de Android) la voz a 2-5 cm queda ~25 dB sobre el ruido; mejorar más exige filtrado por software o la cadena CVSREC del HAL (no replicada). Pendiente de oído.
+
+## 5s. Ruido del micro y `Inter PA Config` (MEDIDO)
+
+- El ruido del micro (rms ≈ 150, picos 410/516/826/1240 Hz, autocorrelación a 52 Hz) NO depende de: amplificador (Speaker Mute), ES, backlight, frecuencia de CPU, `Mic Function`. Sí sube con carga de CPU (rms 231) y con el altavoz y su demonio parados (rms 458 con `rgslide-audio-spk off`): el rail analógico del códec se ensucia con la actividad del SoC. No se ha encontrado palanca por software.
+- `Inter PA Config` valía 2 (Android, Music/Handsfree/Playback: DTRI_F=7, DEMI=1, mode=0, EMI_rate=1 = 0x12F = 303). Ahora `rgslide-audio-spk on` lo fija a 303. Sin cambio medible en el tono; es el valor de Android (EMI/modulación del amplificador interno), mejora esperable a oído: SUPUESTO.
