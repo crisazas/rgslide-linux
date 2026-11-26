@@ -261,3 +261,10 @@ Cómo deshacer: nada cambiado en la Slide ni en el repo salvo este fichero.
 - Problema medido: con el umbral corto (1,2 s) y la condicion de cola, el relleno de ceros del propio demonio dejaba la cola en ~600-770 muestras y el mute oscilaba (43 cambios en 6 min: pitidos de rele y cortes en pausas musicales).
 - Regla actual: cierra tras `IDLE_PCM_MS` (15 s) de silencio **y** con la cola ya consumida por el DAC; abre en cuanto llega sonido (<1,2 s). MEDIDO: reposo largo = 2 cambios en 30 s; pausa de 3 s entre tonos = mute 0 durante toda la pausa; ataques completos desde la primera ventana de 50 ms.
 - El sensor de sonido no distingue el siseo del audio real (ambos superan el umbral de 64), asi que con ALWAYS_ON el amplificador sigue abierto hasta 15 s tras el ultimo sonido. Quitarlo del todo deja la estatica siempre audible.
+
+## 5x. AMP_MUTE revertido y estado del reloj del I2S (2026-11-26)
+
+- `AMP_MUTE=0` (commit `bd44a37`): el amplificador queda siempre encendido con la ruta abierta, para buscar la causa del siseo sin enmascararlo. `Speaker Mute` fijo a 0, 1 solo cambio en el registro.
+- MEDIDO: `ap-iis0` (reloj base del I2S, 153,6 MHz de `tgpll-153m6`) tiene `enable=0` **con el PCM en `RUNNING`**, y `iis0-eb` / `audcp-iis0-eb` tambien a 0; el unico reloj de audio activo es `clk-26m-aud`. Comprobado con el demonio, con `rgslide-cap` y muestreando cada 0,5 s durante un tono.
+- El nodo `agcp/i2s@56270800` (enlazado a `sprd-dai`, `sprd,id=0x125`, `hw-port=0`) **no declara `clocks` en el DT**; el unico nodo i2s con `clocks` es `ap-ahb/i2s@0x202b0000`, que esta `status=disable`. `snd-soc-sprd-dai.ko` calcula `iis_sck` desde `src_clk` (constante 24,576 MHz en el modulo) e imprime `iis_sck`/`iis_clkd` solo con `dev_dbg`; con `dynamic_debug` activado esas trazas no salen, asi que la configuracion del reloj ocurre por otra ruta (VBC: `vbc_put_iis_master_width`).
+- `ucp1301` (amplificador I2C `6-0058`): el driver existe (`ucp1301`) pero el nodo no esta enlazado y `bind` falla con `read chip id high fail -5` (EIO), tambien con la ruta del altavoz encendida. Sin `i2c-dev` en el kernel no se puede sondear el bus desde espacio de usuario.
