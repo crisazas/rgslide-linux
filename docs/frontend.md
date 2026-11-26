@@ -76,3 +76,9 @@ Como el 20 es a la vez "hotkey" y "menu", RetroArch (`input_driver.c`, `input_dr
 - Verificado: ES arranca con el tema (`rgslide-es` activo, `NRestarts=0`, sin errores en `es_log.txt`). Avisos `could not find file ""` en cada sistema: son las imagenes plantilla `md_image`/`md_marquee`/`ControllerOverlay` de carbon.xml sin `<path>` (ES las rellena con metadatos); inofensivos.
 - NO verificado: el aspecto en pantalla (no hay captura desde aqui; lo tiene que ver una persona), ni tactil/rotacion (ES clasico no tiene funciones tactiles ni de rotacion).
 - Se crearon `~/roms/{snes,virtualboy,wonderswan}` vacias: ES las ignora ("has no games") y el log ya no marca error de carpeta inexistente.
+
+## Frecuencia de pantalla 60/120 Hz (2026-11-26) - ver docs/agent-refresh.md
+- MEDIDO: el panel DSI-1 ofrece 1280x960 a 60 (preferido), 90 y 120 Hz. 120 Hz da `actual_fps` ~120 y hybristest 108 fps (59 a 60 Hz); +14 % de corriente. 90 Hz es inestable: solo 60 y 120.
+- Hace falta un commit atomico con la propiedad CRTC `frame rate change`=1 (SETCRTC no basta). Parche `patches/libhybris/0004-...` : con `HYBRIS_DRM_REFRESH=120` elige 120 Hz; sin la variable, 60 Hz como siempre.
+- Instalado el `.so` (md5 7a37c5d7..., respaldo `.pre-refresh`; `scripts/install-hybris-refresh.sh undo` lo revierte). NADIE ha visto la pantalla a 120 Hz.
+- El selector 60/120/auto va en el menu Ajustes (`rgslide-ctl display`, `/etc/default/rgslide-display`); se aplica al reiniciar ES. `auto` = ES a 120 y RetroArch a 60 (120 Hz en RetroArch NO esta probado).
