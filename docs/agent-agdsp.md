@@ -172,6 +172,10 @@ Herramienta: `/tmp/ctl2.py` en la Slide (ioctl crudos de `/dev/snd/controlC0`; n
 - Con el modo 64, Thwaite (NES) suena "mucho mejor" segun el usuario. Los ajustes analogicos (`Inter PA`, `HPL/HPR`, `DAC Gain`) no eran la causa.
 - Nota: el demonio acumulo 40658 frames en el anillo en la ultima ventana (el juego produce un poco mas rapido que el DAC); `ring_trim` lo recorta a LAT al pasar de 3xLAT.
 
+## 5l. Microfono con voz real (2026-11-26) - MEDIDO + PERCIBIDO
+- Con `VBC ADC0 DG Set`=25 (Android) y la voz a 2-3 cm del agujero del borde inferior: reposo RMS 18, voz 133-1354 RMS, bandas 150-400/400-1000/1-3k Hz 20-80 veces sobre el fondo, pico 24648 sin saturar. La voz SI entra en el micro.
+- Reproducida por el altavoz (perfil modo 64, ganancia x5,3 con limitador): el usuario dice "se intuye con ruido". Es decir: captura funcional, inteligibilidad baja. SUPUESTO: el DSP no aplica el perfil de grabacion (`Music/Handsfree/Record` no existe en `dsp_vbc.xml`/`audio_structure.xml` de este ODM; el `audio_structure` sigue en modo 0, de llamada) y el altavoz pequeno a ganancia alta degrada; no aislado.
+
 ## 6. Advertencia: registros AGCP (0x56xxxxxx)
 No leer ni escribir `0x56xxxxxx` (MCDT, DMA 0x56650000, VBC 0x56510000, IRAM 0x568xxxxx) con devmem/mmap/`/dev/mem` ni con ningún truco: con el dominio sin acceso es un **abort síncrono externo → reinicio** (CITADO e5 FINDINGS §32 y §34 "Trap"; un `sprd_pcm_pointer` leyendo el DMA tumbó una Slide tras 5 h 50 min). Solo son seguros PMU APB `0x64910000` y AON APB `0x64900000` (vía debugfs regmap) y SOLO lectura. Esa regla es la que implementa `agdsp_can_access` (§2).
 
