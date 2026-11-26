@@ -1,5 +1,6 @@
 #!/bin/sh
 # Microfono principal de la Slide: mixer de captura (audio_route.xml de Android, main_mic + record DSP) y perfiles del DSP.
+# El micro esta en el agujero del borde inferior; hablar a 2-5 cm (soplo medido, docs/agent-agdsp.md 5i).
 # Uso: rgslide-audio-mic on|off|test [segundos]   (test: captura 3 s y muestra el RMS; el PCM usa buffer de 7680 B, no cambiarlo)
 C="python3 /usr/local/lib/rgslide/ctl.py set"
 case "${1:-on}" in
@@ -7,7 +8,7 @@ on)
 	R=/sys/kernel/debug/regmap/dummy-syscon@64910000/registers
 	python3 /usr/local/lib/rgslide/ctl.py set agdsp_access_en 1 >/dev/null
 	python3 /usr/local/lib/rgslide/ctl.py write 93 1 >/dev/null 2>&1; python3 /usr/local/lib/rgslide/ctl.py write 94 1 >/dev/null 2>&1
-	for a in 'S_CAPTURE_DSP_CODEC SWITCH|1' 'ag_iis1_ext_sel_v2|aud_4ad_iis0_ad0' 'VBC_MUX_ADC0_IIS_PORT_SEL|VBC_IIS_PORT_IIS1' 'VBC ADC0 DG Set|17 17' \
+	for a in 'S_CAPTURE_DSP_CODEC SWITCH|1' 'ag_iis1_ext_sel_v2|aud_4ad_iis0_ad0' 'VBC_MUX_ADC0_IIS_PORT_SEL|VBC_IIS_PORT_IIS1' 'VBC ADC0 DG Set|40 40' \
 		'ADD0 DATA SEL|ADD0_DATA_MIC13' 'ADC LRCLK Select|invert' 'ADC_1 Gain ADC_1 Capture Volume|6' 'ADC_1 Mixer MIC1PGA_1 Switch|1' \
 		'AUD ADC0L Switch|1' 'AUD ADC0R Switch|1' 'Mic Function|1'; do
 		n=${a%%|*}; v=${a#*|}; $C "$n" $v >/dev/null

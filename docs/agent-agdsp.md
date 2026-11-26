@@ -155,6 +155,11 @@ Herramienta: `/tmp/ctl2.py` en la Slide (ioctl crudos de `/dev/snd/controlC0`; n
 - CORRECCION: con ganancia ADC DG=60 y 20 s de voz (pitido de aviso, usuario hablando), el espectro por bandas (150-400, 400-1000, 1-3k Hz) queda plano en ~1 salvo un golpe a los 9,5 s: **no entra voz**. Reposo 29-33 RMS. Hasta localizar el agujero del micro la captura de voz NO esta confirmada.
 - La voz del usuario no se pudo confirmar a oido en tres intentos (la reproduccion sonaba a "ruido o golpes" con picos de 1622): el nivel de voz que llega es bajo frente al ruido de fondo (ganancia ADC 6 de 7, DG 17). SUPUESTO: subir `VBC ADC0 DG Set` mejoraria; no probado.
 
+## 5i. Microfono localizado: agujero del borde inferior, ruta main/MIC13 (2026-11-26) - MEDIDO
+- El usuario indica que el agujero del micro esta en el **borde inferior**. Soplando continuo a ~2 cm durante 12 s por ruta (ADC DG=40): `main` (MIC13, ADC_1, `Mic Function`) mediana 1187, p90 2691, **pico 15617**, reposo(p10) 55; `hpmic` (HPMICPGA_1) mediana 7, pico 61; `aux` (MIC23, ADC_2) mediana 1, pico 2. **Solo `main` oye**, y oye fuerte: es el micro real y la ruta de `rgslide-audio-mic` es la correcta.
+- Explica los intentos de voz anteriores: hablar lejos del agujero deja la voz por debajo del ruido de fondo (RMS ~30). Hay que hablar a 2-5 cm del borde inferior.
+- `rgslide-audio-mic on` pasa a `VBC ADC0 DG Set`=40 por defecto (antes 17).
+
 ## 6. Advertencia: registros AGCP (0x56xxxxxx)
 No leer ni escribir `0x56xxxxxx` (MCDT, DMA 0x56650000, VBC 0x56510000, IRAM 0x568xxxxx) con devmem/mmap/`/dev/mem` ni con ningún truco: con el dominio sin acceso es un **abort síncrono externo → reinicio** (CITADO e5 FINDINGS §32 y §34 "Trap"; un `sprd_pcm_pointer` leyendo el DMA tumbó una Slide tras 5 h 50 min). Solo son seguros PMU APB `0x64910000` y AON APB `0x64900000` (vía debugfs regmap) y SOLO lectura. Esa regla es la que implementa `agdsp_can_access` (§2).
 
