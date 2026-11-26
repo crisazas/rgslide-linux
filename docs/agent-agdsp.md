@@ -293,3 +293,10 @@ Cómo deshacer: nada cambiado en la Slide ni en el repo salvo este fichero.
 - `ump9620_regulator` si esta cargado (12 usos) y expone `avdd18` (1,805 V), `avdd12` (1,2 V), `vdd28` (2,8 V) y `DCDC_WPA` (3,398 V). Los tres primeros estan encendidos con 1 usuario cada uno; **`DCDC_WPA` esta `disabled` con `num_users=0`**, tambien con la ruta del altavoz encendida y el PCM en `RUNNING`.
 - `DCDC_WPA` es el rail del amplificador externo: Android declara `spk-ext-pa-gpio` y el nodo `ucp1301` (que aqui no responde por I2C) y carga ese mismo modulo. En el DT vivo de Debian el nodo del codec (`audio-codec@56360000`) **no declara ningun `*-supply`**, asi que nada pide ese rail.
 - Otros candidatos descartados en la misma tanda: `CLK 26M IN SEL` (0/1, rms 17,3/15,3, sin cambio) y el selector de reloj del I2S. El siseo se mantiene en 12-20 rms con ventilador a pwm 50.
+
+## 5ac. Amplificador externo: el nodo existe pero el chip no contesta (MEDIDO)
+
+- El nodo `ucp1301@58` si esta en el DT vivo (`/sys/firmware/devicetree/base/soc/ap-ahb/i2c@22a0000/ucp1301@58`) con `compatible = sprd,ucp1301-spk` y `reset-gpios = <0x60 0x78 0>` (pin 120). Ese pin **no lo pide nadie**: no aparece en `/sys/kernel/debug/gpio`, asi que el reset nunca se suelta.
+- `bind` a mano falla siempre con `read chip id high fail -5` (EIO), tambien con la ruta del altavoz encendida, con `Speaker Function`/`Speaker1 Function`=1 y con la salida HP activa. `dump/live/dmesg-gamma-now.txt` no tiene **ninguna** traza de `ucp1301` y su modulo esta cargado con 0 usos: en Android tampoco enlaza.
+- El rail del PA externo, `DCDC_WPA` (3,398 V), esta `disabled` con `num_users=0`. Es de solo lectura en sysfs (`-r--r--r--`, tambien como root) y **ningun driver lo pide** (ni el del codec ni el del PA declaran supplies; el nodo del codec no tiene `*-supply`).
+- Sin `i2c-dev` ni `gpio-sysfs` en el kernel no se puede ni sondear el bus ni mover el reset desde userspace.
