@@ -1,0 +1,124 @@
+rgslide: plataforma drm de hybris: HYBRIS_DRM_REFRESH=120 (o 90) activa ese modo del panel
+
+Sin la variable (o =60) el comportamiento NO cambia: SETCRTC a 60 Hz como antes. Con la variable, tras el
+SETCRTC inicial a 60 Hz hace un commit atomico con MODE_ID del modo pedido y la propiedad CRTC
+"frame rate change"=1 (sin ella sprd-drm no reprograma el DPU y el panel sigue a 60 Hz); si falla, sigue a 60.
+Al destruir la ventana vuelve a 60 Hz. Ver docs/agent-refresh.md.
+---
+--- a/hybris/egl/platforms/drm/drm_window.h
++++ b/hybris/egl/platforms/drm/drm_window.h
+@@ -55,6 +55,8 @@
+ 	bool importFb(DrmNativeWindowBuffer *b);
+ 	void freeBuffers();
+ 	int waitFlip();
++	int atomicMode(void *mode);
++	void applyRefresh();
+ 
+ 	int m_drm = -1;
+ 	uint32_t m_crtc = 0, m_conn = 0;
+@@ -68,6 +70,8 @@
+ 	DrmNativeWindowBuffer *m_front = nullptr, *m_pending = nullptr;
+ 	bool m_modeset = false;
+ 	void *m_mode = nullptr;
++	void *m_mode_hi = nullptr;
++	bool m_hi_on = false;
+ };
+ 
+ #endif
+--- a/hybris/egl/platforms/drm/drm_window.cpp
++++ b/hybris/egl/platforms/drm/drm_window.cpp
+@@ -104,11 +104,68 @@
+ 	if (getenv("HYBRIS_DRM_DEBUG")) fprintf(stderr, "drm: ~window inicio\n");
+ 	freeBuffers();
+ 	if (getenv("HYBRIS_DRM_DEBUG")) fprintf(stderr, "drm: ~window buffers libres\n");
++	if (m_hi_on && m_drm >= 0) atomicMode(m_mode);
+ 	if (m_drm >= 0) close(m_drm);
+ 	free(m_mode);
++	free(m_mode_hi);
+ 	if (getenv("HYBRIS_DRM_DEBUG")) fprintf(stderr, "drm: ~window fin\n");
+ }
+ 
++static int find_prop(int fd, uint32_t obj, uint32_t type, const char *name, uint32_t *id)
++{
++	struct drm_mode_obj_get_properties g;
++	memset(&g, 0, sizeof g); g.obj_id = obj; g.obj_type = type;
++	if (dx(fd, DRM_IOCTL_MODE_OBJ_GETPROPERTIES, &g) < 0) return -1;
++	uint32_t *ids = (uint32_t *)calloc(g.count_props + 1, 4); uint64_t *vals = (uint64_t *)calloc(g.count_props + 1, 8);
++	g.props_ptr = U64(ids); g.prop_values_ptr = U64(vals);
++	int r = -1;
++	if (dx(fd, DRM_IOCTL_MODE_OBJ_GETPROPERTIES, &g) == 0)
++		for (uint32_t i = 0; i < g.count_props && r < 0; i++) {
++			struct drm_mode_get_property gp; memset(&gp, 0, sizeof gp); gp.prop_id = ids[i];
++			if (dx(fd, DRM_IOCTL_MODE_GETPROPERTY, &gp) == 0 && !strcmp(gp.name, name)) { *id = ids[i]; r = 0; }
++		}
++	free(ids); free(vals);
++	return r;
++}
++
++/* El sprd-drm solo reprograma el DPU al cambiar de frecuencia si el commit lleva la propiedad CRTC "frame rate change"=1
++ * (SETCRTC legacy con otro vrefresh no la pone y el panel sigue a 60 Hz). Ver docs/agent-refresh.md. */
++int DrmNativeWindow::atomicMode(void *modep)
++{
++	uint32_t p_cid, p_mode, p_act, p_frc;
++	struct drm_set_client_cap cc;
++	struct drm_mode_create_blob cb;
++	struct drm_mode_destroy_blob db;
++	struct drm_mode_atomic at;
++	uint32_t objs[2], counts[2] = { 1, 3 }, props[4];
++	uint64_t vals[4];
++	int r;
++	memset(&cc, 0, sizeof cc); cc.capability = DRM_CLIENT_CAP_UNIVERSAL_PLANES; cc.value = 1; dx(m_drm, DRM_IOCTL_SET_CLIENT_CAP, &cc);
++	cc.capability = DRM_CLIENT_CAP_ATOMIC;
++	if (dx(m_drm, DRM_IOCTL_SET_CLIENT_CAP, &cc) < 0) return -1;
++	if (find_prop(m_drm, m_conn, DRM_MODE_OBJECT_CONNECTOR, "CRTC_ID", &p_cid) || find_prop(m_drm, m_crtc, DRM_MODE_OBJECT_CRTC, "MODE_ID", &p_mode) ||
++	    find_prop(m_drm, m_crtc, DRM_MODE_OBJECT_CRTC, "ACTIVE", &p_act) || find_prop(m_drm, m_crtc, DRM_MODE_OBJECT_CRTC, "frame rate change", &p_frc)) return -1;
++	memset(&cb, 0, sizeof cb); cb.data = U64(modep); cb.length = sizeof(struct drm_mode_modeinfo);
++	if (dx(m_drm, DRM_IOCTL_MODE_CREATEPROPBLOB, &cb) < 0) return -1;
++	objs[0] = m_conn; objs[1] = m_crtc;
++	props[0] = p_cid; props[1] = p_mode; props[2] = p_act; props[3] = p_frc;
++	vals[0] = m_crtc; vals[1] = cb.blob_id; vals[2] = 1; vals[3] = 1;
++	memset(&at, 0, sizeof at);
++	at.flags = DRM_MODE_ATOMIC_ALLOW_MODESET; at.count_objs = 2; at.objs_ptr = U64(objs);
++	at.count_props_ptr = U64(counts); at.props_ptr = U64(props); at.prop_values_ptr = U64(vals);
++	r = dx(m_drm, DRM_IOCTL_MODE_ATOMIC, &at);
++	memset(&db, 0, sizeof db); db.blob_id = cb.blob_id; dx(m_drm, DRM_IOCTL_MODE_DESTROYPROPBLOB, &db);
++	return r;
++}
++
++void DrmNativeWindow::applyRefresh()
++{
++	struct drm_mode_modeinfo *hi = (struct drm_mode_modeinfo *)m_mode_hi;
++	if (!hi) return;
++	if (atomicMode(hi) == 0) { m_hi_on = true; fprintf(stderr, "hybris drm: modo %u Hz\n", hi->vrefresh); }
++	else { m_hi_on = false; fprintf(stderr, "hybris drm: no pude pasar a %u Hz, sigo a 60\n", hi->vrefresh); }
++}
++
+ bool DrmNativeWindow::openDrm()
+ {
+ 	struct drm_mode_card_res res;
+@@ -137,6 +194,15 @@
+ 		for (unsigned k = 0; k < c.count_modes; k++) if (modes[k].vrefresh == 60 && pick < 0) pick = (int)k;
+ 		if (pick < 0) pick = 0;
+ 		*mode = modes[pick];
++		{
++			const char *want_s = getenv("HYBRIS_DRM_REFRESH");
++			unsigned want = want_s ? (unsigned)atoi(want_s) : 60;
++			for (unsigned k = 0; want != 60 && k < c.count_modes; k++)
++				if (modes[k].vrefresh == want && modes[k].hdisplay == mode->hdisplay && modes[k].vdisplay == mode->vdisplay) {
++					m_mode_hi = malloc(sizeof *mode); memcpy(m_mode_hi, &modes[k], sizeof *mode); break;
++				}
++			if (want != 60 && !m_mode_hi) fprintf(stderr, "hybris drm: no hay modo a %u Hz, sigo a 60\n", want);
++		}
+ 	}
+ 	if (!m_conn) return false;
+ 	if (enc_id) {
+@@ -229,7 +295,8 @@
+ 		memset(&sc, 0, sizeof sc);
+ 		sc.crtc_id = m_crtc; sc.fb_id = b->m_fb; sc.set_connectors_ptr = U64(&m_conn); sc.count_connectors = 1; sc.mode_valid = 1; sc.mode = *mode;
+ 		if (dx(m_drm, DRM_IOCTL_MODE_SETCRTC, &sc) < 0) { fprintf(stderr, "hybris drm: SETCRTC: %s\n", strerror(errno)); b->m_busy = false; return -1; }
+-		m_modeset = true; m_front = b;
++		m_modeset = true; m_front = b; m_hi_on = false;
++		applyRefresh();
+ 		return NO_ERROR;
+ 	}
+ 	if (m_pending) {
