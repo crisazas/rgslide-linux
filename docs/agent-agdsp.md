@@ -189,6 +189,12 @@ Herramienta: `/tmp/ctl2.py` en la Slide (ioctl crudos de `/dev/snd/controlC0`; n
 - Conclusion: encender la ruta del altavoz cambia el enrutado del DSP/ADC mientras hay una captura abierta y la deja sorda; ademas atenua el micro. Por eso `rgslide-audio-mic on` enciende primero la ruta del altavoz (variable `RGSLIDE_MIC_NOSPK=1` la omite) y el demonio ya no la apaga por silencio.
 - Banco de medida de latencia: la deteccion automatica de tonos del microfono no es fiable cuando el micro y la reproduccion se pisan; se miden latencias con el registro del demonio (`audio abierto (anillo=..., N ms desde el primer sonido)`).
 
+## 5p. Audio siempre encendido (ALWAYS_ON) y micro compatible (2026-11-26) - MEDIDO
+- Idea del usuario: mantener el audio siempre encendido. Implementado en `rgslide-audiod` con `/etc/rgslide/audio.conf` (`ALWAYS_ON=1`, por defecto en el overlay): al arrancar enciende la ruta, hace el cebado (la 1a apertura se atasca, la 2a funciona), abre el PCM y lo mantiene abierto rellenando con silencio; ya no hay latencia de apertura ni clics perdidos. Coste conocido: el siseo del amplificador suena mientras esta encendido (el usuario lo percibia; no hay medida objetiva).
+- Con `ALWAYS_ON=1` el micro NO debe reencender la ruta del altavoz (mata la captura abierta): `rgslide-audio-mic on` solo toca el mezclador de captura. Verificado: tono de 1 kHz por ALSA `default` -> audiod -> altavoz -> micro: amplitud 358-380 a 1 kHz durante el tono, 0 fuera; RMS 260-270 vs 18 de reposo.
+- Con la reproduccion ya abierta, abrir la captura despues o antes da el mismo resultado (439 y 373 de pico): lo que mata la captura es REENCENDER la ruta (`rgslide-audio-spk on`) con ella abierta.
+- `rgslide-agdsp-access` (get/put con etiquetas spk/mic/vol y flock) evita que un `off` suelte el acceso al DSP mientras otro componente lo usa.
+
 ## 6. Advertencia: registros AGCP (0x56xxxxxx)
 No leer ni escribir `0x56xxxxxx` (MCDT, DMA 0x56650000, VBC 0x56510000, IRAM 0x568xxxxx) con devmem/mmap/`/dev/mem` ni con ningún truco: con el dominio sin acceso es un **abort síncrono externo → reinicio** (CITADO e5 FINDINGS §32 y §34 "Trap"; un `sprd_pcm_pointer` leyendo el DMA tumbó una Slide tras 5 h 50 min). Solo son seguros PMU APB `0x64910000` y AON APB `0x64900000` (vía debugfs regmap) y SOLO lectura. Esa regla es la que implementa `agdsp_can_access` (§2).
 

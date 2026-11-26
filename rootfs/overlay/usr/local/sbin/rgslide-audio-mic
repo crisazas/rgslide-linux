@@ -5,8 +5,11 @@
 C="python3 /usr/local/lib/rgslide/ctl.py set"
 case "${1:-on}" in
 on)
-	# La captura solo oye si la ruta del altavoz ya esta encendida (medido, docs/agent-agdsp.md 5o): se enciende antes.
-	[ "${RGSLIDE_MIC_NOSPK:-0}" = 1 ] || /usr/local/sbin/rgslide-audio-spk on >/dev/null 2>&1
+	# Con rgslide-audiod en ALWAYS_ON la ruta del altavoz y su PCM ya estan activos: NO se vuelve a llamar a rgslide-audio-spk on
+	# (reencenderla con la captura abierta la deja muda, medido en docs/agent-agdsp.md 5p). Sin el demonio se enciende antes.
+	if [ "${RGSLIDE_MIC_NOSPK:-0}" != 1 ] && [ "$(sed -n 's/^ALWAYS_ON=//p' /etc/rgslide/audio.conf 2>/dev/null)" != 1 ]; then
+		/usr/local/sbin/rgslide-audio-spk on >/dev/null 2>&1
+	fi
 	R=/sys/kernel/debug/regmap/dummy-syscon@64910000/registers
 	/usr/local/sbin/rgslide-agdsp-access get mic
 	python3 /usr/local/lib/rgslide/ctl.py write 93 1 >/dev/null 2>&1; python3 /usr/local/lib/rgslide/ctl.py write 94 1 >/dev/null 2>&1
