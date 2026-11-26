@@ -7,11 +7,26 @@ while true; do
     # Frecuencia de pantalla (/etc/default/rgslide-display): 60 = sin variable; 120 y auto = ES a 120 Hz.
     REFRESH=$(sed -n 's/^REFRESH=//p' /etc/default/rgslide-display 2>/dev/null | tail -n 1 | tr -d "\"' ")
     case "$REFRESH" in 120|auto) export HYBRIS_DRM_REFRESH=120;; *) unset HYBRIS_DRM_REFRESH;; esac
+    # Sesion "menu" mientras ES manda: rgslide-hotkeyd solo suena ahi (en juegos y en el panel, no).
+    mkdir -p /run/rgslide 2>/dev/null && echo menu >/run/rgslide/session
     /opt/emulationstation/emulationstation "$@"
     ret=$?
     [ -f /tmp/es-restart ] && continue
     if [ -f /tmp/es-sysrestart ]; then rm -f /tmp/es-sysrestart; sudo -n systemctl reboot; break; fi
     if [ -f /tmp/es-shutdown ]; then rm -f /tmp/es-shutdown; sudo -n systemctl poweroff; break; fi
-    break
+    # "QUIT EMULATIONSTATION" (sin marca en /tmp): ES ya libero la pantalla y el PCM; en vez de quedarse en el sitio con el servicio
+    # parado, se vuelve al menu de arranque. Modo en /etc/default/rgslide-es (EXIT_MODE), ver scripts/install-es-exit.sh.
+    EXIT_MODE=$(sed -n 's/^EXIT_MODE=//p' /etc/default/rgslide-es 2>/dev/null | tail -n 1 | tr -d "\"' ")
+    case "$EXIT_MODE" in
+        boot-menu)
+            # rgslide-ctl ya trae el menu de rescate por consola (solo necesita la red USB, que sigue arriba).
+            sudo -n systemctl start --no-block rgslide-bootmenu.service 2>/dev/null || true
+            break ;;
+        restart)
+            sudo -n systemctl restart --no-block rgslide-es.service
+            break ;;
+        *)
+            break ;;
+    esac
 done
 exit $ret

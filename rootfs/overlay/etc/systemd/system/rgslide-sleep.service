@@ -1,0 +1,17 @@
+[Unit]
+Description=Suspension s2idle por boton de bloqueo y tapa (RG Slide)
+After=rgslide-input.service rgslide-mdev.service
+Wants=rgslide-input.service
+
+[Service]
+Type=simple
+User=root
+ExecStartPre=/usr/local/sbin/rgslide-sleep
+ExecStart=/usr/local/sbin/rgslide-sleepd
+Restart=on-failure
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

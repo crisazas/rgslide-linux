@@ -1,0 +1,17 @@
+#!/bin/sh
+# Sonido de navegacion del menu de ES. ES tiene los sonidos apagados (settings-overrides.cfg) porque su mezclador ALSA
+# necesita un control "Master" que el codec no tiene (docs/agent-es-sounds.md); esto suena por el PCM rgslide (FIFO del
+# demonio), no por "default", para no pisar el canal de rgslide-audiod.
+# Uso: rgslide-es-navsound [fichero.wav]   (por defecto /usr/share/rgslide/sounds/nav.wav)
+WAV=${1:-/usr/share/rgslide/sounds/nav.wav}
+FIFO=/run/rgslide/audio.fifo
+[ -r "$WAV" ] && [ -p "$FIFO" ] || exit 0
+# No solapar: si ya suena uno, se descarta (los cerrojos quedan en /run, se limpian solos al reiniciar).
+exec 9>/run/rgslide/navsound.lock
+flock -n 9 || exit 0
+if command -v aplay >/dev/null 2>&1; then
+    exec aplay -q -D rgslide "$WAV"
+fi
+# Sin aplay: el WAV ya es S16_LE, 2 canales, 48000 Hz (lo que pide la FIFO): se saltan los 44 bytes de cabecera.
+[ "$(dd if="$WAV" bs=4 count=1 2>/dev/null)" = "RIFF" ] || exit 0
+tail -c +45 "$WAV" >"$FIFO"

@@ -247,7 +247,7 @@ def main(argv):
         log("error inesperado:", repr(e))
         return 1
     finally:
-        set_session("none")
+        set_session("menu")  # ES recupera la pantalla: el menu vuelve a sonar (rgslide-hotkeyd)
 
 
 if __name__ == "__main__":

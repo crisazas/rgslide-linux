@@ -1,7 +1,7 @@
 # PROGRESS
 
 ## Ahora
-- AUDIO PARCIAL: altavoz y juegos suenan, micro capta voz (SNR 11-19 dB), ruido del mic resuelto con la curva del ventilador. Abierto: siseo del altavoz (no es DAC, PA ni reloj; el PA externo ucp1301 no enlaza). AMP_MUTE=0. Detalle en docs/agent-agdsp.md 5ae
+- SIN SSH: la Slide se colgo con el primer s2idle (ping va, puerto 22 no acepta) y espera reinicio a mano. Preparado y sin desplegar: modulo snd-soc-sprd-dai.ko parcheado (clk_iis0 en probe/startup), volumen con botones en rgslide-hotkeyd, suspencion s2idle con inhibidores, audio de RetroArch por PCM rgslide. Detalle en docs/agent-agdsp.md 5ah y docs/agent-sleep.md
 
 ## Siguiente
 - Reflashear rootfs corregido por BROM (el overlay solo esta en la Slide por ssh)

@@ -314,3 +314,34 @@ Cómo deshacer: nada cambiado en la Slide ni en el repo salvo este fichero.
 - Descartado con medidas: ventilador, amplificador interno (PA on/off), senal del DAC (mezclador cerrado), ganancias (`HPL`, `DAC`), ruta de auricular, `Inter PA`, `CLK 26M IN SEL`, reloj del I2S y del AP (el VBC ni lo pide).
 - Via pendiente: el amplificador externo `ucp1301` no enlaza (`read chip id high fail -5`), su reset (pin 120) no lo pide nadie y su rail `DCDC_WPA` esta apagado sin consumidores. Arreglarlo exige otro kernel: el 5.4.302 de `weikaizhi4/android_kernel_ums9620` trae codec `ump9620`, PA `ucp1301` y DTS de placa `ums9620-2h10`; el 5.4.233 de la Slide no tiene fuentes publicas.
 - `AMP_MUTE` esta a 0 (amplificador siempre encendido) mientras dure la investigacion; el demonio sigue soportandolo con `AMP_MUTE=1`.
+
+## 5af. Modulo de codec recompilado: CFI y CRC de `module_layout` (MEDIDO)
+
+- Objetivo: construir los modulos del OEM (codec `ump9620`, PA `ucp1301`) fuera del arbol de fabrica y cargarlos sin tocar el kernel de la Slide. Entorno reproducible en `scripts/build-kernel-tree.sh`.
+- El clon 5.4.302 rompe `mrproper`/`olddefconfig`: `drivers/kernelsu` es un enlace roto a `../KernelSU` y el `Kbuild` de Mali apunta a `../arbitration/` (que existe dentro de `mali/`). Ambos se corrigen en el script.
+- El host no tiene `libc6-dev` y `libc6` 2.43 choca con `libc6-dev` 2.39: se extraen los `.deb` a `/tmp/opencode/hostdev` y se enlazan `Scrt1.o`/`crti.o`/`crtn.o`/`libc_nonshared.a`/`libc.so` en `/usr/lib/x86_64-linux-gnu`.
+- `-Wno-error=frame-larger-than` **no existe** en gcc (solo `-Wframe-larger-than=`); usarla tumba el build con "no option". El marco de `lib/lz4` se sube en su `Makefile`.
+- La fabrica compila con `CONFIG_CFI_CLANG=y` y el cargador exige `__cfi_check` en cada modulo: con gcc el modulo se rechaza con `ENOEXEC`. Hay que compilar con el clang del NDK y `CFI_CLANG`, y pasar `LD=ld.lld` (binutils no entiende el modo `llvm`).
+- Aun asi el kernel rechaza con `disagrees about version of symbol module_layout`: su CRC (`7b9e272f`) no es el que produce el arbol (`49d0ebc5`). Parchear esos 4 bytes en `__versions` del modulo hace que el kernel lo acepte (`File exists` = solo nombre repetido).
+- Cargar el modulo nuevo en caliente no basta: `snd_soc_sprd_codec_ump9620` no se descarga (lo retienen `snd_soc_sprd_card` con 9 usos y `agdsp_access` con 10) y forzar la cadena provoca un `Oops` (NULL+0x90) y reinicio.
+- Metodo que evita descargar: copiar el modulo nuevo a `/lib/modules/5.4.233/` con el nombre de fabrica (original respaldado en `/root/mod-backup`) y reiniciar.
+- Rechazos encadenados del cargador y como se resuelve cada uno: (1) `ENOEXEC` por CFI ausente -> compilar con clang y `CFI_CLANG`; (2) `disagrees about version of symbol module_layout` -> CRC de fabrica en el `.mod.c`; (3) `module PLT section(s) missing` -> seccion `.plt` vacia (`objcopy --add-section`); (4) el `modpost` del arbol necesita `genksyms` en `scripts/genksyms/` (con `O=` no lo encuentra y deja los simbolos sin version).
+- Enlace final a mano (el `make` rehace el `.mod.c`): parchear el CRC en el `.mod.o`, anadir `.plt` con `objcopy` y `ld.lld -r -o <ko> --whole-archive <o> <mod.o>`.
+- RESULTADO: el codec recompilado CARGA en la Slide sin un solo error y la tarjeta de sonido enlaza; un tono no deja fallos en dmesg. Sustituido en `/lib/modules/5.4.233/` (original de fabrica en `/root/mod-backup/`).
+- El PA externo `ucp1301` sigue sin contestar (`read chip id high fail -5`) aunque el rail `DCDC_WPA` se encienda a mano (3,4 V por debugfs); el DT de la placa lo trae `status = "disabled"` y el driver no pide ninguna alimentacion. El pin 120 de reset esta bien declarado y el nodo casa con el driver (`modalias` correcto).
+- `dai-link@20` (BE_CAPTURE_DSP_CODEC) falla con `-517`: es de captura, no del altavoz.
+
+## 5ag. La estatica viene del reloj del I2S, no de la calibracion (MEDIDO)
+
+- Con el codec nuevo ya cargado la estatica sigue igual. Descartados con medidas: volumen (100 %, 60 %, 35 %), amplificador externo frente al interno (`Inter PA Config` 303 vs 0), modo de calibracion del DAC (`HW_CAL_MODE` falla, `SW_CAL_MODE` deja de fallar pero no quita la estatica), reloj del codec (`CLK 26M IN SEL` in_26m vs in_pll), apertura/cierre de la ruta (`ALWAYS_ON`).
+- Causa: con la ruta del altavoz sonando, `ap-iis0` y `aon-iis` estan a 0 usos. El enlace 18 usa el VBC como origen y el codec como destino; el nodo `i2s@56270800` **no declara `clocks`** (el driver pide `clk_twpll_153m6` por nombre y `devm_clk_get` falla) y el nodo `vbc@56510000` **no declara `sprd,need-aud-top-clk`** (con el flag ausente `vbc_put_aud_iis_clock` sale con "No need audio top to provide da clock" y no aplica el maestro; el control 87 vuelve a 0 solo).
+- Arreglo: tocar DT (anadir `clocks`/`clock-names` al nodo i2s y `sprd,need-aud-top-clk` al VBC), o sea DTB, no mezclador.
+- El codec recompilado esta instalado y el de fabrica en `/root/mod-backup/`; para volver atras basta copiarlo y reiniciar.
+
+## 5ah. El overlay de DT entra, pero el probe no pide los relojes: estan bajo `#if 0` (MEDIDO)
+
+- Hecho: overlay `audio-clk.dtbo` (anade `clocks`/`clock-names` al nodo `i2s@56270800` con phandles `ap-clk`=0x08, `g5l-pll`=0x0b e indices 0x11/0x09/0x0a, y `sprd,need-aud-top-clk` al `vbc@56510000`). Base = DTB de dentro de `vendor_boot_a`, aplicado con `fdtoverlay`, `vendor_boot` reconstruido y escrito en `vendor_boot_b` (`/dev/sda39`, slot activo `_b`). Respaldo en `/root/vendor_boot_b.orig` (sha256 `62b56faff0…`).
+- El reinicio arranca bien y el DT vivo **ya trae los cambios**: `/proc/device-tree/soc/agcp/i2s@56270800/clock-names` = `clk_iis0 clk_twpll_128m clk_twpll_153m6` y existe `/proc/device-tree/soc/agcp/vbc@56510000/sprd,need-aud-top-clk`. El nodo casa con el driver (`modalias of:Ni2sT(null)Csprd,agcp-i2s-dai`) y esta enlazado (`/sys/bus/platform/devices/56270800.i2s/driver -> sprd-dai`), con los proveedores resueltos (`supplier:20010000.clock-controller`, `supplier:soc:g5l-pll`).
+- Pero `ap-iis0` y `aon-iis` siguen a 0 usos con la ruta del altavoz abierta. En las fuentes del OEM (`sprd-dai.c`) `sprd_agcp_i2s_get_clks()` **y su llamada en el probe** estan bajo `#if 0`: el DAI de fabrica nunca pide `i2s_clk`, `clk_128m` ni `clk_153m6`, y en `startup`/`shutdown` tampoco los habilita. El driver `i2s.c` (otra ruta) si hace `clk_prepare_enable`.
+- El DAI escribe el reloj por regmap (`clk_membase + 0xa58`) y manda `SET_AUD_DVFS`, pero sin habilitar `clk_iis0` el bloque no sale.
+- Arreglo en curso: recompilar `snd-soc-sprd-dai.ko` con el bloque de relojes activo y `clk_prepare_enable`/`clk_disable_unprepare` en `startup`/`shutdown`; instalar en `/lib/modules/5.4.233/` y reiniciar (nunca `rmmod`).

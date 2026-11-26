@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """rgslide-hotkeyd: detecta el combo de Ajustes en el mando (evdev) y crea /run/rgslide/settings-request.
 
-Solo LEE el evdev (nunca EVIOCGRAB): RetroArch sigue viendo el mando. Solo dispara con un juego en marcha
+Solo LEE el evdev (nunca EVIOCGRAB): RetroArch sigue viendo el mando. El combo solo dispara con un juego en marcha
 (/run/rgslide/session contiene "game", lo escribe rgslide-es-launch). Config: /etc/rgslide/hotkey.conf. Ver docs/agent-hotkey.md.
+Los botones de volumen (KEY_VOLUMEDOWN 114 / KEY_VOLUMEUP 115) llaman a rgslide-volume down|up (pasos del 5 %, tope 0-100)
+siempre, tambien en ES y en el panel; RetroArch no los usa. Sin OSD propio: no hay ninguno en el overlay.
 """
-import fcntl, glob, os, re, select, struct, sys, time
+import fcntl, glob, os, re, select, struct, subprocess, sys, time
 
 CONF = os.environ.get("RGSLIDE_HOTKEY_CONF", "/etc/rgslide/hotkey.conf")
 RUN = os.environ.get("RGSLIDE_RUN", "/run/rgslide")
@@ -15,6 +17,12 @@ EV_KEY = 1
 EVFMT = "llHHi"
 EVSZ = struct.calcsize(EVFMT)
 EVIOCGKEY = 0x80604518  # _IOR('E', 0x18, 96 bytes)
+VOLUME = os.environ.get("RGSLIDE_VOLUME", "/usr/local/sbin/rgslide-volume")
+VOL_KEYS = {114: "down", 115: "up"}  # KEY_VOLUMEDOWN / KEY_VOLUMEUP
+# Sonido de navegacion de ES (ES los tiene apagados, ver docs/agent-es-sounds.md): solo con la sesion en "menu"
+# (lo pone rgslide-es; en un juego RetroArch suena solo y en el panel no se pisa el audio).
+NAVSOUND = os.environ.get("RGSLIDE_NAVSOUND", "/usr/local/bin/rgslide-es-navsound")
+NAV_KEYS = {103: 1, 108: 1, 105: 1, 106: 1, 304: 1, 305: 1}  # arriba, abajo, izquierda, derecha, A, B (ES es_input.cfg)
 # codigo evdev -> indice de boton de RetroArch (RG_Slide.cfg): 158 Back=20, 314 Select=10, 315 Start=11
 EV2RA = {158: 20, 314: 10, 315: 11, 304: 0, 305: 1, 307: 3, 308: 4, 310: 6, 311: 7, 312: 8, 313: 9}
 PAD_KEYS = {"a", "b", "x", "y", "start", "select", "l", "r", "l2", "r2", "l3", "r3", "up", "down", "left", "right", "enable_hotkey", "menu_toggle"}
@@ -63,6 +71,14 @@ def find_pad():
     return None
 
 
+def volume(action):
+    """Sube/baja el volumen real (rgslide-volume escribe VBC DAC0 DG Set). En segundo plano: no bloquea la lectura del mando."""
+    try:
+        subprocess.Popen([VOLUME, action], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError as e:
+        log("no pude lanzar", VOLUME, action, e)
+
+
 def session():
     try:
         return open(os.path.join(RUN, "session")).read().strip()
@@ -93,6 +109,13 @@ def held_now(fd):
     return {i for i in range(96 * 8) if buf[i >> 3] & (1 << (i & 7))}
 
 
+def navsound():
+    try:
+        subprocess.Popen([NAVSOUND], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    except OSError as e:
+        log("navsound:", e)
+
+
 def run_pad(path, combo, hold_ms):
     fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)  # sin EVIOCGRAB, a proposito
     down = held_now(fd) & combo
@@ -114,7 +137,17 @@ def run_pad(path, combo, hold_ms):
                     return
                 for off in range(0, len(data) - EVSZ + 1, EVSZ):
                     _, _, typ, code, val = struct.unpack_from(EVFMT, data, off)
-                    if typ != EV_KEY or code not in combo or val == 2:
+                    if typ != EV_KEY or val == 2:
+                        continue
+                    if code in VOL_KEYS:
+                        if val:
+                            volume(VOL_KEYS[code])  # una vez por pulsacion (val 0 = soltar)
+                        continue
+                    if code in NAV_KEYS:
+                        if val and session() == "menu":
+                            navsound()
+                        continue
+                    if code not in combo:
                         continue
                     if val:
                         down.add(code)

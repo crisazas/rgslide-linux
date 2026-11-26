@@ -1,0 +1,140 @@
+#!/usr/bin/env python3
+"""rgslide-sleepd: suspende en s2idle al pulsar el boton de bloqueo (KEY_POWER) o al cerrar la tapa (hall).
+
+- Boton power corto: suspende si no hay un inhibidor de sleep (juego en marcha, panel, etc.).
+- Hall (KEY_WAKEUP): cerrar = suspender, abrir = despertar.
+- Nunca usa deep: fija s2idle antes de cada ciclo y lo comprueba.
+- Al volver: refresca el panel tactil (relee su firmware) por si quedo muerto.
+Solo LEE los evdev (sin EVIOCGRAB). Ver docs/agent-sleep.md.
+"""
+import fcntl, os, select, struct, subprocess, sys, time
+
+SLEEP = os.environ.get("RGSLIDE_SLEEP", "/usr/local/sbin/rgslide-sleep")
+TP = os.environ.get("RGSLIDE_TP", "/sys/bus/i2c/devices/3-0038/refresh")
+DEVNAME = os.environ.get("RGSLIDE_SLEEP_DEV", "gpio-keys")
+RUN = os.environ.get("RGSLIDE_RUN", "/run/rgslide")
+POWER = 116  # KEY_POWER
+HALL = 143  # KEY_WAKEUP (key-hall del DT)
+EV_KEY = 1
+EVFMT = "llHHi"
+EVSZ = struct.calcsize(EVFMT)
+
+def log(*a):
+    print("rgslide-sleepd:", *a, file=sys.stderr, flush=True)
+
+def find_dev():
+    try:
+        txt = open("/proc/bus/input/devices").read()
+    except OSError:
+        return None
+    for blk in txt.split("\n\n"):
+        if 'Name="%s"' % DEVNAME in blk:
+            for w in blk.split("Handlers=")[-1].split("\n")[0].split():
+                if w.startswith("event"):
+                    return "/dev/input/" + w
+    return None
+
+def inhibited():
+    """True si hay juego o panel abierto (/run/rgslide/session), o si alguien inhibe sleep."""
+    try:
+        if open(os.path.join(RUN, "session")).read().strip() in ("game", "panel"):
+            return True
+    except OSError:
+        pass
+    try:
+        out = subprocess.run(["systemd-inhibit", "--list", "--no-pager"],
+                             capture_output=True, text=True, timeout=5).stdout
+    except Exception as e:
+        log("systemd-inhibit fallo:", e)
+        return False
+    return any(":sleep" in l and "--" not in l.split(":sleep")[0][-3:] for l in out.splitlines())
+
+def refresh_touch():
+    try:
+        with open(TP, "w") as f:
+            f.write("1\n")
+        log("panel tactil refrescado")
+    except OSError as e:
+        log("no puedo refrescar el tactil (" + TP + "):", e)
+
+def suspend():
+    subprocess.run([SLEEP], check=False)
+    try:
+        with open("/sys/power/state", "w") as f:
+            f.write("mem\n")
+    except OSError as e:
+        log("suspender fallo:", e)
+        return
+    time.sleep(0.3)
+    refresh_touch()
+    log("despierto")
+
+buf = bytearray()
+for _ in range(64 * 8):
+    buf += b"\x00"
+EVIOCGKEY = 0x80604518
+
+def key_state(fd):
+    try:
+        fcntl.ioctl(fd, EVIOCGKEY, buf, True)
+    except OSError:
+        return set()
+    return {i for i in range(64 * 8) if buf[i >> 3] & (1 << (i & 7))}
+
+def main():
+    while True:
+        path = find_dev()
+        if path is None:
+            time.sleep(2)
+            continue
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        except OSError as e:
+            log("no puedo abrir", path, e)
+            time.sleep(2)
+            continue
+        hall_closed = HALL in key_state(fd)
+        log("leyendo", path, "tapa cerrada" if hall_closed else "tapa abierta")
+        try:
+            while True:
+                r, _, _ = select.select([fd], [], [], 30)
+                if not r:
+                    continue
+                try:
+                    data = os.read(fd, EVSZ * 64)
+                except BlockingIOError:
+                    continue
+                if not data:
+                    break
+                for off in range(0, len(data) - EVSZ + 1, EVSZ):
+                    _, _, typ, code, val = struct.unpack_from(EVFMT, data, off)
+                    if typ != EV_KEY or val == 2:
+                        continue
+                    if code == POWER and val == 1:
+                        if inhibited():
+                            log("power: inhibido, no suspendo")
+                            continue
+                        log("power: suspendiendo")
+                        suspend()
+                    elif code == HALL:
+                        if val:
+                            hall_closed = True
+                            if inhibited():
+                                log("tapa cerrada: inhibido, no suspendo")
+                                continue
+                            log("tapa cerrada: suspendiendo")
+                            suspend()
+                        else:
+                            hall_closed = False
+                            log("tapa abierta")
+        except OSError as e:
+            log("lectura de", path, "fallo:", e)
+        finally:
+            os.close(fd)
+        time.sleep(1)
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass

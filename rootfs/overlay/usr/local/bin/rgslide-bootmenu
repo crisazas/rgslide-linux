@@ -1,0 +1,14 @@
+#!/bin/sh
+# Menu de rescate por consola cuando se sale de EmulationStation (EXIT_MODE=boot-menu).
+# No necesita pantalla: la Slide no tiene consola ni fbcon, y tras salir de ES no queda ningun cliente de la Mali. Se atiende
+# por la consola serie del gadget USB (ttyGS0, 115200) o por ssh; el menu de rgslide-ctl es el mismo de siempre.
+# Vuelta atras: EXIT_MODE=restart (o vacio) en /etc/default/rgslide-es; scripts/install-es-exit.sh undo.
+set -u
+SERIAL=/dev/ttyGS0
+[ -c "$SERIAL" ] || SERIAL=/dev/console
+exec </dev/null >"$SERIAL" 2>&1
+export TERM=vt100
+printf '\033[2J\033[H'
+printf 'ES cerrado. Consola de rescate en la serie USB (ttyGS0, 115200) y por ssh.\n'
+printf 'Para volver al menu de juegos: systemctl start rgslide-es (o reiniciar).\n\n'
+exec /usr/local/bin/rgslide-ctl

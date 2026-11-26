@@ -29,5 +29,10 @@ Servicio `rgslide-hotkeyd` instalado, **enabled y activo** leyendo `event3` (el 
 - Juegos con nucleo que no soporte estados (mgba/desmume si lo soportan; no se probaron): sin estado el juego sigue y vibra 3 veces. El panel no tiene aun `tr()`: el texto que se muestra viene de `panel.menu`.
 - La relanzada tarda ~3 s (arranque de RetroArch + carga del estado).
 
+## Botones de volumen (2026-11-26)
+- El mismo demonio mapea `KEY_VOLUMEDOWN` (114) y `KEY_VOLUMEUP` (115) a `rgslide-volume down|up`: pasos del 5 %, tope 0-100, control `VBC DAC0 DG Set` (mapa 100 %->DG 20, 0 %->DG 64; ver `rootfs/overlay/usr/local/sbin/rgslide-volume`). Dispara siempre (ES, panel y juego): RetroArch no usa esas teclas. Solo al pulsar (`val` 1), la autorrepeticion (`val` 2) no repite; se lanza en segundo plano para no bloquear la lectura del mando.
+- **No hay OSD** de volumen ni de brillo en el overlay: no se inventa ninguno, el unico indicador es el propio sonido (y `rgslide-ctl volume` en consola).
+- Probado en el PC con mando uinput y un `rgslide-volume` falso: 3 pulsaciones -> `up up down`, autorrepeticion sin duplicar, y el combo Back+Select sigue creando la peticion. Sin probar con los botones reales ni en la Slide (ssh sin respuesta ese dia).
+
 ## Deshacer
 `scripts/install-hotkey.sh undo` (para y deshabilita `rgslide-hotkeyd`, restaura `rgslide-es-launch.pre-hotkey`, borra los ficheros nuevos). Reinstalar: `scripts/install-hotkey.sh`. Para solo desactivar el supervisor sin desinstalar: `RGSLIDE_NO_HOTKEY=1` en el entorno de ES, o `sudo systemctl disable --now rgslide-hotkeyd`.

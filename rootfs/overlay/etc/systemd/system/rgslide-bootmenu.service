@@ -1,0 +1,18 @@
+[Unit]
+Description=Menu de rescate por consola tras salir de EmulationStation
+# Lo arranca rgslide-es al salir por "QUIT EMULATIONSTATION" (EXIT_MODE=boot-menu). ES ya libero la pantalla y el PCM.
+Conflicts=rgslide-es.service
+After=rgslide-es.service
+
+[Service]
+Type=simple
+User=console
+Group=console
+Environment=HOME=/home/console USER=console LOGNAME=console
+ExecStart=/usr/local/bin/rgslide-bootmenu
+Restart=no
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

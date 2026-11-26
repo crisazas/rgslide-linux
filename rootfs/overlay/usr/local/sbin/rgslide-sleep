@@ -1,0 +1,6 @@
+#!/bin/sh
+# Fija s2idle (NO deep) como unico modo de suspension en /sys/power/mem_sleep.
+# deep cuelga la Slide en sprd-sensorhub (docs/agent-power-key.md); s2idle entra y sale.
+set -eu
+echo s2idle > /sys/power/mem_sleep
+cat /sys/power/mem_sleep
