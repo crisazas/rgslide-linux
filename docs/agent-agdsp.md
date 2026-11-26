@@ -217,3 +217,10 @@ Cómo deshacer: nada cambiado en la Slide ni en el repo salvo este fichero.
 - `rgslide-audiod` con `AMP_MUTE=1` (`/etc/rgslide/audio.conf`) activa el mute tras 1,2 s de silencio digital y lo quita al llegar sonido. Que el siseo desaparezca a oído: SUPUESTO hasta que el usuario lo confirme (el micro interno no lo capta).
 - `VBC DAC0 DG Set` es ATENUACIÓN: amplitud 1049 con DG=3, 130 con DG=25, 9 con DG=64 (MEDIDO). `rgslide-volume` ahora mapea 100 % -> DG=20 y 0 % -> DG=64 (antes 100 % era DG=64, casi mudo). Android usa DG=25.
 - El THD medido con el micro pegado al altavoz no sirve (92-137 % en todo): no usarlo para juzgar distorsión.
+
+## 5r. Micrófono: suelo de ruido (MEDIDO)
+
+- Ruido en reposo rms ≈ 148-175 (≈ -47 dBFS) con ganancia 6, banda ancha (pasa-bajos, autocorrelación 0,92 a 2 muestras); IGUAL con el amplificador encendido o apagado: no viene del altavoz.
+- `ADC_1 Gain ADC_1 Capture Volume` guarda solo 3 bits (9 se lee 1, 12 se lee 4) y no es lineal: ruido rms 5 / 22 / 172 con 0 / 3 / 6. El tono de prueba escala igual (6 / 28 / 215), así que la relación señal/ruido no mejora bajando la ganancia: el ruido está antes del ADC.
+- `VBC ADC0 DG Set` (10, 25, 50) no cambia ni el tono ni el ruido: no está en la ruta de captura.
+- Conclusión: con 6 (valor de Android) la voz a 2-5 cm queda ~25 dB sobre el ruido; mejorar más exige filtrado por software o la cadena CVSREC del HAL (no replicada). Pendiente de oído.

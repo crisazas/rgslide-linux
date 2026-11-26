@@ -1,7 +1,7 @@
 # PROGRESS
 
 ## Ahora
-- Audio: AMP_MUTE=1 instalado (amplificador apagado en silencio, MEDIDO); falta que el usuario confirme que se fue la estatica. Volumen 100%=DG20 (antes DG64, casi mudo). Mic: voz entra, sin confirmar a oido
+- Audio: AMP_MUTE=1 instalado (amp apagado en silencio, MEDIDO); falta que el usuario confirme que se fue la estatica. Vol 100%=DG20. Mic: ruido en reposo rms~150 de la propia cadena analogica (docs 5r); voz entra, sin confirmar a oido
 
 ## Siguiente
 - Reflashear rootfs corregido por BROM (el overlay solo esta en la Slide por ssh)
