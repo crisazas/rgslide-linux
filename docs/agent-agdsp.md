@@ -166,6 +166,12 @@ Herramienta: `/tmp/ctl2.py` en la Slide (ioctl crudos de `/dev/snd/controlC0`; n
 - **Con silencio digital el microfono NO capta siseo** (MEDIDO, 2 repeticiones por ajuste): RMS 22-37 con el altavoz apagado (26, 22) y con la ruta encendida (36, 24, 23, 28); ningun cambio de `HPL/HPR`, `DAC Gain`, `Inter PA Config`, `HP Virt Switch` ni `Speaker1 Function` se separa del ruido del propio micro (picos aislados de 58 y 73 no se repiten). Mis barridos anteriores de "ruido" estaban mal: `rgslide-play` genera 440 Hz y los medi a 1000 Hz, y el micro oye al altavoz por acoplo estructural.
 - **Lo unico que hay es percepcion humana**: el usuario oye siseo continuo con el amplificador encendido, y le bajan por separado `HPL/HPR`=0 e `Inter PA`=1; ambos a la vez no. NO se concluyo la causa. Una medida objetiva del siseo necesita otro microfono o loopback, no el interno.
 
+## 5k. CAUSA del mal sonido: perfil del DSP equivocado (2026-11-26) - CONFIRMADO POR EL USUARIO
+- `DSP VBC Profile Select` lleva el modo en los bits 31-24 (lo imprime el kernel: `current_offset`). Yo usaba 961216512 = 0x394b0000 = **modo 57**, que en `dsp_vbc.xml` es `Audio/Hac/WB2` (perfil de llamada para audifonos), copiado de rg-rotate-linux (otro SoC y otro XML).
+- El perfil correcto para musica por el altavoz es **modo 64 = `Music/Handsfree/Playback`** -> 0x404b0000 = 1078657024 (coincide con el valor citado del E5). El kernel lo acepta (`current_offset=64, mode_max_offset=72`).
+- Con el modo 64, Thwaite (NES) suena "mucho mejor" segun el usuario. Los ajustes analogicos (`Inter PA`, `HPL/HPR`, `DAC Gain`) no eran la causa.
+- Nota: el demonio acumulo 40658 frames en el anillo en la ultima ventana (el juego produce un poco mas rapido que el DAC); `ring_trim` lo recorta a LAT al pasar de 3xLAT.
+
 ## 6. Advertencia: registros AGCP (0x56xxxxxx)
 No leer ni escribir `0x56xxxxxx` (MCDT, DMA 0x56650000, VBC 0x56510000, IRAM 0x568xxxxx) con devmem/mmap/`/dev/mem` ni con ningún truco: con el dominio sin acceso es un **abort síncrono externo → reinicio** (CITADO e5 FINDINGS §32 y §34 "Trap"; un `sprd_pcm_pointer` leyendo el DMA tumbó una Slide tras 5 h 50 min). Solo son seguros PMU APB `0x64910000` y AON APB `0x64900000` (vía debugfs regmap) y SOLO lectura. Esa regla es la que implementa `agdsp_can_access` (§2).
 
