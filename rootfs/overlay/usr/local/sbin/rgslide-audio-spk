@@ -5,7 +5,7 @@
 C="python3 /usr/local/lib/rgslide/ctl.py set"
 case "${1:-on}" in
 on)
-	$C agdsp_access_en 1 >/dev/null
+	/usr/local/sbin/rgslide-agdsp-access get spk
 	python3 /usr/local/lib/rgslide/ctl.py write 93 1 >/dev/null 2>&1; python3 /usr/local/lib/rgslide/ctl.py write 94 1 >/dev/null 2>&1
 	for a in 'S_NORMAL_AP01_P_CODEC SWITCH|1' 'ag_iis0_ext_sel_v2|aud_4ad_iis0_da0' 'VBC_IIS_MST_WIDTH_SET|WD_16BIT' \
 		'VBC_IIS_TX0_WD_SEL|WD_16BIT' 'DSP VBC Profile Select|1078657024' 'VBC DAC0 AUD MDG Set|4096 4096' \
@@ -17,9 +17,10 @@ on)
 	/usr/local/sbin/rgslide-volume apply >/dev/null 2>&1
 	echo "altavoz on";;
 off)
-	for a in 'Speaker1 Function|0' 'Speaker Function|0' 'HP Virt Switch|0' 'HPL Mixer DACLHPL Switch|0' 'HPR Mixer DACRHPR Switch|0' 'S_NORMAL_AP01_P_CODEC SWITCH|0' 'agdsp_access_en|0'; do
+	for a in 'Speaker1 Function|0' 'Speaker Function|0' 'HP Virt Switch|0' 'HPL Mixer DACLHPL Switch|0' 'HPR Mixer DACRHPR Switch|0' 'S_NORMAL_AP01_P_CODEC SWITCH|0'; do
 		n=${a%%|*}; v=${a#*|}; $C "$n" $v >/dev/null
 	done
+	/usr/local/sbin/rgslide-agdsp-access put spk
 	echo "altavoz off";;
 test) "$0" on; timeout 8 /usr/local/bin/rgslide-play /dev/snd/pcmC0D2p 1 0 >/dev/null 2>&1; timeout $(( ${2:-3} + 12 )) /usr/local/bin/rgslide-play /dev/snd/pcmC0D2p "${2:-3}" "${3:-1500}" | tail -2; "$0" off;;
 *) echo "uso: $0 on|off|test [s] [amp]"; exit 2;;

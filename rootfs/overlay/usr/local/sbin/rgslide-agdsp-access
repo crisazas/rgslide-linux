@@ -1,0 +1,20 @@
+#!/bin/sh
+# Acceso compartido al DSP de audio (agdsp_access_en) entre altavoz, microfono y volumen.
+# Uso: rgslide-agdsp-access get TAG | put TAG      (TAG: spk, mic, vol, ...). El acceso se sube con el primer 'get' y
+# se suelta con el ultimo 'put'. Los tags se guardan en /run/rgslide/agdsp.users (uno por linea).
+D=/run/rgslide; F=$D/agdsp.users; L=$D/agdsp.lock
+CTL=/usr/local/lib/rgslide/ctl.py
+[ "$(id -u)" = 0 ] || exec sudo -n "$0" "$@"
+mkdir -p "$D"; touch "$F"
+exec 9>"$L"; flock 9
+tag=${2:-x}
+case "$1" in
+get)
+	grep -qx "$tag" "$F" || echo "$tag" >> "$F"
+	python3 "$CTL" set agdsp_access_en 1 >/dev/null 2>&1;;
+put)
+	grep -vx "$tag" "$F" > "$F.n"; cat "$F.n" > "$F"; rm -f "$F.n"
+	[ -s "$F" ] || python3 "$CTL" set agdsp_access_en 0 >/dev/null 2>&1;;
+users) cat "$F";;
+*) echo "uso: $0 get|put|users TAG" >&2; exit 2;;
+esac

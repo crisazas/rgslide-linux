@@ -21,10 +21,14 @@ static void sm(struct snd_pcm_hw_params *p,int n,unsigned b){struct snd_mask*m=I
 static void si(struct snd_pcm_hw_params *p,int n,unsigned v){struct snd_interval*i=IVAL(p,n);i->min=i->max=v;i->integer=1;i->openmin=i->openmax=0;}
 #define CH 480
 #define TARGET 4800
-#define RING 48000
+#define RING 192000
 #define LAT 9600
+#define OPENKEEP 48000      /* al abrir se conserva hasta 1 s de audio ya recibido (clics cortos) */
+#define HARDTRIM 144000     /* si el anillo pasa de 3 s se recorta a 1 s */
+#define IDLE_PCM_MS 15000   /* tras el ultimo sonido el PCM sigue abierto este tiempo (baja latencia en menus) */
+#define IDLE_ROUTE_MS 180000 /* y la ruta del altavoz se apaga tras este reposo total */
 #define BUFFR 24000
-#define SILMS 4000   /* silencio digital seguido tras el cual se cierra el PCM y se apaga el amplificador */
+#define SILMS IDLE_PCM_MS   /* silencio digital seguido tras el cual se cierra el PCM y se apaga el amplificador */
 #ifndef F_SETPIPE_SZ
 #define F_SETPIPE_SZ 1031
 #endif
@@ -48,6 +52,8 @@ static void ring_put(const short*b,int fr)
 static int ring_get(short*b,int fr)
 {
 	pthread_mutex_lock(&mu);
+	/* con atraso, descarta solo frames de silencio digital del principio (nunca audio audible) */
+	while(rtail-rhead>LAT*2){short l=ring[(rhead%RING)*2],r=ring[(rhead%RING)*2+1];if(l>64||l<-64||r>64||r<-64)break;rhead++;}
 	long n=rtail-rhead; if(n>fr)n=fr;
 	for(long i=0;i<n;i++){b[2*i]=ring[(rhead%RING)*2];b[2*i+1]=ring[(rhead%RING)*2+1];rhead++;}
 	pthread_mutex_unlock(&mu);
@@ -94,10 +100,14 @@ int main(int argc,char**argv)
 	if(fifo_rd<0){perror("fifo");return 1;}
 	fcntl(fifo_rd,F_SETPIPE_SZ,4096);
 	pthread_t th; pthread_create(&th,0,reader,0);
-	static short buf[CH*2], zero[CH*2]; long closed_at=0;
+	static short buf[CH*2], zero[CH*2]; long closed_at=0; int route_on=0;
 	while(!stop){
-		if(ring_frames()==0||last_sound<=closed_at){usleep(50000);if(ring_frames()>RING/2)ring_trim(LAT);continue;}   /* solo abre con sonido real: el silencio digital deja el amplificador apagado (sisa encendido) */
-		route("on");
+		if(ring_frames()==0||last_sound<=closed_at){   /* la deteccion de sonido real marca last_sound en el hilo lector */
+			usleep(20000); if(ring_frames()>RING/2)ring_trim(OPENKEEP);
+			if(route_on&&now_ms()-closed_at>IDLE_ROUTE_MS){route("off");route_on=0;fprintf(stderr,"ruta apagada por reposo\n");}
+			continue;
+		}   /* solo abre con sonido real: el silencio digital deja el amplificador apagado (sisa encendido) */
+		if(!route_on){route("on");route_on=1;}
 		int fd=-1;
 		for(int t=0;t<4&&fd<0&&!stop;t++){
 			int f=pcm_open(); if(f<0){usleep(300000);continue;}
@@ -106,13 +116,13 @@ int main(int argc,char**argv)
 			unsigned long h0=0,h1=0; avail(f,&h0); usleep(250000); avail(f,&h1);
 			if(h1!=h0)fd=f; else {fprintf(stderr,"hw_ptr clavado, reabro (intento %d)\n",t);pcm_close(f);}
 		}
-		if(fd<0){route("off");usleep(500000);continue;}
-		ring_trim(LAT); last_data=now_ms(); last_sound=now_ms(); long lastlog=now_ms(); st_under=st_drop=st_in=st_out=0; fprintf(stderr,"audio abierto\n");
+		if(fd<0){route("off");route_on=0;usleep(500000);continue;}
+		ring_trim(OPENKEEP); last_data=now_ms(); long lastlog=now_ms(); st_under=st_drop=st_in=st_out=0; fprintf(stderr,"audio abierto (anillo=%ld frames, %ld ms desde el primer sonido)\n",ring_frames(),now_ms()-last_sound);
 		while(!stop){
 			unsigned long hw; long av=avail(fd,&hw); if(av<0)break;
 			long queued=BUFFR-av;
 			if(queued<TARGET&&av>=CH){
-				if(ring_frames()>LAT*3){st_drop+=ring_frames()-LAT;ring_trim(LAT);}   /* el juego va un poco mas rapido que el DAC: descarta lo viejo */
+				if(ring_frames()>HARDTRIM){st_drop+=ring_frames()-OPENKEEP;ring_trim(OPENKEEP);}   /* el juego va un poco mas rapido que el DAC: descarta lo viejo */
 				int n=ring_get(buf,CH);
 				if(n>0){if(wr(fd,buf,n)<0)break;st_out+=n;}
 				else if(queued<CH){st_under++;if(wr(fd,zero,CH)<0)break;}   /* relleno solo si el buffer esta a punto de vaciarse */
@@ -121,7 +131,7 @@ int main(int argc,char**argv)
 			if(now_ms()-last_sound>SILMS)break;
 			if(now_ms()-lastlog>5000){lastlog=now_ms();fprintf(stderr,"in=%ld out=%ld vaciados=%ld descartados=%ld anillo=%ld cola=%ld\n",st_in,st_out,st_under,st_drop,ring_frames(),BUFFR-av);}
 		}
-		pcm_close(fd); route("off"); closed_at=now_ms(); fprintf(stderr,"audio cerrado\n");
+		pcm_close(fd); closed_at=now_ms(); fprintf(stderr,"audio cerrado\n");
 	}
 	return 0;
 }

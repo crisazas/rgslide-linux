@@ -5,8 +5,10 @@
 C="python3 /usr/local/lib/rgslide/ctl.py set"
 case "${1:-on}" in
 on)
+	# La captura solo oye si la ruta del altavoz ya esta encendida (medido, docs/agent-agdsp.md 5o): se enciende antes.
+	[ "${RGSLIDE_MIC_NOSPK:-0}" = 1 ] || /usr/local/sbin/rgslide-audio-spk on >/dev/null 2>&1
 	R=/sys/kernel/debug/regmap/dummy-syscon@64910000/registers
-	python3 /usr/local/lib/rgslide/ctl.py set agdsp_access_en 1 >/dev/null
+	/usr/local/sbin/rgslide-agdsp-access get mic
 	python3 /usr/local/lib/rgslide/ctl.py write 93 1 >/dev/null 2>&1; python3 /usr/local/lib/rgslide/ctl.py write 94 1 >/dev/null 2>&1
 	for a in 'S_CAPTURE_DSP_CODEC SWITCH|1' 'ag_iis1_ext_sel_v2|aud_4ad_iis0_ad0' 'VBC_MUX_ADC0_IIS_PORT_SEL|VBC_IIS_PORT_IIS1' 'VBC ADC0 DG Set|25 25' \
 		'ADD0 DATA SEL|ADD0_DATA_MIC13' 'ADC LRCLK Select|invert' 'ADC_1 Gain ADC_1 Capture Volume|6' 'ADC_1 Mixer MIC1PGA_1 Switch|1' \
@@ -16,7 +18,7 @@ on)
 	echo "mic on";;
 off)
 	$C "Mic Function" 0 >/dev/null; $C "ADC_1 Mixer MIC1PGA_1 Switch" 0 >/dev/null; $C "S_CAPTURE_DSP_CODEC SWITCH" 0 >/dev/null
-	python3 /usr/local/lib/rgslide/ctl.py set agdsp_access_en 0 >/dev/null; echo "mic off";;
+	/usr/local/sbin/rgslide-agdsp-access put mic; echo "mic off";;
 test) "$0" on; timeout 30 /usr/local/bin/rgslide-cap /dev/snd/pcmC0D4c "${2:-3}" /tmp/mic.raw nowake | tail -2;;
 *) echo "uso: $0 on|off|test [s]"; exit 2;;
 esac
