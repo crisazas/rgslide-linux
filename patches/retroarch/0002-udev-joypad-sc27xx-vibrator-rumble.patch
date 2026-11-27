@@ -1,0 +1,67 @@
+diff --git a/input/drivers_joypad/udev_joypad.c b/input/drivers_joypad/udev_joypad.c
+index 8ef1819..e038bac 100644
+--- a/input/drivers_joypad/udev_joypad.c
++++ b/input/drivers_joypad/udev_joypad.c
+@@ -258,6 +258,7 @@ struct udev_rumble_out
+ static struct udev_rumble_out udev_rumble_out[MAX_USERS];
+ static retro_atomic_int_t udev_rumble_want[MAX_USERS];
+ static retro_atomic_int_t udev_rumble_want_gain[MAX_USERS];
++static bool udev_rumble_is_vibra[MAX_USERS];
+ static retro_atomic_int_t udev_rumble_slot[MAX_USERS];
+ static retro_atomic_int_t udev_rumble_gen[MAX_USERS];
+ static input_output_writer_t *udev_rumble_writer = NULL;
+@@ -358,7 +359,11 @@ static void udev_rumble_write(unsigned p)
+          e.id     = o->has_set_ff[effect] ? o->effects[effect] : -1;
+          e.replay = replay;
+          if (effect == RETRO_RUMBLE_STRONG)
++         {
+             e.u.rumble.strong_magnitude = strength;
++            if (udev_rumble_is_vibra[p])
++               e.u.rumble.weak_magnitude = strength;
++         }
+          else
+             e.u.rumble.weak_magnitude   = strength;
+ 
+@@ -1437,12 +1442,41 @@ static int udev_add_pad(struct udev_device *dev, unsigned p, int fd, const char
+ 
+       /* the rumble writer is given a descriptor of its own */
+       if (test_bit(FF_RUMBLE, ffbit) && pad->num_effects >= 2)
++      {
++         udev_rumble_is_vibra[p] = false;
+          udev_rumble_attach(p, fd);
++      }
++      else if (p == 0 && strstr(pad->ident, "retrogame_joypad"))
++      {
++         int ei;
++         for (ei = 0; ei < 16; ei++)
++         {
++            char vpath[32], vname[128] = {0};
++            int vfd, veff = 0;
++            snprintf(vpath, sizeof(vpath), "/dev/input/event%d", ei);
++            vfd = open(vpath, O_RDWR | O_NONBLOCK);
++            if (vfd < 0)
++               continue;
++            if (ioctl(vfd, EVIOCGNAME(sizeof(vname) - 1), vname) >= 0 &&
++                strcmp(vname, "sc27xx:vibrator") == 0 &&
++                ioctl(vfd, EVIOCGEFFECTS, &veff) >= 0 && veff >= 2)
++            {
++               pad->num_effects = veff;
++               udev_rumble_is_vibra[p] = true;
++               udev_rumble_attach(p, vfd);
++               close(vfd);
++               RARCH_LOG("[udev] Pad #%u bridged to %s (%s, %d effects) for force feedback.\n",
++                     p, vpath, vname, veff);
++               break;
++            }
++            close(vfd);
++         }
++      }
+    }
+ 
+ #ifndef HAVE_LAKKA_SWITCH
+    /* Set rumble gain here, if supported */
+-   if (test_bit(FF_RUMBLE, ffbit))
++   if (test_bit(FF_RUMBLE, ffbit) || udev_rumble_is_vibra[p])
+    {
+       unsigned rumble_gain = input_config_get_rumble_gain();
+       udev_set_rumble_gain(p, rumble_gain);

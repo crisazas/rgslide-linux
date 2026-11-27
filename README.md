@@ -25,6 +25,7 @@ Native Linux distribution (Debian 13 Trixie arm64) for the **Anbernic RG Slide**
   - Dedicated ALSA audio mixing daemon (`rgslide-audiod`) for UI navigation sounds and in-game audio.
 * **Controls, Slider & Standby:**
   - Integrated internal gamepad (`retrogame_joypad`, `/dev/input/event3`) mapped and calibrated.
+  - Native in-game rumble / force feedback: RetroArch's `udev` joypad driver is patched to bridge `retrogame_joypad` to `sc27xx:vibrator` (16 FF effects) with zero extra daemons.
   - Physical volume rocker (`/dev/input/event0` via `gpio-keys`) integrated with `rgslide-hotkeyd` and `rgslide-volume`.
   - Hall slider sensor (`KEY_WAKEUP`) and short Power key press trigger instant low-power standby (`rgslide-sleepd`): blanks backlight, pauses (`SIGSTOP`) ES-DE/RetroArch mid-game, and drops CPUs to `powersave`; sliding open resumes immediately.
   - On-screen quick menu / tools overlay (`rgslide-ui`) accessible via `Back + Select`.

@@ -94,11 +94,16 @@ sudo cp -a "$T/opt/hybris-glvnd/etc/rgslide-hybris.sh" "$T/etc/profile.d/"
 sudo cp -a "$T/opt/hybris-glvnd/etc/60-rgslide-hybris.conf" "$T/etc/environment.d/"
 sudo mkdir -p "$T/usr/local/lib/aarch64-linux-gnu"
 sudo cp -a out/sdl2-hybris-root/usr/local/sdl2-hybris/lib/. "$T/usr/local/lib/aarch64-linux-gnu/"
+if [ -f out/panvk-dist/libvulkan_panfrost.so ]; then
+    sudo install -m 755 out/panvk-dist/libvulkan_panfrost.so "$T/usr/local/lib/aarch64-linux-gnu/libvulkan_panfrost.so"
+fi
 
 echo "6/8 ES-DE 3.5.0 y RetroArch 1.22.2 + nucleos + XMB ..."
 sudo cp -a out/esde-root/opt/es-de "$T/opt/"
 if [ -d out/retroarch-stage/opt/retroarch ]; then
     sudo cp -a out/retroarch-stage/opt/retroarch "$T/opt/"
+    [ -f out/retroarch-root/opt/retroarch/bin/retroarch ] && \
+        sudo install -m 755 out/retroarch-root/opt/retroarch/bin/retroarch "$T/opt/retroarch/bin/retroarch"
     [ -d out/ra-extra-libs/usr/lib/aarch64-linux-gnu ] && \
         sudo cp -a out/ra-extra-libs/usr/lib/aarch64-linux-gnu/. "$T/opt/retroarch/lib/"
     if [ -d out/ra-assets-x/usr/share/libretro/assets ]; then
