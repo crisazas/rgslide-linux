@@ -1,0 +1,181 @@
+#!/usr/bin/env python3
+"""rgslide-imud: On-demand DSU (Cemuhook) UDP motion server for RG Slide CM4 Sensorhub.
+
+Listens on 127.0.0.1:26760 (standard DSU/Cemuhook protocol used by Dolphin,
+melonDS, Citra/Azahar, Cemu, and RetroArch). Uses 0% CPU while idle: only
+enables /dev/iio:device0 (accel handle 1 + gyro handle 10 at 50 Hz) when a
+client subscribes, and stops streaming 5 seconds after the last client request.
+"""
+import math
+import os
+import select
+import socket
+import struct
+import sys
+import time
+import zlib
+
+HOST = os.environ.get("RGSLIDE_IMU_HOST", "127.0.0.1")
+PORT = int(os.environ.get("RGSLIDE_IMU_PORT", "26760"))
+IIO_DEV = "/dev/iio:device0"
+IIO_SYS = "/sys/bus/iio/devices/iio:device0"
+SH_SYS = "/sys/class/sprd_sensorhub/sensor_hub"
+
+SERVER_ID = 0x5247534C  # 'RGSL'
+MAC = b"\x02\x7b\x5a\x0c\x18\x5b"
+MSG_VER = 0x100000
+MSG_INFO = 0x100001
+MSG_DATA = 0x100002
+G0 = 9.80665
+
+
+def log(*a):
+    print("rgslide-imud:", *a, file=sys.stderr, flush=True)
+
+
+def write_sys(path, val):
+    try:
+        with open(path, "w") as f:
+            f.write(str(val) + "\n")
+        return True
+    except OSError:
+        return False
+
+
+def iio_start():
+    write_sys(f"{IIO_SYS}/buffer/enable", 0)
+    write_sys(f"{IIO_SYS}/trigger/current_trigger", "sprd-sensor-dev0")
+    for ch in ("in_accel_x_en", "in_accel_y_en", "in_accel_z_en", "in_timestamp_en"):
+        write_sys(f"{IIO_SYS}/scan_elements/{ch}", 1)
+    write_sys(f"{SH_SYS}/batch", "1 0 20000 0")
+    write_sys(f"{SH_SYS}/enable", "1 1")
+    write_sys(f"{SH_SYS}/batch", "10 0 20000 0")
+    write_sys(f"{SH_SYS}/enable", "10 1")
+    write_sys(f"{IIO_SYS}/buffer/enable", 1)
+    return os.open(IIO_DEV, os.O_RDONLY | os.O_NONBLOCK)
+
+
+def iio_stop(fd):
+    if fd >= 0:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+    write_sys(f"{IIO_SYS}/buffer/enable", 0)
+    write_sys(f"{SH_SYS}/enable", "1 0")
+    write_sys(f"{SH_SYS}/enable", "10 0")
+
+
+def pack_dsu(msg_type, payload):
+    body = struct.pack("<I", msg_type) + payload
+    hdr = struct.pack("<4sHHII", b"DSUS", 1001, len(body), 0, SERVER_ID)
+    pkt = hdr + body
+    crc = zlib.crc32(pkt) & 0xFFFFFFFF
+    return pkt[:8] + struct.pack("<I", crc) + pkt[12:]
+
+
+def slot_meta(slot):
+    # slot, state(2=connected), model(2=full gyro), conn(1=usb), mac(6), battery(5=full)
+    if slot == 0:
+        return struct.pack("<BBBB6sB", 0, 2, 2, 1, MAC, 5)
+    return struct.pack("<BBBB6sB", slot, 0, 0, 0, b"\0" * 6, 0)
+
+
+def main():
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind((HOST, PORT))
+    sock.setblocking(False)
+    log(f"listening on {HOST}:{PORT} (DSU/Cemuhook)")
+
+    clients = {}  # addr -> last_seen_monotonic
+    iio_fd = -1
+    pkt_num = 0
+    ax = ay = az = 0.0
+    gx = gy = gz = 0.0
+    ts_us = 0
+
+    try:
+        while True:
+            now = time.monotonic()
+            # Expire clients idle > 5s
+            expired = [a for a, t in clients.items() if now - t > 5.0]
+            for a in expired:
+                del clients[a]
+
+            if clients and iio_fd < 0:
+                try:
+                    iio_fd = iio_start()
+                    log("IIO sensorhub stream started")
+                except OSError as e:
+                    log("IIO open failed:", e)
+                    iio_fd = -1
+            elif not clients and iio_fd >= 0:
+                iio_stop(iio_fd)
+                iio_fd = -1
+                log("IIO sensorhub stream stopped (idle)")
+
+            rlist = [sock] + ([iio_fd] if iio_fd >= 0 else [])
+            r, _, _ = select.select(rlist, [], [], 1.0)
+
+            if sock in r:
+                try:
+                    data, addr = sock.recvfrom(256)
+                except OSError:
+                    data = b""
+                if len(data) >= 20 and data[:4] == b"DSUC":
+                    msg_type = struct.unpack_from("<I", data, 16)[0]
+                    if msg_type == MSG_VER:
+                        sock.sendto(pack_dsu(MSG_VER, struct.pack("<H", 1001)), addr)
+                    elif msg_type == MSG_INFO and len(data) >= 24:
+                        cnt = min(struct.unpack_from("<I", data, 20)[0], 4)
+                        for i in range(cnt):
+                            slot = data[24 + i] if len(data) > 24 + i else i
+                            sock.sendto(pack_dsu(MSG_INFO, slot_meta(slot) + b"\0"), addr)
+                    elif msg_type == MSG_DATA:
+                        clients[addr] = time.monotonic()
+
+            if iio_fd >= 0 and iio_fd in r:
+                try:
+                    raw = os.read(iio_fd, 40 * 16)
+                except OSError:
+                    raw = b""
+                updated = False
+                for off in range(0, len(raw) - 39, 40):
+                    if raw[off] != 0x81:
+                        continue
+                    handle = raw[off + 1]
+                    x, y, z = struct.unpack_from("<fff", raw, off + 3)
+                    ts_ns = struct.unpack_from("<Q", raw, off + 27)[0]
+                    ts_us = ts_ns // 1000 if ts_ns else int(time.monotonic() * 1e6)
+                    if handle == 1:
+                        ax, ay, az = x / G0, y / G0, z / G0
+                        updated = True
+                    elif handle == 10:
+                        gx, gy, gz = math.degrees(x), math.degrees(y), math.degrees(z)
+                        updated = True
+                if updated and clients:
+                    pkt_num = (pkt_num + 1) & 0xFFFFFFFF
+                    # DSU pad data: slot_meta(11) + connected(1) + pkt(4) + btns/sticks/touch(32) + ts_us(8) + accel(12) + gyro(12)
+                    payload = (
+                        slot_meta(0)
+                        + struct.pack("<BI", 1, pkt_num)
+                        + b"\0" * 32
+                        + struct.pack("<Qffffff", ts_us, ax, ay, az, gx, gy, gz)
+                    )
+                    pkt = pack_dsu(MSG_DATA, payload)
+                    for addr in list(clients):
+                        try:
+                            sock.sendto(pkt, addr)
+                        except OSError:
+                            pass
+    finally:
+        iio_stop(iio_fd)
+        sock.close()
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass

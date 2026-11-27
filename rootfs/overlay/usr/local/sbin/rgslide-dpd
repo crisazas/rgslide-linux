@@ -1,0 +1,77 @@
+#!/usr/bin/env python3
+"""rgslide-dpd: USB-C DisplayPort hotplug watcher for Anbernic RG Slide.
+
+Watches /sys/class/drm/card0-DP-1/status. When an external DisplayPort / HDMI
+monitor is plugged in:
+  - Saves & turns off the internal panel backlight (unless RGSLIDE_DP_KEEP_BL=1)
+  - Restarts rgslide-esde (when in menu) so eglplatform_drm switches to DP-1
+When unplugged:
+  - Restores internal backlight and restarts rgslide-esde back to DSI-1.
+"""
+import os
+import subprocess
+import sys
+import time
+
+DP_STATUS = "/sys/class/drm/card0-DP-1/status"
+BL_PATH = "/sys/class/backlight/sprd_backlight/brightness"
+SESSION_FILE = "/run/rgslide/session"
+STATE_FILE = "/run/rgslide/dp-connected"
+
+
+def log(*a):
+    print("rgslide-dpd:", *a, file=sys.stderr, flush=True)
+
+
+def read_text(path, default=""):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return default
+
+
+def write_text(path, val):
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            f.write(str(val) + "\n")
+    except OSError:
+        pass
+
+
+def main():
+    saved_bl = 64
+    prev = read_text(DP_STATUS, "disconnected") == "connected"
+    write_text(STATE_FILE, "1" if prev else "0")
+    log("initial DP-1 state:", "connected" if prev else "disconnected")
+
+    while True:
+        time.sleep(1.0)
+        cur = read_text(DP_STATUS, "disconnected") == "connected"
+        if cur == prev:
+            continue
+        prev = cur
+        write_text(STATE_FILE, "1" if cur else "0")
+        session = read_text(SESSION_FILE, "menu")
+        if cur:
+            log("external DisplayPort connected (session=%s)" % session)
+            bl = read_text(BL_PATH)
+            if bl.isdigit() and int(bl) > 0:
+                saved_bl = int(bl)
+            if os.environ.get("RGSLIDE_DP_KEEP_BL") != "1":
+                write_text(BL_PATH, 0)
+            if session == "menu":
+                subprocess.run(["systemctl", "restart", "--no-block", "rgslide-esde.service"], check=False)
+        else:
+            log("external DisplayPort disconnected (session=%s)" % session)
+            write_text(BL_PATH, max(13, saved_bl))
+            if session == "menu":
+                subprocess.run(["systemctl", "restart", "--no-block", "rgslide-esde.service"], check=False)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass

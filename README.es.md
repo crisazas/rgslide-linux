@@ -28,6 +28,8 @@ Distribución Linux nativa (Debian 13 Trixie arm64) para la consola portátil **
   - Vibración (rumble) nativa en juegos: el driver `udev` de RetroArch está parcheado para enlazar `retrogame_joypad` con `sc27xx:vibrator` (16 efectos FF) sin demonios adicionales.
   - Botones físicos de volumen (`/dev/input/event0`) integrados con `rgslide-hotkeyd` y `rgslide-volume`.
   - Sensor Hall del deslizador (`KEY_WAKEUP`) y pulsación corta del botón Power activan reposo instantáneo (`rgslide-sleepd`): apaga retroiluminación (`brightness=0`), pausa (`SIGSTOP`) ES-DE y RetroArch a mitad de juego y reduce las CPUs a `powersave`; al abrir o volver a pulsar reanuda de inmediato.
+  - Sensores de movimiento: el sensorhub del CM4 (`rgslide-ch`) alimenta un servidor UDP DSU/Cemuhook bajo demanda (`rgslide-imud`, `127.0.0.1:26760`) con datos del acelerómetro; coste de CPU nulo en reposo. El canal del giroscopio aún da ceros (el handle 10 no está identificado).
+  - DisplayPort USB-C: `eglplatform_drm` prefiere un conector DP/HDMI conectado sobre el panel interno y `rgslide-dpd` gestiona el hotplug. **Sin probar con un monitor real** (solo se verificó el retorno al panel interno).
   - Menú rápido en pantalla (`rgslide-ui`) accesible con `Back + Select`.
 * **Conectividad:**
   - **Wi-Fi:** 2.4 / 5 GHz con DHCP automático (`systemd-networkd`).

@@ -28,6 +28,8 @@ Native Linux distribution (Debian 13 Trixie arm64) for the **Anbernic RG Slide**
   - Native in-game rumble / force feedback: RetroArch's `udev` joypad driver is patched to bridge `retrogame_joypad` to `sc27xx:vibrator` (16 FF effects) with zero extra daemons.
   - Physical volume rocker (`/dev/input/event0` via `gpio-keys`) integrated with `rgslide-hotkeyd` and `rgslide-volume`.
   - Hall slider sensor (`KEY_WAKEUP`) and short Power key press trigger instant low-power standby (`rgslide-sleepd`): blanks backlight, pauses (`SIGSTOP`) ES-DE/RetroArch mid-game, and drops CPUs to `powersave`; sliding open resumes immediately.
+  - Motion sensors: the CM4 sensorhub (`rgslide-ch`) feeds an on-demand DSU/Cemuhook UDP server (`rgslide-imud`, `127.0.0.1:26760`) with accelerometer data; idle CPU cost is zero. The gyroscope channel still reads zeros (handle 10 is unidentified).
+  - USB-C DisplayPort: `eglplatform_drm` prefers a connected DP/HDMI connector over the internal panel and `rgslide-dpd` handles hotplug. **Untested with a real monitor** (only the fallback to the internal panel has been verified).
   - On-screen quick menu / tools overlay (`rgslide-ui`) accessible via `Back + Select`.
 * **Connectivity & Networking:**
   - **Wi-Fi:** 2.4 / 5 GHz station mode with DHCP via `systemd-networkd`.

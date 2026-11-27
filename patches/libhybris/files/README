@@ -1,0 +1,2 @@
+drm_window.cpp completo (resultado de aplicar 0002 + 0004 + seleccion de conector externo DP/HDMI, HYBRIS_DRM_CONNECTOR=auto|dp|dsi).
+Copiar sobre third_party/libhybris/hybris/egl/platforms/drm/drm_window.cpp antes de scripts/build-libhybris*.sh.

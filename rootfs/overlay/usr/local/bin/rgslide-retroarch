@@ -12,4 +12,8 @@ export HYBRIS_ANDROID_SDK_VERSION=33
 export HYBRIS_LD_LIBRARY_PATH=/opt/hybris/alib:/vendor/lib64:/system/lib64:/odm/lib64
 [ -f /opt/hybris/libabortbt.so ] && [ -n "$RGSLIDE_ABORTBT" ] && export LD_PRELOAD=/opt/hybris/libabortbt.so
 cd "$R" || exit 1
-exec "$R/bin/retroarch" --config "${RGSLIDE_RA_CONFIG:-/etc/retroarch.cfg}" "$@"
+DP_CFG=""
+if [ "${HYBRIS_DRM_CONNECTOR:-auto}" != "dsi" ] && [ "$(cat /sys/class/drm/card0-DP-1/status 2>/dev/null)" = "connected" ]; then
+    printf 'video_monitor_index = "2"\n' > /tmp/rgslide-ra-dp.cfg 2>/dev/null && DP_CFG="--appendconfig=/tmp/rgslide-ra-dp.cfg"
+fi
+exec "$R/bin/retroarch" --config "${RGSLIDE_RA_CONFIG:-/etc/retroarch.cfg}" $DP_CFG "$@"

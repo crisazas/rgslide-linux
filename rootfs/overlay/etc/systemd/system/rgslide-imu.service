@@ -1,0 +1,16 @@
+[Unit]
+Description=On-demand DSU (Cemuhook) IMU motion server for RG Slide CM4 sensorhub
+After=rgslide-ch.service
+Wants=rgslide-ch.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/sbin/rgslide-imud
+Restart=on-failure
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
