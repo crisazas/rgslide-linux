@@ -16,8 +16,9 @@ Native Linux distribution (Debian 13 Trixie arm64) for the **Anbernic RG Slide**
 
 * **Display & 3D Hardware Acceleration (Mali-G57 GPU):**
   - Native display panel running at full resolution (1280x960) with proper orientation and up to 120 Hz refresh rate.
-  - OpenGL ES 2.0 / 3.x hardware acceleration through `libhybris` + Android vendor Mali blob + `libtlspad.so`.
-  - **EmulationStation Desktop Edition (ES-DE 3.5.0)** and **RetroArch (1.22.2)** running natively with OpenGL ES acceleration.
+  - **Vulkan 1.3 (Native Linux):** Open-source **Mesa PanVK 26.3** (`libvulkan_panfrost.so`) talking directly to `/dev/mali0` (`mali_kbase` JM v9) with zero-copy `VK_KHR_display` presentation on `/dev/dri/card0` (60/90/120 Hz) — no `libhybris`, no `tlspad`, no Android blobs.
+  - **OpenGL ES 2.0 / 3.x:** Hardware acceleration through `libhybris` + Android vendor Mali blob + `libtlspad.so`.
+  - **EmulationStation Desktop Edition (ES-DE 3.5.0)** and **RetroArch (1.22.2)** running natively (RetroArch supports both Vulkan + `.slang` shaders via `khr_display` and OpenGL ES).
 * **Audio Subsystem:**
   - Stereo audio output via built-in speakers and 3.5 mm headphone jack through the Unisoc UMP9620 codec (`snd_soc_sprd_codec_ump9620`).
   - Regulator softdep ordering (`rgslide-audio.conf`) mitigating boot static noise / `DPOP`.

@@ -20,7 +20,7 @@ export CFLAGS="-O2 -Wno-error -fcommon -DDT_NO_POOL" CXXFLAGS="-O2 -Wno-error"
 export LDFLAGS="-Wl,--allow-shlib-undefined -Wl,-rpath-link,$S/usr/lib/aarch64-linux-gnu -Wl,-rpath-link,$S/lib/aarch64-linux-gnu"
 export PKG_CONF_PATH=/usr/bin/pkg-config
 [ -f config.mk ] || ./configure --host=aarch64-linux-gnu --prefix=/opt/retroarch \
-  --disable-x11 --disable-wayland --disable-pulse --disable-vulkan --disable-kms --disable-qt \
+  --disable-x11 --disable-wayland --disable-pulse --enable-vulkan --enable-slang --disable-kms --disable-qt \
   --disable-discord --disable-ffmpeg --disable-dbus --disable-networking --disable-ssl \
   --disable-opengl --disable-opengl1 --disable-opengl_core --enable-opengles --enable-opengles3 --enable-egl --enable-hybris --enable-alsa --enable-udev \
   --enable-threads --disable-materialui --disable-ozone --enable-xmb --enable-rgui --enable-freetype \

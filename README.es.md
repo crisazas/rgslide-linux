@@ -16,8 +16,9 @@ Distribución Linux nativa (Debian 13 Trixie arm64) para la consola portátil **
 
 * **Pantalla y aceleración 3D (GPU Mali-G57):**
   - Panel nativo (1280x960) con orientación correcta y hasta 120 Hz.
-  - OpenGL ES 2.0 / 3.x mediante `libhybris` + blob Mali de fábrica + `libtlspad.so`.
-  - **ES-DE 3.5.0** y **RetroArch 1.22.2** corriendo nativos con aceleración OpenGL ES.
+  - **Vulkan 1.3 (Linux nativo):** Driver libre **Mesa PanVK 26.3** (`libvulkan_panfrost.so`) comunicándose directo con `/dev/mali0` (`mali_kbase` JM v9) y presentación `VK_KHR_display` zero-copy sobre `/dev/dri/card0` (60/90/120 Hz), sin `libhybris`, sin `tlspad` y sin blobs de Android.
+  - **OpenGL ES 2.0 / 3.x:** Aceleración mediante `libhybris` + blob Mali de fábrica + `libtlspad.so`.
+  - **ES-DE 3.5.0** y **RetroArch 1.22.2** corriendo nativos (RetroArch soporta tanto Vulkan + shaders `.slang` por `khr_display` como OpenGL ES).
 * **Audio:**
   - Altavoces estéreo y jack de 3.5 mm vía códec Unisoc UMP9620 (`snd_soc_sprd_codec_ump9620`).
   - Ordenación `softdep` de reguladores (`rgslide-audio.conf`) mitigando estática/chasquidos (`DPOP`) al arrancar.

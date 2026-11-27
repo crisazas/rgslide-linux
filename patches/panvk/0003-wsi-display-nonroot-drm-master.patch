@@ -1,0 +1,47 @@
+diff --git a/src/vulkan/wsi/wsi_common_display.c b/src/vulkan/wsi/wsi_common_display.c
+index 5db750c..d46360b 100644
+--- a/src/vulkan/wsi/wsi_common_display.c
++++ b/src/vulkan/wsi/wsi_common_display.c
+@@ -1873,7 +1873,7 @@ wsi_display_get_master(struct wsi_display *wsi)
+    if (wsi->fd != wsi->device_fd)
+       return 0;
+ 
+-   if (wsi->master_refcount++ == 0) {
++   if (wsi->master_refcount++ == 0 && geteuid() == 0) {
+       int ret = drmSetMaster(wsi->fd);
+       if (ret != 0) {
+          wsi_display_debug("drm fd %d failed to re-set master: %s", wsi->fd, strerror(-errno));
+@@ -1892,7 +1892,7 @@ wsi_display_drop_master(struct wsi_display *wsi)
+    if (wsi->fd != wsi->device_fd)
+       return 0;
+ 
+-   if (--wsi->master_refcount == 0) {
++   if (--wsi->master_refcount == 0 && geteuid() == 0) {
+       int ret = drmDropMaster(wsi->fd);
+       if (ret != 0) {
+          wsi_display_debug("drm fd %d failed to drop master: %s", wsi->fd, strerror(-errno));
+@@ -3719,17 +3719,14 @@ wsi_display_init_wsi(struct wsi_device *wsi_device,
+ 
+    if (wsi->fd >= 0) {
+       drmSetClientCap(wsi->fd, DRM_CLIENT_CAP_ATOMIC, 1);
+-      /* Drop master, so that others (vkAcquireDRMDisplayEXT, KMS-native
+-       * compositors after a VT switch) can get master when they open.
++      /* Drop master only as root: non-root processes cannot re-acquire DRM
++       * master via drmSetMaster() once dropped.
+        */
+-      int ret = drmDropMaster(wsi->fd);
+-      if (ret != 0) {
+-         /* Leave a debug note, but ignore it -- if you ask for KHR_display, and
+-          * are the second client (not master), but can later acquire a master
+-          * fd by whatever means (systemd-logind, whatever), that should be
+-          * allowed.
+-          */
+-         wsi_display_debug("wsi_display_init_wsi: drm fd %d failed to drop master", wsi->fd);
++      if (geteuid() == 0) {
++         int ret = drmDropMaster(wsi->fd);
++         if (ret != 0) {
++            wsi_display_debug("wsi_display_init_wsi: drm fd %d failed to drop master", wsi->fd);
++         }
+       }
+    }
+ 
