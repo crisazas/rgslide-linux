@@ -55,8 +55,6 @@ Native Linux distribution (Debian 13 Trixie arm64) for **Anbernic Unisoc T820 (`
 
 ### Known Limitations & Open Issues
 
-* **Boot Race Condition (`apsys_dvfs` vs `mmdvfs`):**
-  - Stock modules `apsys-dvfs.ko` and `mmdvfs.ko` both register the `vdsp_dvfs` devfreq governor, causing a kernel use-after-free panic on retry when `mmdvfs` wins the race (measured at 2 of 14 boots before mitigation; see [`docs/agent-panic.md`](docs/agent-panic.md)). A `softdep mmdvfs pre: apsys_dvfs` rule is deployed, but still requires extended cold-boot soak testing.
 * **Kernel Deep Sleep (`mem` / `s2idle`):**
   - Currently handled via instant userspace standby (`rgslide-sleepd`) because stock kernel 5.4 `mem`/`s2idle` hangs in Unisoc PM notifiers (`sprd_pcm_pm_notifier`) when audio/DRM are active.
 * **External Video Output (USB-C DisplayPort / HDMI Alt Mode):**
