@@ -17,7 +17,7 @@ run|Hora: adelantar 1 hora|rgslide-ctl time adjust +60
 run|Hora: atrasar 1 hora|rgslide-ctl time adjust -60
 run|Hora: adelantar 10 minutos|rgslide-ctl time adjust +10
 run|Hora: atrasar 10 minutos|rgslide-ctl time adjust -10
-choice|Zona horaria|rgslide-ctl time zone|rgslide-ctl time tz %s|Europe/Madrid,Atlantic/Canary,UTC,America/Mexico_City,America/Bogota,America/Argentina/Buenos_Aires,America/New_York
+list|Zona horaria|rgslide-ctl time list|rgslide-ctl time tz %s
 choice|Idioma|rgslide-ctl lang get|rgslide-ctl lang set %s|auto,es,en
 confirm|Cerrar juego y volver a EmulationStation|rgslide-ctl kill-game
 confirm|Reiniciar la Slide|rgslide-ctl reboot

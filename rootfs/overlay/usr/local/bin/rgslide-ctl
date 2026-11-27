@@ -107,7 +107,27 @@ st_screen() {
 	b=$(rgslide-brightness get 2>/dev/null); v=$(vol_get)
 	row "Brillo" "${b:-n/d}%   $(tt Volumen): $v   $(tt Pantalla): $(disp_get) Hz"
 }
-st_time() { row "Hora" "$(date '+%Y-%m-%d %H:%M:%S %Z')   ($(timedatectl show -p Timezone --value 2>/dev/null))"; }
+time_list() {
+	cur=$(tz_get)
+	act=$(tt "actual")
+	timedatectl list-timezones 2>/dev/null | awk -v cur="$cur" -v act="$act" '
+	$0 ~ /^(America|Europe|Atlantic|UTC|Asia|Pacific)/ {
+		p = ($0 ~ /^America/ ? 1 : ($0 ~ /^Europe/ ? 2 : ($0 ~ /^Atlantic/ ? 3 : ($0 ~ /^UTC/ ? 4 : 5))))
+		m = ($0 == cur) ? "  [" act "]" : ""
+		print p "\t" $0 "\t" $0 m "\t"
+	}' | sort -k1,1n -k2,2 | cut -f2-
+}
+tz_get() {
+	if [ -L /etc/localtime ]; then
+		dest=$(readlink /etc/localtime)
+		echo "${dest#/usr/share/zoneinfo/}"
+	elif [ -r /etc/timezone ]; then
+		cat /etc/timezone
+	else
+		timedatectl show -p Timezone --value 2>/dev/null || echo UTC
+	fi
+}
+st_time() { row "Hora" "$(date '+%Y-%m-%d %H:%M:%S %Z')   ($(tz_get))"; }
 st_sys() {
 	row "Memoria" "$(free -m | awk '/^Mem:/{printf "%d/%d MB", $3, $2}')   $(tt 'Disco libre') $(df -h / | awk 'NR==2{print $4}')"
 	row "Encendida" "$(awk '{s=int($1); d=int(s/86400); h=int(s%86400/3600); m=int(s%3600/60); if (d) printf "%d d ", d; printf "%d h %d min", h, m}' /proc/uptime 2>/dev/null)"
@@ -352,7 +372,8 @@ cmd_time() {
 	sub=$1; [ $# -gt 0 ] && shift
 	case "$sub" in
 	""|get) st_time;;
-	zone) timedatectl show -p Timezone --value;;
+	zone) tz_get;;
+	list) time_list;;
 	sync)
 		e=$(web_epoch); [ -n "$e" ] || { say "Sin internet: no se pudo leer la hora de la red."; return 1; }
 		d=$(( e - $(date +%s) )); sayf "Diferencia con internet: %s s" "$d"
@@ -360,8 +381,19 @@ cmd_time() {
 	adjust)
 		case "$1" in [+-][0-9]*) ;; *) die "time adjust +-MINUTOS";; esac
 		time_set $(( $(date +%s) + ${1#+} * 60 ));;
-	tz) [ -n "$1" ] || die "time tz ZONA (p.ej. Europe/Madrid)"; run sudo -n timedatectl set-timezone "$1" && st_time;;
-	*) die "time: get|zone|sync|adjust +-MIN|tz ZONA";;
+	tz)
+		[ -n "$1" ] || die "time tz ZONA (p.ej. America/Mexico_City)"
+		if [ -r "/usr/share/zoneinfo/$1" ]; then
+			if [ "$DRY" = 1 ]; then echo "[dry-run] set timezone $1"; return 0; fi
+			sudo -n ln -sfn "/usr/share/zoneinfo/$1" /etc/localtime
+			echo "$1" | sudo -n tee /etc/timezone >/dev/null
+			sudo -n timedatectl set-timezone "$1" 2>/dev/null || true
+			sayf "Zona horaria: %s" "$1"
+			st_time
+		else
+			dief "zona horaria desconocida: %s" "$1"
+		fi;;
+	*) die "time: get|zone|list|sync|adjust +-MIN|tz ZONA";;
 	esac
 }
 

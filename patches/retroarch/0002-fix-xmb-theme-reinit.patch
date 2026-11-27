@@ -1,0 +1,181 @@
+diff --git a/Makefile.common b/Makefile.common
+index a1db99f..084ee02 100644
+--- a/Makefile.common
++++ b/Makefile.common
+@@ -1673,6 +1673,10 @@ ifeq ($(HAVE_GL_CONTEXT), 1)
+       OBJ += gfx/drivers_context/mali_fbdev_ctx.o
+    endif
+ 
++   ifeq ($(HAVE_HYBRIS), 1)
++      OBJ += gfx/drivers_context/hybris_ctx.o
++   endif
++
+    ifeq ($(HAVE_VIVANTE_FBDEV), 1)
+       OBJ += gfx/drivers_context/vivante_fbdev_ctx.o
+    endif
+diff --git a/gfx/video_driver.c b/gfx/video_driver.c
+index 24d208b..a853d30 100644
+--- a/gfx/video_driver.c
++++ b/gfx/video_driver.c
+@@ -332,6 +332,9 @@ static const gfx_ctx_driver_t *gfx_ctx_gl_drivers[] = {
+ #if defined(HAVE_MALI_FBDEV)
+    &gfx_ctx_mali_fbdev,
+ #endif
++#if defined(HAVE_HYBRIS)
++   &gfx_ctx_hybris,
++#endif
+ #if defined(HAVE_VIVANTE_FBDEV)
+    &gfx_ctx_vivante_fbdev,
+ #endif
+diff --git a/gfx/video_driver.h b/gfx/video_driver.h
+index db075a0..2729030 100644
+--- a/gfx/video_driver.h
++++ b/gfx/video_driver.h
+@@ -3393,6 +3393,7 @@ extern const gfx_ctx_driver_t gfx_ctx_vk_x;
+ extern const gfx_ctx_driver_t gfx_ctx_drm;
+ extern const gfx_ctx_driver_t gfx_ctx_go2_drm;
+ extern const gfx_ctx_driver_t gfx_ctx_mali_fbdev;
++extern const gfx_ctx_driver_t gfx_ctx_hybris;
+ extern const gfx_ctx_driver_t gfx_ctx_vivante_fbdev;
+ extern const gfx_ctx_driver_t gfx_ctx_android;
+ extern const gfx_ctx_driver_t gfx_ctx_vk_android;
+diff --git a/input/drivers/udev_input.c b/input/drivers/udev_input.c
+index 24fd6bb..d5019af 100644
+--- a/input/drivers/udev_input.c
++++ b/input/drivers/udev_input.c
+@@ -3409,6 +3409,15 @@ static int udev_input_add_device(udev_input_t *udev,
+    if (ioctl(fd, EVIOCGNAME(sizeof(device->ident)), device->ident) < 0)
+       device->ident[0] = '\0';
+ 
++   /* Ignore Android virtual gamepad touchscreen to prevent shadow touch conflicts */
++   if (strstr(device->ident, "virtual_gamepad"))
++   {
++      RARCH_LOG("[udev] Ignoring Android virtual touch device \"%s\" (%s)\n",
++            device->ident, devnode);
++      ret = -1;
++      goto end;
++   }
++
+    udev_input_describe_device(device, type, fd, devnode);
+ 
+    /* UDEV_INPUT_MOUSE may report in absolute coords too */
+@@ -3468,8 +3477,11 @@ static int udev_input_add_device(udev_input_t *udev,
+       {
+          if (ioctl(fd, EVIOCGABS(ABS_X), &absinfo) == -1)
+          {
+-            RARCH_DBG("[udev] ABS pointer device (%s) Failed to get ABS_X parameters.\n",device->ident);
+-            goto end;
++            if (ioctl(fd, EVIOCGABS(ABS_MT_POSITION_X), &absinfo) == -1)
++            {
++               RARCH_DBG("[udev] ABS pointer device (%s) Failed to get ABS_X parameters.\n",device->ident);
++               goto end;
++            }
+          }
+ 
+          device->mouse.x_min = absinfo.minimum;
+@@ -3477,8 +3489,11 @@ static int udev_input_add_device(udev_input_t *udev,
+ 
+          if (ioctl(fd, EVIOCGABS(ABS_Y), &absinfo) == -1)
+          {
+-            RARCH_DBG("[udev] ABS pointer device (%s) Failed to get ABS_Y parameters.\n",device->ident);
+-            goto end;
++            if (ioctl(fd, EVIOCGABS(ABS_MT_POSITION_Y), &absinfo) == -1)
++            {
++               RARCH_DBG("[udev] ABS pointer device (%s) Failed to get ABS_Y parameters.\n",device->ident);
++               goto end;
++            }
+          }
+          device->mouse.y_min = absinfo.minimum;
+          device->mouse.y_max = absinfo.maximum;
+diff --git a/input/drivers_joypad/udev_joypad.c b/input/drivers_joypad/udev_joypad.c
+index 8ef1819..e038bac 100644
+--- a/input/drivers_joypad/udev_joypad.c
++++ b/input/drivers_joypad/udev_joypad.c
+@@ -258,6 +258,7 @@ struct udev_rumble_out
+ static struct udev_rumble_out udev_rumble_out[MAX_USERS];
+ static retro_atomic_int_t udev_rumble_want[MAX_USERS];
+ static retro_atomic_int_t udev_rumble_want_gain[MAX_USERS];
++static bool udev_rumble_is_vibra[MAX_USERS];
+ static retro_atomic_int_t udev_rumble_slot[MAX_USERS];
+ static retro_atomic_int_t udev_rumble_gen[MAX_USERS];
+ static input_output_writer_t *udev_rumble_writer = NULL;
+@@ -358,7 +359,11 @@ static void udev_rumble_write(unsigned p)
+          e.id     = o->has_set_ff[effect] ? o->effects[effect] : -1;
+          e.replay = replay;
+          if (effect == RETRO_RUMBLE_STRONG)
++         {
+             e.u.rumble.strong_magnitude = strength;
++            if (udev_rumble_is_vibra[p])
++               e.u.rumble.weak_magnitude = strength;
++         }
+          else
+             e.u.rumble.weak_magnitude   = strength;
+ 
+@@ -1437,12 +1442,41 @@ static int udev_add_pad(struct udev_device *dev, unsigned p, int fd, const char
+ 
+       /* the rumble writer is given a descriptor of its own */
+       if (test_bit(FF_RUMBLE, ffbit) && pad->num_effects >= 2)
++      {
++         udev_rumble_is_vibra[p] = false;
+          udev_rumble_attach(p, fd);
++      }
++      else if (p == 0 && strstr(pad->ident, "retrogame_joypad"))
++      {
++         int ei;
++         for (ei = 0; ei < 16; ei++)
++         {
++            char vpath[32], vname[128] = {0};
++            int vfd, veff = 0;
++            snprintf(vpath, sizeof(vpath), "/dev/input/event%d", ei);
++            vfd = open(vpath, O_RDWR | O_NONBLOCK);
++            if (vfd < 0)
++               continue;
++            if (ioctl(vfd, EVIOCGNAME(sizeof(vname) - 1), vname) >= 0 &&
++                strcmp(vname, "sc27xx:vibrator") == 0 &&
++                ioctl(vfd, EVIOCGEFFECTS, &veff) >= 0 && veff >= 2)
++            {
++               pad->num_effects = veff;
++               udev_rumble_is_vibra[p] = true;
++               udev_rumble_attach(p, vfd);
++               close(vfd);
++               RARCH_LOG("[udev] Pad #%u bridged to %s (%s, %d effects) for force feedback.\n",
++                     p, vpath, vname, veff);
++               break;
++            }
++            close(vfd);
++         }
++      }
+    }
+ 
+ #ifndef HAVE_LAKKA_SWITCH
+    /* Set rumble gain here, if supported */
+-   if (test_bit(FF_RUMBLE, ffbit))
++   if (test_bit(FF_RUMBLE, ffbit) || udev_rumble_is_vibra[p])
+    {
+       unsigned rumble_gain = input_config_get_rumble_gain();
+       udev_set_rumble_gain(p, rumble_gain);
+diff --git a/qb/config.params.sh b/qb/config.params.sh
+index 23dd120..16de603 100644
+--- a/qb/config.params.sh
++++ b/qb/config.params.sh
+@@ -165,6 +165,7 @@ HAVE_LIBDECOR=auto         # libdecor support
+ HAVE_KMS=auto              # KMS context support
+ C89_KMS=no
+ HAVE_MALI_FBDEV=no         # Mali fbdev context support
++HAVE_HYBRIS=no             # libhybris (Android EGL blob) context support
+ HAVE_VIVANTE_FBDEV=no      # Vivante fbdev context support
+ HAVE_OPENDINGUX_FBDEV=no   # Opendingux fbdev context support
+ HAVE_SDL_DINGUX=no         # Opendingux SDL input/gfx driver support
+diff --git a/settings/settings_def_rgui_appearance.h b/settings/settings_def_rgui_appearance.h
+index ef6d5a2..2c4109d 100644
+--- a/settings/settings_def_rgui_appearance.h
++++ b/settings/settings_def_rgui_appearance.h
+@@ -61,7 +61,7 @@ S_UINT_EX(menu_xmb_layout, XMB_LAYOUT,
+ #if !defined(SETTINGS_DEF_CONFIG_PASS) || (defined(HAVE_MENU))
+ S_UINT_EX(menu_xmb_theme, XMB_THEME,
+       "xmb_theme",
+-      DEFAULT_XMB_ICON_THEME, SD_FLAG_CMD_APPLY_AUTO, SDESC_RANGE_MINMAX, CMD_EVENT_REINIT, 0, XMB_ICON_THEME_LAST - 1, 1, 0, setting_action_ok_uint, setting_get_string_representation_uint_xmb_icon_theme, NULL, NULL, NULL, NULL, ST_UI_TYPE_UINT_COMBOBOX,
++      DEFAULT_XMB_ICON_THEME, SD_FLAG_NONE, SDESC_RANGE_MINMAX, 0, 0, XMB_ICON_THEME_LAST - 1, 1, 0, setting_action_ok_uint, setting_get_string_representation_uint_xmb_icon_theme, NULL, NULL, NULL, NULL, ST_UI_TYPE_UINT_COMBOBOX,
+       "Icon Theme",
+       "Select a different icon theme for RetroArch.")
+ #endif
