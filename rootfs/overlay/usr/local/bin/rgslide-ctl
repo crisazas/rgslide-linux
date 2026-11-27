@@ -394,12 +394,17 @@ cmd_lang() {
 			echo '</gameList>'
 		} > "$tmp"
 		if [ "$DRY" = 1 ]; then echo "[dry-run] escribiria $g:"; cat "$tmp"; rm -f "$tmp"; return 0; fi
-		cat "$tmp" > "$g"; rm -f "$tmp"; sayf "Nombres de Ajustes escritos en %s (%s)." "$g" "$LANGCODE"
-		# Nombre del propio sistema en la lista de ES (<fullname> de "settings" en es_systems.cfg): ES lo lee al arrancar.
+		cat "$tmp" > "$g"; sayf "Nombres de Ajustes escritos en %s (%s)." "$g" "$LANGCODE"
+		# ES-DE lee los gamelists en ~/ES-DE/gamelists/<sistema>/gamelist.xml
+		if [ -d "$HOME/ES-DE/gamelists/settings" ]; then
+			cat "$tmp" > "$HOME/ES-DE/gamelists/settings/gamelist.xml"
+		fi
+		rm -f "$tmp"
+		# Nombre del propio sistema en ES (<fullname> de "settings") y en ES-DE.
 		es=${RGSLIDE_ESCFG:-/etc/emulationstation/es_systems.cfg}
 		fn=$(tt "Ajustes" | sed 's/&/\&amp;/g;s/</\&lt;/g;s/>/\&gt;/g')
 		if [ -w "$es" ] || sudo -n true 2>/dev/null; then
-			cur=$(sed -n '/<name>settings<\/name>/,/<\/system>/s#.*<fullname>\(.*\)</fullname>.*#\1#p' "$es" | head -n 1)
+			cur=$(sed -n '/<name>settings<\/name>/,/<\/system>/s#.*<fullname>\(.*\)</fullname>.*#\1#p' "$es" 2>/dev/null | head -n 1)
 			if [ -n "$cur" ] && [ "$cur" != "$fn" ]; then
 				t2=$(mktemp); sed "/<name>settings<\/name>/,/<\/system>/s#<fullname>.*</fullname>#<fullname>$fn</fullname>#" "$es" > "$t2"
 				if grep -q "<fullname>$fn</fullname>" "$t2" && [ "$(grep -c '<system>' "$t2")" = "$(grep -c '<system>' "$es")" ]; then
@@ -408,6 +413,21 @@ cmd_lang() {
 				fi
 				rm -f "$t2"
 			fi
+		fi
+		esde_sys="$HOME/ES-DE/custom_systems/es_systems.xml"
+		if [ -f "$esde_sys" ]; then
+			fn_de=$(tt "Ajustes RG Slide" | sed 's/&/\&amp;/g;s/</\&lt;/g;s/>/\&gt;/g')
+			cur=$(sed -n '/<name>settings<\/name>/,/<\/system>/s#.*<fullname>\(.*\)</fullname>.*#\1#p' "$esde_sys" | head -n 1)
+			if [ -n "$cur" ] && [ "$cur" != "$fn_de" ]; then
+				t2=$(mktemp); sed "/<name>settings<\/name>/,/<\/system>/s#<fullname>.*</fullname>#<fullname>$fn_de</fullname>#" "$esde_sys" > "$t2"
+				if grep -q "<fullname>$fn_de</fullname>" "$t2"; then cat "$t2" > "$esde_sys"; fi
+				rm -f "$t2"
+			fi
+		fi
+		esde_cfg="$HOME/ES-DE/settings/es_settings.xml"
+		if [ -f "$esde_cfg" ]; then
+			case "$(lang_cfg)" in es) lv=es_ES;; en) lv=en_US;; *) lv=automatic;; esac
+			sed -i -E "s#(<string name=\"ApplicationLanguage\" value=\")[^\"]*(\"[[:space:]]*/>)#\1$lv\2#; s#(<string name=\"ThemeLanguage\" value=\")[^\"]*(\"[[:space:]]*/>)#\1$lv\2#" "$esde_cfg"
 		fi;;
 	*) die "lang [show|get|set auto|es|en|apply [DIR]]";;
 	esac

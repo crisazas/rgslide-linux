@@ -144,3 +144,7 @@ Idioma=Language
 es=Español
 en=English
 Nombre del sistema en ES: %s (se aplica al reiniciar ES).=System name in ES: %s (applied when ES restarts).
+ES-DE cerrado (B = volver a ES-DE)=ES-DE closed (B = back to ES-DE)
+Pantalla (al volver a ES-DE)=Display (on return to ES-DE)
+Wifi: buscar redes y conectar=Wi-Fi: scan and connect
+Ajustes RG Slide=RG Slide Settings
