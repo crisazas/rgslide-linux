@@ -3,8 +3,7 @@
 > **Idioma:** [English (README.md)](README.md) | Español
 > *(Las notas técnicas en `docs/` y el historial de commits se mantienen en español.)*
 
-> **Estado: Pre-release experimental (`v0.9.1`) — NO es una versión `1.0` estable.**
-> La estabilidad de arranque aún requiere validación (una condición de carrera entre los módulos de fábrica `apsys_dvfs` y `mmdvfs` causó 2 panics en 14 arranques medidos; existe un `softdep` mitigador con verificación en frío aún limitada), la suspensión profunda (`s2idle`) está restringida y la salida DisplayPort por USB-C aún no funciona.
+> **Estado: Pre-release (`v0.9.1`)**
 
 Distribución Linux nativa (Debian 13 Trixie arm64) para consolas portátiles con procesador **Unisoc T820 (`ums9620_2h10`)** de Anbernic (**RG Slide**, **RG406H** y **RG476H**), reemplazando Android por completo con aceleración 3D por hardware (Mesa PanVK Vulkan 1.3 nativo + GPU Mali-G57 vía `libhybris`), EmulationStation Desktop Edition (ES-DE), RetroArch, audio, Wi-Fi, Bluetooth, pantallas táctiles y controles físicos completos.
 
@@ -25,14 +24,20 @@ Distribución Linux nativa (Debian 13 Trixie arm64) para consolas portátiles co
 ### Funcionando
 
 * **Pantalla y aceleración 3D (GPU Mali-G57):**
-  - Panel nativo (1280x960) con orientación correcta y hasta 120 Hz.
-  - **Vulkan 1.3 (Linux nativo):** Driver libre **Mesa PanVK 26.3** (`libvulkan_panfrost.so`) comunicándose directo con `/dev/mali0` (`mali_kbase` JM v9) y presentación `VK_KHR_display` zero-copy sobre `/dev/dri/card0` (60/90/120 Hz), sin `libhybris`, sin `tlspad` y sin blobs de Android.
-  - **OpenGL ES 2.0 / 3.x:** Aceleración mediante `libhybris` + blob Mali de fábrica + `libtlspad.so`.
+  - Panel nativo (1280x960 o 960x720) con orientación correcta y hasta 120 Hz.
+  - **Vulkan 1.3 (Linux nativo):** Driver libre **Mesa PanVK 26.3** (`libvulkan_panfrost.so`) comunicándose directo con `/dev/mali0` (`mali_kbase` JM v9) con presentación `VK_KHR_display` zero-copy sobre `/dev/dri/card0` (60/90/120 Hz) y WSI Wayland/X11 (`VK_KHR_wayland_surface`, `VK_KHR_xcb_surface`), sin `libhybris`, sin `tlspad` y sin blobs de Android.
+  - **OpenGL ES 2.0 / 3.x:** Aceleración mediante `libhybris` + blob Mali de fábrica + `libtlspad.so`, con reintento automático de `mali_kbase` en arranque en frío dentro de `gpu-prep`.
   - **ES-DE 3.5.0** y **RetroArch 1.22.2** corriendo nativos (RetroArch soporta tanto Vulkan + shaders `.slang` por `khr_display` como OpenGL ES).
+* **PortMaster e integración de Ports nativos:**
+  - **PortMaster** integrado directamente en el sistema **Ports** de ES-DE (`/opt/tools/PortMaster`, `/roms -> /home/console/ROMs`, recarga automática de ES-DE al instalar/desinstalar juegos y autodescarga en imágenes limpias).
+  - **`rgslide-python3` (`tools/pytls/`):** Lanzador mínimo de Python 3.13 que reserva los primeros 512 bytes del TLS estático del ejecutable principal y carga `libpython3.13.so.1.0` dinámicamente, resolviendo la colisión entre `_Py_tss_tstate` y `TLS_SLOT_OPENGL` (`TPIDR_EL0 + 0x18`) de Mali.
+  - **`SDL2-hybris` + `gptokeyb`/`gptokeyb2`:** Compilado con `libudev` (`HAVE_LIBUDEV_H=1`) para detección automática en caliente de teclados/ratones virtuales `uinput` y periféricos USB/Bluetooth, junto con el mapeo exacto de doble GUID para `retrogame_joypad` (`rgslide-gamecontrollerdb.txt`).
+  - **Runtimes SquashFS y Westonpack:** Montaje transparente de `.squashfs` vía `squashfuse` (`/usr/sbin/mount.squashfs`) y reemplazo nativo de **Westonpack** (`rgslide-westonwrap.sh`) usando Weston 14 de Debian (`drm` + `pixman`, `WESTON_DISABLE_ATOMIC=1`, `kiosk-shell`, `XWayland`, `scale=2` y `seatd` con `SEATD_VTBOUND=0`).
+  - **Motor AGS nativo (`rgslide-ags`):** Adventure Game Studio v3.6.3.17 compilado con OpenGL ES 2.0 nativo (`AGS_OPENGL_ES2=1`) corriendo directo sobre la GPU Mali-G57 vía `SDL2-hybris` (sin Weston) para los ports de motor AGS.
 * **Audio:**
   - Altavoces estéreo y jack de 3.5 mm vía códec Unisoc UMP9620 (`snd_soc_sprd_codec_ump9620`).
   - Ordenación `softdep` de reguladores (`rgslide-audio.conf`) mitigando estática/chasquidos (`DPOP`) al arrancar.
-  - Demonio de mezcla ALSA (`rgslide-audiod`) para sonidos de interfaz y juegos.
+  - Silencio real al llegar a volumen 0; demonio ALSA (`rgslide-audiod`) con contrapresión en la FIFO a 48 kHz reales para sonidos de interfaz, RetroArch y juegos SDL2/OpenAL/MojoAL/FMOD.
 * **Controles, deslizador y modo reposo (standby):**
   - Mando integrado (`retrogame_joypad`, `/dev/input/event3`) mapeado y calibrado.
   - **Pantalla táctil (`fts_ts`):** Soporte multi-touch nativo integrado en RetroArch (`UDEV_TOUCH_SUPPORT`), filtrando el nodo fantasma `virtual_gamepad` y enlazando los toques a dispositivos de puntero (`RETRO_DEVICE_POINTER`, lápiz táctil de NDS, pistolas de luz y navegación en menús XMB).
@@ -41,7 +46,7 @@ Distribución Linux nativa (Debian 13 Trixie arm64) para consolas portátiles co
   - Sensor Hall del deslizador (`KEY_WAKEUP`) y pulsación corta del botón Power activan reposo instantáneo (`rgslide-sleepd`): apaga retroiluminación (`brightness=0`), pausa (`SIGSTOP`) ES-DE y RetroArch a mitad de juego y reduce las CPUs a `powersave`; al abrir o volver a pulsar reanuda de inmediato.
   - Sensores de movimiento: el sensorhub del CM4 (`rgslide-ch`) alimenta un servidor UDP DSU/Cemuhook bajo demanda (`rgslide-imud`, `127.0.0.1:26760`) con datos del acelerómetro; coste de CPU nulo en reposo. El canal del giroscopio aún da ceros (el handle 10 no está identificado).
   - DisplayPort USB-C: `eglplatform_drm` prefiere un conector DP/HDMI conectado sobre el panel interno y `rgslide-dpd` gestiona el hotplug. **Sin probar con un monitor real** (solo se verificó el retorno al panel interno).
-  - Menú rápido en pantalla (`rgslide-ui`) accesible con `Back + Select`.
+  - Rescate rápido de un solo toque (`Select + Home`, 200 ms) y menú rápido en pantalla (`rgslide-ui`, EN/ES) con cierre forzado a ES-DE tanto en RetroArch como en ports de PortMaster (cerrando limpiamente `gptokeyb`/`weston` y desmontando montajes `squashfuse` temporales en `/tmp`).
 * **Conectividad:**
   - **Wi-Fi:** 2.4 / 5 GHz con DHCP automático (`systemd-networkd`).
   - **Bluetooth:** Inicialización (`rgslide-bt-init`), `bluetoothd` y asistente de emparejamiento (`rgslide-bt-pair`).
@@ -50,12 +55,10 @@ Distribución Linux nativa (Debian 13 Trixie arm64) para consolas portátiles co
   - Base Debian 13 (Trixie) arm64 mínima.
   - Coprocesador CM4 mantenido vivo (`rgslide-cm4-prep`) para evitar el reinicio por watchdog a los ~284 s.
   - Persistencia del reloj RTC (`sc27xx-rtc`) + sincronización automática SNTP (`rgslide-clock`) con respaldo en `/var/lib/rgslide/lasttime`.
-  - Sincronización dinámica de idioma (inglés / español) entre ES-DE y el menú Tools.
+  - Sincronización dinámica de idioma (inglés / español) entre ES-DE y el menú Tools, más selector persistente de zona horaria.
 
 ### Limitaciones conocidas y deuda abierta
 
-* **Carrera de módulos en arranque (`apsys_dvfs` vs `mmdvfs`):**
-  - Ambos módulos de fábrica registran el gobernador `vdsp_dvfs`; si `mmdvfs` gana la carrera, `apsys_dvfs` falla sin limpiar y el reintento produce un panic use-after-free (medido en 2 de 14 arranques antes del parche; ver [`docs/agent-panic.md`](docs/agent-panic.md)). Se desplegó `softdep mmdvfs pre: apsys_dvfs`, pendiente de más ciclos de arranque en frío.
 * **Suspensión profunda a nivel de kernel (`mem` / `s2idle`):**
   - Implementada mediante reposo instantáneo en espacio de usuario (`rgslide-sleepd`), ya que la suspensión del kernel stock 5.4 (`mem`/`s2idle`) se cuelga en los callbacks de gestión de energía de Unisoc (`sprd_pcm_pm_notifier`) al tener la pila de audio y DRM activa.
 * **Salida de vídeo externa (USB-C DisplayPort / HDMI Alt Mode):**
@@ -194,13 +197,13 @@ El flujo de construcción permite la compilación cruzada completa de todo el es
    ```bash
    ./scripts/build-panvk.sh
    ```
-   Compila Mesa 26.3 PanVK con soporte Valhall v9 JM (`mali_kbase`) y `VK_KHR_display` dentro del contenedor Docker, generando `out/panvk-dist/libvulkan_panfrost.so`.
+   Compila Mesa 26.3 PanVK con soporte Valhall v9 JM (`mali_kbase`), `VK_KHR_display` y WSI Wayland/X11 dentro del contenedor Docker, generando `out/panvk-dist/libvulkan_panfrost.so`.
 
-4. **Compilar SDL2 con soporte hybris DRM:**
+4. **Compilar SDL2 con soporte hybris DRM (`libudev` + ALSA):**
    ```bash
    ./scripts/build-sdl2-hybris.sh
    ```
-   Compila SDL2 2.32.4 parcheado con el backend `hybris` en `out/sdl2-hybris-root`.
+   Compila SDL2 2.32.4 parcheado con el backend `hybris` (verificando `HAVE_LIBUDEV_H=1` y `SDL_AUDIO_DRIVER_ALSA=1`) en `out/sdl2-hybris-root`.
 
 5. **Compilar EmulationStation Desktop Edition (ES-DE):**
    ```bash
@@ -208,11 +211,13 @@ El flujo de construcción permite la compilación cruzada completa de todo el es
    ```
    Compila ES-DE 3.5.0 con soporte GLES 3.0 enlazado contra SDL2-hybris, instalando en `out/esde-root/opt/es-de`.
 
-6. **Compilar RetroArch y núcleos Libretro:**
+6. **Compilar RetroArch, núcleos Libretro y utilidades de PortMaster (`rgslide-python3`, `rgslide-ags`):**
    ```bash
    ./scripts/build-retroarch.sh
+   ./scripts/build-rgslide-python3.sh
+   ./scripts/build-ags.sh
    ```
-   Compila RetroArch 1.22.2 con Vulkan nativo, contexto hybris y puente de vibración física en `out/retroarch-root/opt/retroarch/bin/retroarch`. Los núcleos libretro adicionales se ubican en `out/extra-cores/` y sus archivos info en `out/extra-cores-info/`.
+   Compila RetroArch 1.22.2 (con Vulkan nativo, contexto hybris y puente de vibración física), `out/rgslide-python3` (lanzador Python 3.13 seguro frente a TLS para PortMaster) y `out/rgslide-ags` (AGS 3.6.3.17 con OpenGL ES 2.0 nativo en Mali-G57). Los núcleos libretro adicionales se ubican en `out/extra-cores/` y sus archivos info en `out/extra-cores-info/`.
 
 7. **Ensamblar la imagen final de Rootfs (por dispositivo):**
    ```bash
