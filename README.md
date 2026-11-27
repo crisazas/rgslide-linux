@@ -37,8 +37,6 @@ Native Linux distribution (Debian 13 Trixie arm64) for the **Anbernic RG Slide**
   - Currently restricted to light sleep to prevent I2C/sensorhub bus lockups on resume.
 * **External Video Output (USB-C DisplayPort / HDMI Alt Mode):**
   - DP negotiation and display muxing logic under development.
-* **Front Camera:**
-  - Not needed for retro emulation; Unisoc ISP userspace drivers are currently omitted.
 * **Direct Multi-Client ALSA Mixing:**
   - Audio streams currently route through the `rgslide-audiod` pipeline.
 
