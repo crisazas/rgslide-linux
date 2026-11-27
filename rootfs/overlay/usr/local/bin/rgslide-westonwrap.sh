@@ -74,6 +74,7 @@ env -u LD_PRELOAD \
     -u LIBEGL -u LIBGLESV2 -u LIBGLESV1_CM -u HYBRIS_LD_LIBRARY_PATH \
     -u SDL_VIDEODRIVER \
     XDG_RUNTIME_DIR="$RT_DIR" \
+    WESTON_DISABLE_ATOMIC=1 \
     __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json \
     LIBGL_ALWAYS_SOFTWARE=1 \
     /usr/bin/weston --config="$INI_FILE" --backend=drm --drm-device=card0 --use-pixman --socket=wayland-1 \
