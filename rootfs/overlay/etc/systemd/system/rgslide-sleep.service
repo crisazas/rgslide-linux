@@ -1,12 +1,11 @@
 [Unit]
-Description=Suspension s2idle por boton de bloqueo y tapa (RG Slide)
+Description=Instant low-power standby on slider close and Power key (RG Slide)
 After=rgslide-input.service rgslide-mdev.service
 Wants=rgslide-input.service
 
 [Service]
 Type=simple
 User=root
-ExecStartPre=/usr/local/sbin/rgslide-sleep
 ExecStart=/usr/local/sbin/rgslide-sleepd
 Restart=on-failure
 RestartSec=3

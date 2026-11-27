@@ -1,26 +1,53 @@
 #!/usr/bin/env python3
-"""rgslide-sleepd: suspende en s2idle al pulsar el boton de bloqueo (KEY_POWER) o al cerrar la tapa (hall).
+"""rgslide-sleepd: instant low-power standby on slider close (Hall) or short Power press.
 
-- Boton power corto: suspende si no hay un inhibidor de sleep (juego en marcha, panel, etc.).
-- Hall (KEY_WAKEUP): cerrar = suspender, abrir = despertar.
-- Nunca usa deep: fija s2idle antes de cada ciclo y lo comprueba.
-- Al volver: refresca el panel tactil (relee su firmware) por si quedo muerto.
-Solo LEE los evdev (sin EVIOCGRAB). Ver docs/agent-sleep.md.
+Kernel suspend (deep and s2idle) hangs on the stock Unisoc 5.4 kernel when audio/DRM/Mali
+are active, and sipa/charger_manager immediately wake s2idle anyway. Instead, this daemon
+implements safe, instant userspace standby:
+  - Blanks the display backlight (brightness = 0)
+  - Pauses (SIGSTOP) es-de, retroarch, and rgslide-ui (CPU/GPU drop to ~0%, preserves game state)
+  - Switches all CPU cpufreq policies to 'powersave'
+
+Hardware polarity (verified on Anbernic RG Slide, gpio-491 / KEY_WAKEUP=143):
+  - val == 1: slider OPEN  -> wake up
+  - val == 0: slider CLOSED -> enter standby
+Short Power press (< 1.5s) toggles standby; long press is handled by logind (poweroff).
 """
-import fcntl, os, select, struct, subprocess, sys, time
+import fcntl
+import glob
+import os
+import select
+import signal
+import struct
+import sys
+import time
 
-SLEEP = os.environ.get("RGSLIDE_SLEEP", "/usr/local/sbin/rgslide-sleep")
-TP = os.environ.get("RGSLIDE_TP", "/sys/bus/i2c/devices/3-0038/refresh")
+BL_PATH = os.environ.get("RGSLIDE_BL", "/sys/class/backlight/sprd_backlight/brightness")
 DEVNAME = os.environ.get("RGSLIDE_SLEEP_DEV", "gpio-keys")
-RUN = os.environ.get("RGSLIDE_RUN", "/run/rgslide")
+RUN_DIR = os.environ.get("RGSLIDE_RUN", "/run/rgslide")
+SLEEP_FLAG = os.path.join(RUN_DIR, "sleeping")
+
 POWER = 116  # KEY_POWER
-HALL = 143  # KEY_WAKEUP (key-hall del DT)
+HALL = 143   # KEY_WAKEUP (key-hall in DT: 1=open, 0=closed)
 EV_KEY = 1
 EVFMT = "llHHi"
 EVSZ = struct.calcsize(EVFMT)
+EVIOCGKEY = 0x80604518
+
+PAUSE_PROCS = {"es-de", "retroarch", "rgslide-ui"}
+HALL_DEBOUNCE_S = 0.15
+POWER_SHORT_MAX_S = 1.5
+
+sleeping = False
+saved_brightness = 64
+saved_govs = {}
+paused_pids = set()
+running = True
+
 
 def log(*a):
     print("rgslide-sleepd:", *a, file=sys.stderr, flush=True)
+
 
 def find_dev():
     try:
@@ -34,55 +61,128 @@ def find_dev():
                     return "/dev/input/" + w
     return None
 
-def inhibited():
-    """True si hay juego o panel abierto (/run/rgslide/session), o si alguien inhibe sleep."""
-    try:
-        if open(os.path.join(RUN, "session")).read().strip() in ("game", "panel"):
-            return True
-    except OSError:
-        pass
-    try:
-        out = subprocess.run(["systemd-inhibit", "--list", "--no-pager"],
-                             capture_output=True, text=True, timeout=5).stdout
-    except Exception as e:
-        log("systemd-inhibit fallo:", e)
-        return False
-    return any(":sleep" in l and "--" not in l.split(":sleep")[0][-3:] for l in out.splitlines())
-
-def refresh_touch():
-    try:
-        with open(TP, "w") as f:
-            f.write("1\n")
-        log("panel tactil refrescado")
-    except OSError as e:
-        log("no puedo refrescar el tactil (" + TP + "):", e)
-
-def suspend():
-    subprocess.run([SLEEP], check=False)
-    try:
-        with open("/sys/power/state", "w") as f:
-            f.write("mem\n")
-    except OSError as e:
-        log("suspender fallo:", e)
-        return
-    time.sleep(0.3)
-    refresh_touch()
-    log("despierto")
-
-buf = bytearray()
-for _ in range(64 * 8):
-    buf += b"\x00"
-EVIOCGKEY = 0x80604518
 
 def key_state(fd):
+    buf = bytearray(96)
     try:
         fcntl.ioctl(fd, EVIOCGKEY, buf, True)
     except OSError:
         return set()
-    return {i for i in range(64 * 8) if buf[i >> 3] & (1 << (i & 7))}
+    return {i for i in range(96 * 8) if buf[i >> 3] & (1 << (i & 7))}
+
+
+def read_text(path, default=""):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return default
+
+
+def write_text(path, val):
+    try:
+        with open(path, "w") as f:
+            f.write(str(val) + "\n")
+        return True
+    except OSError as e:
+        log("write failed", path, e)
+        return False
+
+
+def find_target_pids():
+    pids = set()
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit():
+            continue
+        comm = read_text(f"/proc/{entry}/comm")
+        if comm in PAUSE_PROCS:
+            pids.add(int(entry))
+    return pids
+
+
+def enter_sleep(reason):
+    global sleeping, saved_brightness, saved_govs, paused_pids
+    if sleeping:
+        return
+    sleeping = True
+    log("entering standby:", reason)
+
+    try:
+        os.makedirs(RUN_DIR, exist_ok=True)
+        write_text(SLEEP_FLAG, "1")
+    except OSError:
+        pass
+
+    # 1. Save & turn off backlight
+    cur_bl = read_text(BL_PATH)
+    if cur_bl.isdigit() and int(cur_bl) > 0:
+        saved_brightness = int(cur_bl)
+    write_text(BL_PATH, 0)
+
+    # 2. Pause frontend / emulators (SIGSTOP)
+    paused_pids = set()
+    for pid in find_target_pids():
+        try:
+            os.kill(pid, signal.SIGSTOP)
+            paused_pids.add(pid)
+        except OSError:
+            pass
+    if paused_pids:
+        log("paused pids:", sorted(paused_pids))
+
+    # 3. Drop CPU governors to powersave
+    saved_govs = {}
+    for p in sorted(glob.glob("/sys/devices/system/cpu/cpufreq/policy*/scaling_governor")):
+        cur_gov = read_text(p)
+        if cur_gov:
+            saved_govs[p] = cur_gov
+        write_text(p, "powersave")
+
+
+def leave_sleep(reason):
+    global sleeping, saved_govs, paused_pids
+    if not sleeping:
+        return
+    log("waking up:", reason)
+
+    # 1. Restore CPU governors
+    for p in sorted(glob.glob("/sys/devices/system/cpu/cpufreq/policy*/scaling_governor")):
+        gov = saved_govs.get(p, "schedutil")
+        write_text(p, gov)
+    saved_govs = {}
+
+    # 2. Resume paused processes (SIGCONT)
+    to_resume = set(paused_pids) | find_target_pids()
+    for pid in to_resume:
+        try:
+            os.kill(pid, signal.SIGCONT)
+        except OSError:
+            pass
+    paused_pids = set()
+
+    # 3. Restore backlight (never leave at 0)
+    bl = max(13, int(saved_brightness or 64))
+    write_text(BL_PATH, bl)
+
+    try:
+        if os.path.exists(SLEEP_FLAG):
+            os.unlink(SLEEP_FLAG)
+    except OSError:
+        pass
+
+    sleeping = False
+
+
+def on_term(_signum, _frame):
+    global running
+    running = False
+
 
 def main():
-    while True:
+    signal.signal(signal.SIGTERM, on_term)
+    signal.signal(signal.SIGINT, on_term)
+
+    while running:
         path = find_dev()
         if path is None:
             time.sleep(2)
@@ -90,51 +190,75 @@ def main():
         try:
             fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
         except OSError as e:
-            log("no puedo abrir", path, e)
+            log("cannot open", path, e)
             time.sleep(2)
             continue
-        hall_closed = HALL in key_state(fd)
-        log("leyendo", path, "tapa cerrada" if hall_closed else "tapa abierta")
+
+        is_open = HALL in key_state(fd)
+        log("watching", path, "slider OPEN" if is_open else "slider CLOSED")
+
+        pending_hall = None
+        hall_deadline = 0.0
+        power_down_ts = None
+
         try:
-            while True:
-                r, _, _ = select.select([fd], [], [], 30)
+            while running:
+                now = time.monotonic()
+                if pending_hall is not None:
+                    timeout = max(0.01, hall_deadline - now)
+                else:
+                    timeout = 5.0
+
+                r, _, _ = select.select([fd], [], [], timeout)
+
+                if pending_hall is not None and time.monotonic() >= hall_deadline:
+                    val = pending_hall
+                    pending_hall = None
+                    if val == 0:
+                        enter_sleep("hall-closed")
+                    else:
+                        leave_sleep("hall-open")
+
                 if not r:
                     continue
+
                 try:
                     data = os.read(fd, EVSZ * 64)
                 except BlockingIOError:
                     continue
                 if not data:
                     break
+
                 for off in range(0, len(data) - EVSZ + 1, EVSZ):
                     _, _, typ, code, val = struct.unpack_from(EVFMT, data, off)
                     if typ != EV_KEY or val == 2:
                         continue
-                    if code == POWER and val == 1:
-                        if inhibited():
-                            log("power: inhibido, no suspendo")
-                            continue
-                        log("power: suspendiendo")
-                        suspend()
-                    elif code == HALL:
-                        if val:
-                            hall_closed = True
-                            if inhibited():
-                                log("tapa cerrada: inhibido, no suspendo")
-                                continue
-                            log("tapa cerrada: suspendiendo")
-                            suspend()
-                        else:
-                            hall_closed = False
-                            log("tapa abierta")
+                    if code == HALL:
+                        pending_hall = 1 if val else 0
+                        hall_deadline = time.monotonic() + HALL_DEBOUNCE_S
+                    elif code == POWER:
+                        if val == 1:
+                            power_down_ts = time.monotonic()
+                        elif val == 0 and power_down_ts is not None:
+                            dt = time.monotonic() - power_down_ts
+                            power_down_ts = None
+                            if dt < POWER_SHORT_MAX_S:
+                                if sleeping:
+                                    leave_sleep("power-key")
+                                else:
+                                    enter_sleep("power-key")
         except OSError as e:
-            log("lectura de", path, "fallo:", e)
+            log("read failed on", path, e)
         finally:
             os.close(fd)
-        time.sleep(1)
+        if running:
+            time.sleep(1)
+
+    leave_sleep("daemon-exit")
+
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        pass
+        leave_sleep("interrupt")
