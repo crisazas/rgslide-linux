@@ -1,0 +1,32 @@
+#!/bin/sh
+# Helper para `mount -t squashfs` (y autodeteccion blkid) en kernels sin squashfs.ko:
+# delega transparentemente en squashfuse usando el soporte FUSE integrado en el kernel.
+# Necesario para runtimes .squashfs de PortMaster (weston, dotnet, gmtoolkit, godot, mono, etc.).
+set -e
+
+src=""
+dst=""
+skip_next=0
+for arg in "$@"; do
+    if [ "$skip_next" -eq 1 ]; then
+        skip_next=0
+        continue
+    fi
+    case "$arg" in
+        -o|-t) skip_next=1 ;;
+        -*) ;;
+        *)
+            if [ -z "$src" ]; then
+                src="$arg"
+            elif [ -z "$dst" ]; then
+                dst="$arg"
+            fi ;;
+    esac
+done
+
+if [ -z "$src" ] || [ -z "$dst" ]; then
+    echo "uso: mount.squashfs <imagen.squashfs> <punto_montaje>" >&2
+    exit 1
+fi
+
+exec squashfuse -o allow_other,ro "$src" "$dst"
