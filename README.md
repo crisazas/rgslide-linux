@@ -1,4 +1,4 @@
-# rgslide: Native Linux on the Anbernic RG Slide (Unisoc T820 / ums9620_2h10)
+# rgslide-linux: Native Linux on the Anbernic RG Slide (Unisoc T820 / ums9620_2h10)
 
 Native Linux distribution (Debian 13 Trixie arm64) for the **Anbernic RG Slide** handheld gaming console, completely replacing Android with hardware-accelerated 3D graphics (Mali-G57 GPU), EmulationStation Desktop Edition (ES-DE) frontend, audio, Wi-Fi, Bluetooth, and full physical controls.
 
