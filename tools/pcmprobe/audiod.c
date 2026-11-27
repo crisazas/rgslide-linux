@@ -39,6 +39,7 @@ static long now_ms(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);ret
 
 static short ring[RING*2]; static long rhead, rtail; /* en frames, crecen sin parar */
 static pthread_mutex_t mu=PTHREAD_MUTEX_INITIALIZER; static volatile long last_data, last_sound;
+static volatile int pcm_active;
 static int fifo_rd;
 static int always_on, amp_mute;   /* AMP_MUTE=1: con silencio digital se activa "Speaker Mute" (apaga el amplificador, GPIO 176) y se quita al llegar sonido */
 static int mute_state=0, ctl_fd=-1; static unsigned mute_numid;   /* /etc/rgslide/audio.conf: ALWAYS_ON=1 mantiene la ruta y el PCM abiertos (sin latencia de apertura) */
@@ -68,6 +69,10 @@ static void *reader(void*a)
 {
 	(void)a; static unsigned char raw[4096]; int carry=0;
 	while(!stop){
+		/* Con el PCM ya abierto, aplicar contrapresion natural por la FIFO si el anillo supera LAT (200 ms):
+		 * asi los clientes ALSA sobre slave "null" (SDL2/OpenAL/MojoAL) se regulan a 48 kHz reales
+		 * en vez de girar a 9x quemando CPU y descartando audio. */
+		if(pcm_active && ring_frames()>LAT){usleep(4000);continue;}
 		int n=read(fifo_rd,raw+carry,sizeof raw-carry);
 		if(n<=0){usleep(5000);continue;}
 		n+=carry; int fr=n/4; ring_put((short*)raw,fr); carry=n-fr*4; if(carry)memmove(raw,raw+fr*4,carry);
@@ -148,7 +153,7 @@ int main(int argc,char**argv)
 			if(h1!=h0)fd=f; else {fprintf(stderr,"hw_ptr clavado, reabro (intento %d)\n",t);pcm_close(f);}
 		}
 		if(fd<0){route("off");route_on=0;usleep(500000);continue;}
-		ring_trim(OPENKEEP); last_data=now_ms(); long lastlog=now_ms(); st_under=st_drop=st_in=st_out=0; fprintf(stderr,"audio abierto (anillo=%ld frames, %ld ms desde el primer sonido)\n",ring_frames(),now_ms()-last_sound);
+		ring_trim(OPENKEEP); pcm_active=1; last_data=now_ms(); long lastlog=now_ms(); st_under=st_drop=st_in=st_out=0; fprintf(stderr,"audio abierto (anillo=%ld frames, %ld ms desde el primer sonido)\n",ring_frames(),now_ms()-last_sound);
 		if(amp_mute&&now_ms()-last_sound>IDLE_PCM_MS)set_mute_now(1);
 		while(!stop){
 			unsigned long hw; long av=avail(fd,&hw); if(av<0)break;
@@ -164,7 +169,7 @@ int main(int argc,char**argv)
 			if(!always_on&&now_ms()-last_sound>SILMS)break;
 			if(now_ms()-lastlog>5000){lastlog=now_ms();fprintf(stderr,"in=%ld out=%ld vaciados=%ld descartados=%ld anillo=%ld cola=%ld\n",st_in,st_out,st_under,st_drop,ring_frames(),BUFFR-av);}
 		}
-		pcm_close(fd); set_mute_now(0); closed_at=now_ms(); fprintf(stderr,"audio cerrado\n");
+		pcm_active=0; pcm_close(fd); set_mute_now(0); closed_at=now_ms(); fprintf(stderr,"audio cerrado\n");
 	}
 	return 0;
 }
