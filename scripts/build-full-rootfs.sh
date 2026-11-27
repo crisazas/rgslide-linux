@@ -68,6 +68,15 @@ sudo cp -a "$DUMP_ROOT/android/root/." "$T/opt/android/"
 sudo install -m 644 "$DUMP_ROOT/android/mali/libGLES_mali.so" "$T/opt/android/vendor/lib64/egl/libGLES_mali.so"
 sudo install -m 644 "$DUMP_ROOT/android/mali/vulkan.ums9620.so" "$T/opt/android/vendor/lib64/hw/vulkan.ums9620.so"
 sudo install -m 644 "$DUMP_ROOT/android/mali/gralloc.default.so" "$T/opt/android/vendor/lib64/hw/gralloc.default.so"
+# Decodificadores HW VPU/JPEG de 64 bits (H.264, H.265/HEVC, VP9, VP8, JPEG) para rgslide-vpu
+for vpu_src in "$DUMP_ROOT/android/vpu" "$DUMP_ROOT/rg406h/vendor/lib64" "$DUMP_ROOT/rg476h/vendor/lib64"; do
+    if [ -f "$vpu_src/libomx_avcdec_hw_sprd.so" ]; then
+        for vlib in libomx_avcdec_hw_sprd.so libomx_hevcdec_hw_sprd.so libomx_vp9dec_hw_sprd.so libomx_vpxdec_hw_sprd.so libjpeg_hw_sprd.so; do
+            [ -f "$vpu_src/$vlib" ] && sudo install -m 644 "$vpu_src/$vlib" "$T/opt/android/vendor/lib64/$vlib"
+        done
+        break
+    fi
+done
 sudo cp -p "$T/opt/android/system/lib64/libselinux.so" "$T/opt/android/system/lib64/libselinux.so.orig" 2>/dev/null || true
 sudo install -m 755 out/libselinux-shim.so "$T/opt/android/system/lib64/libselinux.so"
 sudo install -m 755 out/libpropshim.so "$T/opt/android/libpropshim.so"
@@ -124,6 +133,9 @@ sudo install -m 755 out/libtlspad.so "$T/opt/hybris-glvnd/lib/libtlspad.so"
 sudo install -m 755 out/rgslide-python3 "$T/usr/local/bin/rgslide-python3"
 if [ -x out/rgslide-ags ]; then
     sudo install -m 755 out/rgslide-ags "$T/usr/local/bin/rgslide-ags"
+fi
+if [ -x out/rgslide-vpu ]; then
+    sudo install -m 755 out/rgslide-vpu "$T/usr/local/bin/rgslide-vpu"
 fi
 sudo mkdir -p "$T/usr/local/lib/rgslide-pybin"
 sudo ln -sf /usr/local/bin/rgslide-python3 "$T/usr/local/lib/rgslide-pybin/python3"
@@ -236,7 +248,7 @@ sudo mkdir -p "$T/etc/systemd/system/sysinit.target.wants" "$T/etc/systemd/syste
 for s in rgslide-dev.service rgslide-clock.service; do
     sudo ln -sf "/etc/systemd/system/$s" "$T/etc/systemd/system/sysinit.target.wants/$s"
 done
-for s in rgslide-mdev.service rgslide-cm4.service rgslide-ch.service rgslide-gpu.service rgslide-android.service \
+for s in rgslide-mdev.service rgslide-cm4.service rgslide-ch.service rgslide-gpu.service rgslide-vpu.service rgslide-android.service \
          rgslide-input.service rgslide-audio.service rgslide-audiod.service rgslide-wifi.service \
          rgslide-wpa.service rgslide-bt.service rgslide-hotkeyd.service rgslide-fan.service rgslide-brightness.service \
          rgslide-fgu.service rgslide-sleep.service rgslide-imu.service rgslide-dp.service \

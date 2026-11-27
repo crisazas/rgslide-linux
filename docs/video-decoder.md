@@ -108,3 +108,12 @@ lsmod | grep -E 'vpu|jpg'  -> solo sprd_vpu_pw_domain
 | D. No hacerlo (recomendado hoy) | Usar libavcodec software; revisar si hace falta solo si se quiere reproductor de video | - | Nulo |
 
 Si se quisiera probar A o B, el orden prudente seria: (1) en una sesion sin riesgo de bucle, cargar `jpg.ko` (depende de `mm_domain`, ya cargado) y mirar dmesg; (2) cargar `vpu.ko` solo a mano tras un arranque estable, nunca desde el init, con `sprd_vpu_pw_domain` presente; (3) crear nodos con mknod desde `/proc/misc`; (4) probar un `open`+`ioctl HW_INFO` antes de cualquier decode. Comprobar antes `docs/quirks.md` (INCIDENTE de panics y NO `rmmod`).
+
+## 9. Actualizacion 2026-11-27: Decodificador HW operativo (`rgslide-vpu` + `rgslide-vpu.service`)
+Se completo la opcion A y se verifico en vivo sobre la RG Slide:
+- **Modulos de kernel**: `jpg.ko` y `vpu.ko` cargan limpiamente tras `rgslide-gpu.service` mediante `rgslide-vpu.service` (`/usr/local/sbin/rgslide-vpu-prep`) y reglas `0666` en `/etc/mdev.conf`, creando `/dev/sprd_vsp` (version HW `0x15`, reloj max 668.25 MHz, `iommu_vpu enabled 1`), `/dev/vpu_enc0`, `/dev/vpu_enc1` y `/dev/sprd_jpg`.
+- **Sin `/dev/vdma`**: el desensamblado confirmo que `vdma_process` no es invocado por `H264DecDecode` ni `H265DecDecode`; solo se requieren `/dev/sprd_vsp` y `/dev/ion` (`ION_IOC_ALLOC` + `VSP_Get_IOVA`).
+- **Espacio de usuario (`tools/vpu/rgslide-vpu.c`, `scripts/build-vpu.sh`)**: binario arm64 glibc enlazado con `libhybris-common` que carga via `android_dlopen` las bibliotecas 64-bit del vendor en `/opt/android/vendor/lib64/` (`libomx_avcdec_hw_sprd.so`, `libomx_hevcdec_hw_sprd.so`, `libomx_vp9dec_hw_sprd.so`, `libomx_vpxdec_hw_sprd.so`, `libjpeg_hw_sprd.so`), implementa los 4 callbacks de `VpuDecHandle` (`bindCb`, `unbindCb`, `extMemCb`, `mbinfoCb` con `need_acquire=0` dentro del decode) y entrega frames NV12 recortados a la resolucion visible.
+- **Medido en vivo (RG Slide, comparacion SHA-256 bit a bit contra FFmpeg software)**:
+  - **1080p H.264 (60 frames)**: `75.1 FPS` (`0.799 s`), coincidencia SHA-256 bit-exacta (`100.00%` en Y y UV).
+  - **1080p H.265/HEVC (60 frames)**: `160.3 FPS` (`0.374 s`), coincidencia SHA-256 bit-exacta (`100.00%` en Y y UV).

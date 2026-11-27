@@ -1,0 +1,12 @@
+[Unit]
+Description=Decodificador de video/JPEG por hardware Unisoc T820 (vpu.ko, jpg.ko)
+After=rgslide-gpu.service rgslide-mdev.service
+Wants=rgslide-gpu.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/rgslide-vpu-prep
+
+[Install]
+WantedBy=multi-user.target

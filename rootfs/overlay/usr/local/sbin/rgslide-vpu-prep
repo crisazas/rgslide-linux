@@ -1,0 +1,27 @@
+#!/bin/sh
+# Carga los drivers de codec de video/JPEG por hardware del SoC Unisoc T820 (jpg.ko, vpu.ko)
+# tras rgslide-gpu.service y garantiza permisos 0666 en /dev/{sprd_vsp,vpu_enc0,vpu_enc1,sprd_jpg}.
+# NUNCA descarga modulos (rmmod) para evitar conflictos de power-domain en 5.4.233. Idempotente.
+set -u
+
+carga() {
+    if grep -q "^$(echo "$1" | tr - _) " /proc/modules; then return 0; fi
+    modprobe "$1" 2>/dev/null || echo "rgslide-vpu-prep: aviso: modprobe $1 fallo" >&2
+}
+
+nodo() {
+    [ -e "/dev/$1" ] && { chmod 666 "/dev/$1" 2>/dev/null || true; return 0; }
+    [ -r "$2" ] || return 0
+    MM=$(cat "$2")
+    mknod -m 666 "/dev/$1" c "${MM%%:*}" "${MM##*:}" 2>/dev/null || true
+}
+
+# jpg.ko depende de sprd_camsys_pw_domain + unisoc_iommu; vpu.ko de sprd_vpu_pw_domain + apsys_dvfs + unisoc_iommu
+carga jpg
+carga vpu
+
+for n in sprd_vsp vpu_enc0 vpu_enc1 sprd_jpg; do
+    nodo "$n" "/sys/class/misc/$n/dev"
+done
+
+exit 0
