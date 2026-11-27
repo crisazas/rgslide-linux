@@ -13,6 +13,9 @@ AH=$R/third_party/android-headers-13
 B=$R/out/hybris-glvnd-build
 [ -f "$GX/usr/include/glvnd/libeglabi.h" ] || { echo "faltan las cabeceras de glvnd en $GX"; exit 1; }
 [ -x "$H/configure" ] || { echo "falta $H/configure (ejecuta antes scripts/build-libhybris.sh)"; exit 1; }
+if [ -f "$R/patches/libhybris/files/drm_window.cpp" ]; then
+  cp -p "$R/patches/libhybris/files/drm_window.cpp" "$H/egl/platforms/drm/drm_window.cpp"
+fi
 mkdir -p "$B"
 cd "$B"
 export CC="$CL/clang --target=aarch64-linux-gnu --sysroot=$S -fuse-ld=lld -I$GX/usr/include"

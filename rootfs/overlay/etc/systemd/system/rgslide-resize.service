@@ -1,0 +1,9 @@
+[Unit]
+Description=Crece el sistema de ficheros raiz (una vez)
+ConditionPathExists=!/var/lib/rgslide-resized
+After=local-fs.target
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/rgslide-resize
+[Install]
+WantedBy=multi-user.target

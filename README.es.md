@@ -121,6 +121,91 @@ El script de flasheo está versionado y auditable en [`tools/flash-rgslide.sh`](
 
 ---
 
+## Compilación desde el código fuente
+
+El flujo de construcción permite la compilación cruzada completa de todo el espacio de usuario (Debian 13 Trixie arm64, libhybris, Mesa PanVK, SDL2-hybris, ES-DE, RetroArch y demonios propios) en un PC host x86_64 o aarch64.
+
+### Requisitos previos (PC Host)
+
+- **Sistema operativo:** Linux x86_64 o aarch64 (Ubuntu 22.04+ o Debian 12+ recomendado).
+- **Paquetes base:**
+  ```bash
+  sudo apt-get install -y build-essential debootstrap qemu-user-static binfmt-support \
+    e2fsprogs cmake ninja-build gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+    device-tree-compiler android-sdk-libsparse-utils python3 python3-mako python3-yaml \
+    bison flex glslang-tools docker.io
+  ```
+- **Android NDK:** NDK r29 o r27 (ruta de búsqueda por defecto: `~/Android/Sdk/ndk/29.0.14206865` o definir `NDK=/ruta/al/ndk`).
+- **Docker:** Configurado con permisos para tu usuario actual (`sudo usermod -aG docker $USER`). Docker se utiliza para aislar compilaciones cruzadas en contenedores (`rgslide-build:trixie` y `debian:trixie`).
+- **Módulos / clones de terceros:**
+  Asegúrate de contar con los repositorios en `third_party/` (ver `third_party/SOURCES.md`):
+  - `third_party/libhybris`
+  - `third_party/android-headers-13`
+  - `third_party/panvk-kbase-android`
+  - `third_party/ES-DE`
+  - `third_party/RetroArch`
+  - `third_party/busybox-aarch64`
+- **Volcados de particiones de fábrica:**
+  Un volcado de las particiones de fábrica de tu propia RG Slide en `dump/` (obtenido mediante `scripts/dump-min.sh` o volcado BROM):
+  - `dump/android/root/` (árboles vendor/system extraídos con `scripts/extract-android-bits.sh`)
+  - `dump/android/mali/` (`libGLES_mali.so`, `vulkan.ums9620.so`, `gralloc.default.so`)
+  - `dump/boot/` (`boot_a.img`, kernel y ramdisk extraídos)
+  - `dump/live/dlkm/` (módulos de fábrica del kernel 5.4.233)
+  - `out/wifi-fw/` (firmware Wi-Fi/BT Unisoc Marlin3)
+
+### Secuencia de compilación paso a paso
+
+1. **Compilar el rootfs base Debian 13:**
+   ```bash
+   ./scripts/build-rootfs.sh --no-image
+   ```
+   Genera el árbol Debian mínimo en `out/rootfs`.
+
+2. **Compilar libhybris (capa de compatibilidad Android):**
+   ```bash
+   ./scripts/build-libhybris.sh
+   ./scripts/build-libhybris-glvnd.sh
+   ```
+   Compila los controladores estándar y vendor GLVND (`libEGL_libhybris.so`, `libGLESv2_libhybris.so`, `eglplatform_drm.so`) en `out/hybris-root` y `out/hybris-glvnd-root`.
+
+3. **Compilar Mesa PanVK (driver Vulkan 1.3 nativo):**
+   ```bash
+   ./scripts/build-panvk.sh
+   ```
+   Compila Mesa 26.3 PanVK con soporte Valhall v9 JM (`mali_kbase`) y `VK_KHR_display` dentro del contenedor Docker, generando `out/panvk-dist/libvulkan_panfrost.so`.
+
+4. **Compilar SDL2 con soporte hybris DRM:**
+   ```bash
+   ./scripts/build-sdl2-hybris.sh
+   ```
+   Compila SDL2 2.32.4 parcheado con el backend `hybris` en `out/sdl2-hybris-root`.
+
+5. **Compilar EmulationStation Desktop Edition (ES-DE):**
+   ```bash
+   ./scripts/build-esde.sh
+   ```
+   Compila ES-DE 3.5.0 con soporte GLES 3.0 enlazado contra SDL2-hybris, instalando en `out/esde-root/opt/es-de`.
+
+6. **Compilar RetroArch y núcleos Libretro:**
+   ```bash
+   ./scripts/build-retroarch.sh
+   ```
+   Compila RetroArch 1.22.2 con Vulkan nativo, contexto hybris y puente de vibración física en `out/retroarch-root/opt/retroarch/bin/retroarch`. Los núcleos libretro adicionales se ubican en `out/extra-cores/` y sus archivos info en `out/extra-cores-info/`.
+
+7. **Ensamblar la imagen final de Rootfs:**
+   ```bash
+   ./scripts/build-full-rootfs.sh out/rootfs-full.ext4
+   ```
+   Integra todos los componentes, firmware, drivers Mali, servicios systemd (`rgslide-sleep`, `rgslide-ch`, `rgslide-imu`, `rgslide-dp`, etc.), configuraciones de ES-DE y produce el sistema ext4 final arrancable.
+
+8. **Flashear al Slot A de pruebas por Fastboot:**
+   ```bash
+   ./tools/flash-rgslide.sh --mode fastboot --slot a --dir out --dry-run
+   ./tools/flash-rgslide.sh --mode fastboot --slot a --dir out
+   ```
+
+---
+
 ## Licencias, oferta de fuentes GPL y transparencia sobre blobs propietarios
 
 - **Código original:** Licencia **MIT** — ver [`LICENSE`](LICENSE).

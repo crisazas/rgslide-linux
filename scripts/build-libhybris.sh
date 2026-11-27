@@ -15,6 +15,9 @@ if [ ! -x "$H/configure" ]; then
   docker run --rm --platform linux/arm64 -u "$(id -u):$(id -g)" -v "$R/third_party/libhybris:/src" -w /src/hybris \
     rgslide-build:trixie sh -c 'autoreconf -fi >/dev/null 2>&1 || ./autogen.sh'
 fi
+if [ -f "$R/patches/libhybris/files/drm_window.cpp" ]; then
+  cp -p "$R/patches/libhybris/files/drm_window.cpp" "$H/egl/platforms/drm/drm_window.cpp"
+fi
 mkdir -p "$B"
 cd "$B"
 export CC="$CL/clang --target=aarch64-linux-gnu --sysroot=$S -fuse-ld=lld"

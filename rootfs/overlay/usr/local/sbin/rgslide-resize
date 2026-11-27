@@ -1,0 +1,7 @@
+#!/bin/sh
+# Crece el ext4 de / hasta ocupar la particion. Marca /var/lib/rgslide-resized para no repetir.
+[ -e /var/lib/rgslide-resized ] && exit 0
+DEV=$(findmnt -n -o SOURCE / 2>/dev/null)
+[ -b "$DEV" ] || DEV=$(awk '$2=="/" && $3=="ext4"{print $1}' /proc/mounts | tail -1)
+[ -b "$DEV" ] || { echo "rgslide-resize: sin dispositivo raiz"; exit 1; }
+resize2fs "$DEV" && touch /var/lib/rgslide-resized

@@ -52,6 +52,20 @@ sudo cp -p "$T/opt/android/system/lib64/libselinux.so" "$T/opt/android/system/li
 sudo install -m 755 out/libselinux-shim.so "$T/opt/android/system/lib64/libselinux.so"
 sudo install -m 755 out/libpropshim.so "$T/opt/android/libpropshim.so"
 sudo install -m 644 out/build.prop "$T/opt/android/system/build.prop"
+
+# modem_control_ch para segunda fase sensorhub (CM4)
+if [ -f dump/android/root/vendor/bin/modem_control ] && [ -f dump/android/modem_ch_info.xml ]; then
+    sudo mkdir -p "$T/opt/android/vendor/etc-ch"
+    sudo cp -a dump/android/modem_ch_info.xml "$T/opt/android/vendor/etc-ch/modem_ch_info.xml"
+    python3 - <<'PY' | sudo tee "$T/opt/android/vendor/bin/modem_control_ch" >/dev/null
+import sys
+d=bytearray(open('dump/android/root/vendor/bin/modem_control','rb').read())
+assert d[0xcf4c:0xcf50].hex()=="68000035" and d[0xcf50:0xcf54].hex()=="e0078052"
+d[0xcf4c:0xcf50]=bytes.fromhex("1f2003d5"); d[0xcf50:0xcf54]=bytes.fromhex("00048052")
+sys.stdout.buffer.write(d)
+PY
+    sudo chmod 755 "$T/opt/android/vendor/bin/modem_control_ch"
+fi
 sudo chmod -R a+rX "$T/opt/android"
 sudo chmod 755 "$T/opt/android/apex/com.android.runtime/bin/linker64" \
     "$T/opt/android/system/bin/"* "$T/opt/android/vendor/bin/"* "$T/opt/android/vendor/bin/hw/"* 2>/dev/null || true
@@ -179,10 +193,11 @@ sudo mkdir -p "$T/etc/systemd/system/sysinit.target.wants" "$T/etc/systemd/syste
 for s in rgslide-dev.service rgslide-clock.service; do
     sudo ln -sf "/etc/systemd/system/$s" "$T/etc/systemd/system/sysinit.target.wants/$s"
 done
-for s in rgslide-mdev.service rgslide-cm4.service rgslide-gpu.service rgslide-android.service \
+for s in rgslide-mdev.service rgslide-cm4.service rgslide-ch.service rgslide-gpu.service rgslide-android.service \
          rgslide-input.service rgslide-audio.service rgslide-audiod.service rgslide-wifi.service \
-         rgslide-wpa.service rgslide-hotkeyd.service rgslide-fan.service rgslide-brightness.service \
-         rgslide-fgu.service rgslide-sleep.service rgslide-resize.service rgslide-esde.service; do
+         rgslide-wpa.service rgslide-bt.service rgslide-hotkeyd.service rgslide-fan.service rgslide-brightness.service \
+         rgslide-fgu.service rgslide-sleep.service rgslide-imu.service rgslide-dp.service \
+         rgslide-resize.service rgslide-esde.service; do
     sudo ln -sf "/etc/systemd/system/$s" "$T/etc/systemd/system/multi-user.target.wants/$s"
 done
 sudo ln -sf "/etc/systemd/system/rgslide-clock-save.timer" "$T/etc/systemd/system/timers.target.wants/rgslide-clock-save.timer"

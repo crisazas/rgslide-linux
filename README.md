@@ -163,30 +163,84 @@ When testing a newly built `boot.img` or `userdata.ext4` without touching the kn
 
 ## Building from Source
 
-### Prerequisites (Host PC)
-- Linux x86_64 or aarch64 (Ubuntu 22.04+ or Debian 12+ recommended).
-- Packages: `debootstrap`, `mmdebstrap`, `qemu-user-static`, `binfmt-support`, `e2fsprogs`, `cmake`, `ninja-build`, `gcc-aarch64-linux-gnu`, `g++-aarch64-linux-gnu`, `device-tree-compiler`, `android-sdk-libsparse-utils`.
-- Stock partition dump from your own RG Slide (`super`, `boot`, `vendor_boot`), placed in `dump/`.
+The build pipeline cross-compiles the entire userland (Debian 13 Trixie arm64, libhybris, Mesa PanVK, SDL2-hybris, ES-DE, RetroArch, custom daemons) on an x86_64 or aarch64 Linux host PC.
 
-### Build Pipeline
-1. **Extract Vendor Blobs and Kernel Modules:**
-   ```bash
-   ./scripts/extract-android-bits.sh
-   ```
-2. **Build Rootfs Base & Native Binaries:**
+### Prerequisites (Host PC)
+
+- **OS:** Linux x86_64 or aarch64 (Ubuntu 22.04+ or Debian 12+ recommended).
+- **Core packages:**
+  ```bash
+  sudo apt-get install -y build-essential debootstrap qemu-user-static binfmt-support \
+    e2fsprogs cmake ninja-build gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+    device-tree-compiler android-sdk-libsparse-utils python3 python3-mako python3-yaml \
+    bison flex glslang-tools docker.io
+  ```
+- **Android NDK:** NDK r29 or r27 (default search path: `~/Android/Sdk/ndk/29.0.14206865` or set `NDK=/path/to/ndk`).
+- **Docker:** Configured with permissions for your current user (`sudo usermod -aG docker $USER`). Docker is used for isolated container builds (`rgslide-build:trixie` and `debian:trixie`).
+- **Third-Party Submodules / Clones:**
+  Ensure the repositories in `third_party/` are present (see `third_party/SOURCES.md`):
+  - `third_party/libhybris`
+  - `third_party/android-headers-13`
+  - `third_party/panvk-kbase-android`
+  - `third_party/ES-DE`
+  - `third_party/RetroArch`
+  - `third_party/busybox-aarch64`
+- **Stock Partition Dumps:**
+  A dump of your console's stock partitions in `dump/` (populated via `scripts/dump-min.sh` or BROM dump):
+  - `dump/android/root/` (extracted Android vendor/system trees via `scripts/extract-android-bits.sh`)
+  - `dump/android/mali/` (`libGLES_mali.so`, `vulkan.ums9620.so`, `gralloc.default.so`)
+  - `dump/boot/` (`boot_a.img`, extracted kernel and ramdisk)
+  - `dump/live/dlkm/` (stock 5.4.233 kernel modules)
+  - `out/wifi-fw/` (Unisoc Marlin3 Wi-Fi/BT firmware blobs)
+
+### Build Pipeline (Step-by-Step)
+
+1. **Build Debian 13 Base Rootfs:**
    ```bash
    ./scripts/build-rootfs.sh --no-image
+   ```
+   This generates the minimal Debian rootfs tree in `out/rootfs`.
+
+2. **Build libhybris (Android Translation Layer):**
+   ```bash
    ./scripts/build-libhybris.sh
+   ./scripts/build-libhybris-glvnd.sh
+   ```
+   Builds the standard and GLVND vendor drivers (`libEGL_libhybris.so`, `libGLESv2_libhybris.so`, `eglplatform_drm.so`) into `out/hybris-root` and `out/hybris-glvnd-root`.
+
+3. **Build Mesa PanVK (Native Vulkan 1.3 Driver):**
+   ```bash
+   ./scripts/build-panvk.sh
+   ```
+   Compiles Mesa 26.3 PanVK with Valhall v9 JM (`mali_kbase`) and `VK_KHR_display` support inside a Docker container, outputting `out/panvk-dist/libvulkan_panfrost.so`.
+
+4. **Build SDL2 with hybris DRM Driver:**
+   ```bash
    ./scripts/build-sdl2-hybris.sh
+   ```
+   Builds SDL2 2.32.4 patched with the custom `hybris` backend into `out/sdl2-hybris-root`.
+
+5. **Build EmulationStation Desktop Edition (ES-DE):**
+   ```bash
    ./scripts/build-esde.sh
+   ```
+   Compiles ES-DE 3.5.0 with GLES 3.0 support linked against SDL2-hybris, installing into `out/esde-root/opt/es-de`.
+
+6. **Build RetroArch & Libretro Cores:**
+   ```bash
    ./scripts/build-retroarch.sh
    ```
-3. **Assemble Final Rootfs Image:**
+   Compiles RetroArch 1.22.2 with native Vulkan, hybris context, and physical rumble bridge into `out/retroarch-root/opt/retroarch/bin/retroarch`. Extra libretro cores should be placed in `out/extra-cores/` and info files in `out/extra-cores-info/`.
+
+7. **Assemble Final Rootfs Image:**
    ```bash
    ./scripts/build-full-rootfs.sh out/rootfs-full.ext4
    ```
-4. **Flash to Testing Slot (Slot A) via Fastboot:**
+   Integrates all components, firmware, Mali drivers, systemd services (`rgslide-sleep`, `rgslide-ch`, `rgslide-imu`, `rgslide-dp`, etc.), ES-DE configs, and generates the final bootable ext4 filesystem.
+
+8. **Flash to Testing Slot (Slot A) via Fastboot:**
    ```bash
+   ./tools/flash-rgslide.sh --mode fastboot --slot a --dir out --dry-run
    ./tools/flash-rgslide.sh --mode fastboot --slot a --dir out
    ```
 
