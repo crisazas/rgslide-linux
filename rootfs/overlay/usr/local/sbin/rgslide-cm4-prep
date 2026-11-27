@@ -6,6 +6,8 @@ for n in pmsys modem phycp sctl_pm; do
   [ -n "$M" ] && [ ! -e /dev/$n ] && mknod -m 660 /dev/$n c "$M" 0
 done
 chmod 666 /dev/null /dev/zero /dev/full /dev/random /dev/urandom /dev/tty 2>/dev/null
+# modem_control es ELF de Android (interprete /system/bin/linker64): sin bit x systemd da 203/EXEC y el CM4 no arranca.
+chmod 755 /opt/android/vendor/bin/modem_control /vendor/bin/modem_control /system/bin/linker64 2>/dev/null
 mkdir -p /dev/block/by-name
 for u in /sys/class/block/sd*[0-9]; do
   n=$(sed -n 's/^PARTNAME=//p' $u/uevent); b=$(basename $u)

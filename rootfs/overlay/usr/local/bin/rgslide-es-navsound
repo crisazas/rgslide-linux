@@ -7,8 +7,10 @@ WAV=${1:-/usr/share/rgslide/sounds/nav.wav}
 FIFO=/run/rgslide/audio.fifo
 [ -r "$WAV" ] && [ -p "$FIFO" ] || exit 0
 # No solapar: si ya suena uno, se descarta (los cerrojos quedan en /run, se limpian solos al reiniciar).
-exec 9>/run/rgslide/navsound.lock
-flock -n 9 || exit 0
+if command -v flock >/dev/null 2>&1; then
+    exec 9>/run/rgslide/navsound.lock
+    flock -n 9 || exit 0
+fi
 if command -v aplay >/dev/null 2>&1; then
     exec aplay -q -D rgslide "$WAV"
 fi

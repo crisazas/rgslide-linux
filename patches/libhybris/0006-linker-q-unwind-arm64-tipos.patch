@@ -1,0 +1,26 @@
+# libhybris arm64: el enlace de unwind y el exidx de soinfo tambien en aarch64.
+# Sin esto, q.so no compila al ampliar 0005 (el tipo _Unwind_Ptr y los campos ARM_exidx solo existian bajo __arm__).
+diff -ruN a/hybris/common/q/bionic/libc/include/link.h b/hybris/common/q/bionic/libc/include/link.h
+--- a/hybris/common/q/bionic/libc/include/link.h	2026-11-26 14:20:09.546542254 -0600
++++ b/hybris/common/q/bionic/libc/include/link.h	2026-11-26 14:20:09.548018832 -0600
+@@ -60,7 +60,7 @@
+ int dl_iterate_phdr(int (*__callback)(struct dl_phdr_info*, size_t, void*), void* __data);
+ #endif
+ 
+-#ifdef __arm__
++#if defined(__arm__) || defined(__aarch64__)
+ typedef uintptr_t _Unwind_Ptr;
+ _Unwind_Ptr dl_unwind_find_exidx(_Unwind_Ptr, int*);
+ #endif
+diff -ruN a/hybris/common/q/linker_soinfo.h b/hybris/common/q/linker_soinfo.h
+--- a/hybris/common/q/linker_soinfo.h	2026-11-26 14:20:09.547244204 -0600
++++ b/hybris/common/q/linker_soinfo.h	2026-11-26 14:20:09.548709151 -0600
+@@ -181,7 +181,7 @@
+   linker_ctor_function_t init_func_;
+   linker_dtor_function_t fini_func_;
+ 
+-#if defined(__arm__)
++#if defined(__arm__) || defined(__aarch64__)
+  public:
+   // ARM EABI section used for stack unwinding.
+   uint32_t* ARM_exidx;

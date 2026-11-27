@@ -345,3 +345,13 @@ Cómo deshacer: nada cambiado en la Slide ni en el repo salvo este fichero.
 - Pero `ap-iis0` y `aon-iis` siguen a 0 usos con la ruta del altavoz abierta. En las fuentes del OEM (`sprd-dai.c`) `sprd_agcp_i2s_get_clks()` **y su llamada en el probe** estan bajo `#if 0`: el DAI de fabrica nunca pide `i2s_clk`, `clk_128m` ni `clk_153m6`, y en `startup`/`shutdown` tampoco los habilita. El driver `i2s.c` (otra ruta) si hace `clk_prepare_enable`.
 - El DAI escribe el reloj por regmap (`clk_membase + 0xa58`) y manda `SET_AUD_DVFS`, pero sin habilitar `clk_iis0` el bloque no sale.
 - Arreglo en curso: recompilar `snd-soc-sprd-dai.ko` con el bloque de relojes activo y `clk_prepare_enable`/`clk_disable_unprepare` en `startup`/`shutdown`; instalar en `/lib/modules/5.4.233/` y reiniciar (nunca `rmmod`).
+
+## 5ai. Instalar el modulo del DAI: versiones y reubicaciones (MEDIDO en el cargador)
+
+El kernel exige `__versions` para TODO simbolo importado y su CRC de fabrica; si falta la entrada el error es `no symbol version for X` y si el CRC no coincide, `disagrees about version of symbol X`. Reglas aprendidas a base de rechazos:
+
+- La tabla de CRC util es la del propio `snd-soc-sprd-dai.ko` de fabrica (`/root/mod-backup/`): hay que copiar sus 24 entradas y, para los simbolos que el modulo de fabrica no usa (`jiffies`, `cpu_number`, `_mcount`, `devm_clk_get`, `clk_prepare/enable/disable/unprepare`, `aud_ipc_ch_open`, `arch_audio_*`), sacar el CRC de otro `.ko` de fabrica que lo importe (p. ej. `dwc3-sprd.ko`, `apsys-dvfs.ko`).
+- El kernel 5.4 **no soporta `R_AARCH64_PLT32` (tipo 275)**: con el da `overflow in relocation type 275`. El `.ko` hay que generarlo sin reubicaciones 275 (con `ld.lld -r` de los scripts del arbol salen; si alguna queda, se convierten a `CALL26`/282 en la seccion `SHT_RELA`).
+- La seccion `__versions` lleva una cabecera de 8 bytes antes de la primera entrada: leer/escribir con ese desfase y, si hay que anadir entradas, hacerlo al final de la seccion con el tamano actualizado en la tabla de secciones.
+- Con `CONFIG_CFI_CLANG` el modulo necesita `__cfi_check` y las secciones `.plt`/`.init.plt` no pueden ir vacias (se rellenan con `ret`, `0xc0`).
+- Se instala en `/lib/modules/5.4.233/` y se reinicia; el original esta en `/root/mod-backup/snd-soc-sprd-dai.ko`.

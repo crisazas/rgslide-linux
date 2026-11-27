@@ -1,0 +1,20 @@
+# libhybris: STB_GNU_UNIQUE (10) cuenta como simbolo global definido.
+# Lo emite g++ de glibc para los `static const` de plantillas; el linker de Android lo
+# descartaba y un binario glibc (ES) moria con "cannot locate symbol _ZNSt8time_put...2idE".
+diff -ruN a/hybris/common/q/linker_soinfo.cpp b/hybris/common/q/linker_soinfo.cpp
+--- a/hybris/common/q/linker_soinfo.cpp	2026-11-26 14:25:38.936921676 -0600
++++ b/hybris/common/q/linker_soinfo.cpp	2026-11-26 14:25:38.937660377 -0600
+@@ -194,8 +194,12 @@
+ }
+ 
+ static bool is_symbol_global_and_defined(const soinfo* si, const ElfW(Sym)* s) {
++  // STB_GNU_UNIQUE (10): lo emite g++ de glibc para los `static const` de las
++  // plantillas; el linker de Android no lo conoce y dejaba sin resolver
++  // _ZNSt8time_put...2idE al cargar un binario glibc. Se trata como global.
+   if (ELF_ST_BIND(s->st_info) == STB_GLOBAL ||
+-      ELF_ST_BIND(s->st_info) == STB_WEAK) {
++      ELF_ST_BIND(s->st_info) == STB_WEAK ||
++      ELF_ST_BIND(s->st_info) == STB_GNU_UNIQUE) {
+     return s->st_shndx != SHN_UNDEF;
+   } else if (ELF_ST_BIND(s->st_info) != STB_LOCAL) {
+     DL_WARN("Warning: unexpected ST_BIND value: %d for \"%s\" in \"%s\" (ignoring)",
