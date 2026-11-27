@@ -154,12 +154,13 @@ else
     unset MESA_LOADER_DRIVER_OVERRIDE GALLIUM_DRIVER
 fi
 
-if [ "$(basename "$GAME_BIN")" = "ags" ]; then
-    shift
-    env "${GAME_ENV[@]}" "$GAME_BIN" --gfxdriver software "$@"
-    rc=$?
-else
-    env "${GAME_ENV[@]}" "$@"
-    rc=$?
-fi
+case "$(basename "$GAME_BIN")" in
+    ags|ags.*)
+        shift
+        env "${GAME_ENV[@]}" "$GAME_BIN" --gfxdriver software "$@"
+        rc=$? ;;
+    *)
+        env "${GAME_ENV[@]}" "$@"
+        rc=$? ;;
+esac
 exit "$rc"
