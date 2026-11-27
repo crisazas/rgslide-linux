@@ -26,6 +26,17 @@ nodo() {
 # 1) modulos: sprd-vpu-pw-domain ANTES que sprd-drm (si no, dpu/dsi quedan diferidos)
 for m in pwm-sprd unisoc-iommu apsys-dvfs sprd-vpu-pw-domain sprd-drm mali_kbase; do carga "$m"; done
 
+# Si mali_kbase fallo el probe inicial en frio (error -22 sin /sys/class/misc/mali0/dev),
+# recargar SOLO mali_kbase (nunca sprd_drm) hasta 3 veces.
+for _retry in 1 2 3; do
+  [ -r /sys/class/misc/mali0/dev ] && break
+  aviso "mali0 ausente tras carga (intento $_retry/3): recargando mali_kbase"
+  rmmod sprd_gpu_cooling 2>/dev/null || true
+  rmmod mali_kbase 2>/dev/null || true
+  sleep 1
+  modprobe mali_kbase 2>/dev/null && nota "modulo mali_kbase (reintento $_retry)"
+done
+
 # 2) nodos
 for d in /sys/class/drm/card[0-9]* /sys/class/drm/renderD[0-9]*; do
   case "$d" in *-*) continue ;; esac
