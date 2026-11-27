@@ -164,13 +164,15 @@ fi
 
 echo "7/8 Configuracion de usuario console (ES-DE, Ajustes, Wi-Fi base) y servicios systemd ..."
 HDIR="$T/home/console"
-sudo mkdir -p "$HDIR/ROMs/settings" "$HDIR/ROMs/ports" "$HDIR/ES-DE/custom_systems" "$HDIR/ES-DE/gamelists/nes" "$HDIR/ES-DE/gamelists/nds" "$HDIR/.config/retroarch" "$T/opt/tools"
+sudo mkdir -p "$HDIR/ROMs/settings" "$HDIR/ROMs/ports" "$HDIR/ES-DE/custom_systems" "$HDIR/ES-DE/gamelists/nes" "$HDIR/ES-DE/gamelists/nds" "$HDIR/.config/retroarch" "$HDIR/.config/SDL-GameControllerDB" "$T/opt/tools"
 sudo chown 1000:1000 "$T/opt/tools"
 sudo ln -sfn /opt/retroarch/share/assets "$HDIR/.config/retroarch/assets"
 sudo cp -a rootfs/overlay/usr/share/rgslide/settings/*.sh "$HDIR/ROMs/settings/"
 sudo chmod 755 "$HDIR/ROMs/settings/"*.sh
 sudo cp -a rootfs/overlay/usr/share/rgslide/ports/PortMaster.sh "$HDIR/ROMs/ports/PortMaster.sh"
 sudo chmod 755 "$HDIR/ROMs/ports/PortMaster.sh"
+sudo cp -a rootfs/overlay/usr/share/rgslide/ports/rgslide-gamecontrollerdb.txt "$HDIR/.config/SDL-GameControllerDB/gamecontrollerdb.txt"
+sudo chmod 644 "$HDIR/.config/SDL-GameControllerDB/gamecontrollerdb.txt"
 sudo ln -sfn /home/console/ROMs "$HDIR/roms"
 sudo ln -sfn /home/console/ROMs "$T/roms"
 sudo tee "$HDIR/ES-DE/custom_systems/es_find_rules.xml" >/dev/null <<'XML'

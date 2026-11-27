@@ -34,6 +34,12 @@ cmake -G Ninja "$SRC" -DCMAKE_TOOLCHAIN_FILE="$B/toolchain.cmake" -DCMAKE_BUILD_
   -DSDL_ALSA=ON -DSDL_ALSA_SHARED=ON -DSDL_LIBUDEV=ON -DSDL_HIDAPI=OFF -DSDL_OFFSCREEN=ON -DSDL_HYBRIS=ON -DSDL_DBUS=OFF -DSDL_IBUS=OFF \
   -DSDL_FCITX=OFF -DSDL_LIBSAMPLERATE=OFF -DSDL_OSS=OFF -DSDL_ARTS=OFF -DSDL_ESD=OFF -DSDL_DISKAUDIO=OFF -DSDL_DUMMYAUDIO=ON -DSDL_DUMMYVIDEO=ON
 ninja
+grep -q '^#define HAVE_LIBUDEV_H 1' "$B/include-config-release/SDL2/SDL_config.h" || {
+  echo "ERROR: SDL2 se compilo sin HAVE_LIBUDEV_H (necesario para teclados/ratones evdev y gptokeyb2)"; exit 1;
+}
+grep -q '^#define SDL_AUDIO_DRIVER_ALSA 1' "$B/include-config-release/SDL2/SDL_config.h" || {
+  echo "ERROR: SDL2 se compilo sin SDL_AUDIO_DRIVER_ALSA"; exit 1;
+}
 rm -rf "$R/out/sdl2-hybris-root"
 DESTDIR="$R/out/sdl2-hybris-root" ninja install
 echo "SDL2 (hybris) instalado en out/sdl2-hybris-root/usr/local/sdl2-hybris"
