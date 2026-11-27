@@ -25,6 +25,7 @@ Distribución Linux nativa (Debian 13 Trixie arm64) para la consola portátil **
   - Demonio de mezcla ALSA (`rgslide-audiod`) para sonidos de interfaz y juegos.
 * **Controles, deslizador y modo reposo (standby):**
   - Mando integrado (`retrogame_joypad`, `/dev/input/event3`) mapeado y calibrado.
+  - **Pantalla táctil (`fts_ts`):** Soporte multi-touch nativo integrado en RetroArch (`UDEV_TOUCH_SUPPORT`), filtrando el nodo fantasma `virtual_gamepad` y enlazando los toques a dispositivos de puntero (`RETRO_DEVICE_POINTER`, lápiz táctil de NDS, pistolas de luz y navegación en menús XMB).
   - Vibración (rumble) nativa en juegos: el driver `udev` de RetroArch está parcheado para enlazar `retrogame_joypad` con `sc27xx:vibrator` (16 efectos FF) sin demonios adicionales.
   - Botones físicos de volumen (`/dev/input/event0`) integrados con `rgslide-hotkeyd` y `rgslide-volume`.
   - Sensor Hall del deslizador (`KEY_WAKEUP`) y pulsación corta del botón Power activan reposo instantáneo (`rgslide-sleepd`): apaga retroiluminación (`brightness=0`), pausa (`SIGSTOP`) ES-DE y RetroArch a mitad de juego y reduce las CPUs a `powersave`; al abrir o volver a pulsar reanuda de inmediato.

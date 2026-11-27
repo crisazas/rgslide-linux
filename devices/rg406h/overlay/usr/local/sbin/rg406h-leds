@@ -1,0 +1,26 @@
+#!/bin/sh
+# Control de iluminacion LED RGB para sticks de RG406H
+# Nodos sysfs expuestos por cust-leds / gpio-leds (/sys/class/leds/led0 y led1)
+ACTION=${1:-status}
+VAL=${2:-0}
+
+case "$ACTION" in
+    on)
+        echo 1 > /sys/class/leds/led0/brightness 2>/dev/null || true
+        echo 1 > /sys/class/leds/led1/brightness 2>/dev/null || true
+        echo "LEDs encendidos"
+        ;;
+    off)
+        echo 0 > /sys/class/leds/led0/brightness 2>/dev/null || true
+        echo 0 > /sys/class/leds/led1/brightness 2>/dev/null || true
+        echo "LEDs apagados"
+        ;;
+    set)
+        echo "$VAL" > /sys/class/leds/led0/brightness 2>/dev/null || true
+        echo "$VAL" > /sys/class/leds/led1/brightness 2>/dev/null || true
+        ;;
+    status|*)
+        echo "led0: $(cat /sys/class/leds/led0/brightness 2>/dev/null || echo 'n/a')"
+        echo "led1: $(cat /sys/class/leds/led1/brightness 2>/dev/null || echo 'n/a')"
+        ;;
+esac

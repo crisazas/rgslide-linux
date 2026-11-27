@@ -7,8 +7,22 @@
 set -eu
 cd "$(dirname "$0")/.."
 R=$PWD
+DEVICE="${DEVICE:-rgslide}"
+DEV_DIR="devices/$DEVICE"
+if [ -f "$DEV_DIR/config.env" ]; then
+    . "$DEV_DIR/config.env"
+fi
+
 BASE=${BASE_ROOTFS:-$R/out/rootfs}
-IMG=${1:-$R/out/rootfs-full.ext4}
+if [ "$DEVICE" = "rgslide" ]; then
+    IMG=${1:-$R/out/rootfs-full.ext4}
+    DUMP_ROOT="dump"
+    WIFI_FW_DIR="out/wifi-fw"
+else
+    IMG=${1:-$R/out/rootfs-$DEVICE.ext4}
+    DUMP_ROOT="dump/$DEVICE"
+    WIFI_FW_DIR="dump/$DEVICE/wifi-fw"
+fi
 SIZE=${SIZE:-3500M}
 
 [ -x "$BASE/usr/bin/dpkg" ] || { echo "falta $BASE (ejecuta scripts/build-rootfs.sh --no-image)"; exit 1; }
@@ -25,41 +39,45 @@ trap 'sudo rm -rf "$T"' EXIT
 echo "1/8 Copiando base Debian desde $BASE ..."
 sudo cp -a "$BASE/." "$T/"
 
-echo "2/8 Aplicando rootfs/overlay/ y binarios locales ..."
+echo "2/8 Aplicando rootfs/overlay/, overlays de dispositivo y binarios locales ..."
 sudo tar -C rootfs/overlay -cf - . | sudo tar --no-overwrite-dir -C "$T" -xf -
+if [ -d "$DEV_DIR/overlay" ]; then
+    echo "  -> Aplicando overlay especifico de $DEVICE ($DEV_DIR/overlay) ..."
+    sudo tar -C "$DEV_DIR/overlay" -cf - . | sudo tar -C "$T" -xf -
+fi
 sudo install -m 755 out/rgslide-ui "$T/usr/local/bin/rgslide-ui"
 sudo install -m 755 out/audiod "$T/usr/local/bin/rgslide-audiod"
-sudo chmod 755 "$T/usr/local/bin/rgslide-"* "$T/usr/local/sbin/rgslide-"* "$T/usr/local/sbin/android-services" "$T/usr/local/sbin/gpu-prep" 2>/dev/null || true
+sudo chmod 755 "$T/usr/local/bin/rgslide-"* "$T/usr/local/sbin/rgslide-"* "$T/usr/local/sbin/android-services" "$T/usr/local/sbin/gpu-prep" "$T/usr/local/sbin/"* 2>/dev/null || true
 
 echo "3/8 Modulos de fabrica 5.4.233 y firmware Wi-Fi ..."
-if [ -d dump/live/dlkm ] && [ -d dump/boot/rd_vendor/lib/modules ]; then
+if [ -d "$DUMP_ROOT/live/dlkm" ] && [ -d "$DUMP_ROOT/boot/rd_vendor/lib/modules" ]; then
     sudo mkdir -p "$T/lib/modules/5.4.233"
-    sudo cp -a dump/live/dlkm/*.ko dump/boot/rd_vendor/lib/modules/*.ko "$T/lib/modules/5.4.233/"
+    sudo cp -a "$DUMP_ROOT/live/dlkm/"*.ko "$DUMP_ROOT/boot/rd_vendor/lib/modules/"*.ko "$T/lib/modules/5.4.233/"
 fi
-if [ -d out/wifi-fw ]; then
+if [ -d "$WIFI_FW_DIR" ]; then
     sudo mkdir -p "$T/usr/lib/firmware"
-    sudo cp -a out/wifi-fw/. "$T/usr/lib/firmware/"
-    sudo cp -a out/wifi-fw/sprd/wifi_board_config*.ini "$T/usr/lib/firmware/" 2>/dev/null || true
+    sudo cp -a "$WIFI_FW_DIR/." "$T/usr/lib/firmware/"
+    sudo cp -a "$WIFI_FW_DIR/sprd/wifi_board_config"*.ini "$T/usr/lib/firmware/" 2>/dev/null || true
 fi
 
 echo "4/8 Arbol minimo Android (/opt/android + Mali + shims + enlaces /system /vendor /apex) ..."
 sudo mkdir -p "$T/opt/android"
-sudo cp -a dump/android/root/. "$T/opt/android/"
-sudo install -m 644 dump/android/mali/libGLES_mali.so "$T/opt/android/vendor/lib64/egl/libGLES_mali.so"
-sudo install -m 644 dump/android/mali/vulkan.ums9620.so "$T/opt/android/vendor/lib64/hw/vulkan.ums9620.so"
-sudo install -m 644 dump/android/mali/gralloc.default.so "$T/opt/android/vendor/lib64/hw/gralloc.default.so"
+sudo cp -a "$DUMP_ROOT/android/root/." "$T/opt/android/"
+sudo install -m 644 "$DUMP_ROOT/android/mali/libGLES_mali.so" "$T/opt/android/vendor/lib64/egl/libGLES_mali.so"
+sudo install -m 644 "$DUMP_ROOT/android/mali/vulkan.ums9620.so" "$T/opt/android/vendor/lib64/hw/vulkan.ums9620.so"
+sudo install -m 644 "$DUMP_ROOT/android/mali/gralloc.default.so" "$T/opt/android/vendor/lib64/hw/gralloc.default.so"
 sudo cp -p "$T/opt/android/system/lib64/libselinux.so" "$T/opt/android/system/lib64/libselinux.so.orig" 2>/dev/null || true
 sudo install -m 755 out/libselinux-shim.so "$T/opt/android/system/lib64/libselinux.so"
 sudo install -m 755 out/libpropshim.so "$T/opt/android/libpropshim.so"
 sudo install -m 644 out/build.prop "$T/opt/android/system/build.prop"
 
 # modem_control_ch para segunda fase sensorhub (CM4)
-if [ -f dump/android/root/vendor/bin/modem_control ] && [ -f dump/android/modem_ch_info.xml ]; then
+if [ -f "$DUMP_ROOT/android/root/vendor/bin/modem_control" ] && [ -f "$DUMP_ROOT/android/modem_ch_info.xml" ]; then
     sudo mkdir -p "$T/opt/android/vendor/etc-ch"
-    sudo cp -a dump/android/modem_ch_info.xml "$T/opt/android/vendor/etc-ch/modem_ch_info.xml"
-    python3 - <<'PY' | sudo tee "$T/opt/android/vendor/bin/modem_control_ch" >/dev/null
+    sudo cp -a "$DUMP_ROOT/android/modem_ch_info.xml" "$T/opt/android/vendor/etc-ch/modem_ch_info.xml"
+    python3 - <<PY | sudo tee "$T/opt/android/vendor/bin/modem_control_ch" >/dev/null
 import sys
-d=bytearray(open('dump/android/root/vendor/bin/modem_control','rb').read())
+d=bytearray(open('$DUMP_ROOT/android/root/vendor/bin/modem_control','rb').read())
 assert d[0xcf4c:0xcf50].hex()=="68000035" and d[0xcf50:0xcf54].hex()=="e0078052"
 d[0xcf4c:0xcf50]=bytes.fromhex("1f2003d5"); d[0xcf50:0xcf54]=bytes.fromhex("00048052")
 sys.stdout.buffer.write(d)

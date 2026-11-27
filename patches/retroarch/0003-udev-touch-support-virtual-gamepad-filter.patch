@@ -1,0 +1,48 @@
+diff --git a/input/drivers/udev_input.c b/input/drivers/udev_input.c
+index 24fd6bb..d5019af 100644
+--- a/input/drivers/udev_input.c
++++ b/input/drivers/udev_input.c
+@@ -3409,6 +3409,15 @@ static int udev_input_add_device(udev_input_t *udev,
+    if (ioctl(fd, EVIOCGNAME(sizeof(device->ident)), device->ident) < 0)
+       device->ident[0] = '\0';
+ 
++   /* Ignore Android virtual gamepad touchscreen to prevent shadow touch conflicts */
++   if (strstr(device->ident, "virtual_gamepad"))
++   {
++      RARCH_LOG("[udev] Ignoring Android virtual touch device \"%s\" (%s)\n",
++            device->ident, devnode);
++      ret = -1;
++      goto end;
++   }
++
+    udev_input_describe_device(device, type, fd, devnode);
+ 
+    /* UDEV_INPUT_MOUSE may report in absolute coords too */
+@@ -3468,8 +3477,11 @@ static int udev_input_add_device(udev_input_t *udev,
+       {
+          if (ioctl(fd, EVIOCGABS(ABS_X), &absinfo) == -1)
+          {
+-            RARCH_DBG("[udev] ABS pointer device (%s) Failed to get ABS_X parameters.\n",device->ident);
+-            goto end;
++            if (ioctl(fd, EVIOCGABS(ABS_MT_POSITION_X), &absinfo) == -1)
++            {
++               RARCH_DBG("[udev] ABS pointer device (%s) Failed to get ABS_X parameters.\n",device->ident);
++               goto end;
++            }
+          }
+ 
+          device->mouse.x_min = absinfo.minimum;
+@@ -3477,8 +3489,11 @@ static int udev_input_add_device(udev_input_t *udev,
+ 
+          if (ioctl(fd, EVIOCGABS(ABS_Y), &absinfo) == -1)
+          {
+-            RARCH_DBG("[udev] ABS pointer device (%s) Failed to get ABS_Y parameters.\n",device->ident);
+-            goto end;
++            if (ioctl(fd, EVIOCGABS(ABS_MT_POSITION_Y), &absinfo) == -1)
++            {
++               RARCH_DBG("[udev] ABS pointer device (%s) Failed to get ABS_Y parameters.\n",device->ident);
++               goto end;
++            }
+          }
+          device->mouse.y_min = absinfo.minimum;
+          device->mouse.y_max = absinfo.maximum;
