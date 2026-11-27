@@ -44,7 +44,7 @@ jobs:
           TMP="$(mktemp -d)"
           trap 'rm -rf "$TMP"' EXIT
           touch "$TMP/boot.img" "$TMP/misc.img" "$TMP/userdata.ext4" "$TMP/fdl1-dl.bin" "$TMP/fdl2-dl.bin"
-          printf 'dummy' > "$TMP/boot.img"
+          printf 'ANDROID!' > "$TMP/boot.img"
           printf 'dummy' > "$TMP/misc.img"
           printf 'dummy' > "$TMP/userdata.ext4"
           printf 'dummy' > "$TMP/fdl1-dl.bin"
