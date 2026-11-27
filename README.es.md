@@ -1,12 +1,22 @@
-# rgslide-linux: Linux nativo en la Anbernic RG Slide (Unisoc T820 / ums9620_2h10)
+# rgslide-linux: Linux nativo en consolas Anbernic Unisoc T820 (RG Slide, RG406H, RG476H)
 
 > **Idioma:** [English (README.md)](README.md) | Español
 > *(Las notas técnicas en `docs/` y el historial de commits se mantienen en español.)*
 
-> **Estado: Pre-release experimental (`v0.9.x`) — NO es una versión `1.0` estable.**
+> **Estado: Pre-release experimental (`v0.9.1`) — NO es una versión `1.0` estable.**
 > La estabilidad de arranque aún requiere validación (una condición de carrera entre los módulos de fábrica `apsys_dvfs` y `mmdvfs` causó 2 panics en 14 arranques medidos; existe un `softdep` mitigador con verificación en frío aún limitada), la suspensión profunda (`s2idle`) está restringida y la salida DisplayPort por USB-C aún no funciona.
 
-Distribución Linux nativa (Debian 13 Trixie arm64) para la consola portátil **Anbernic RG Slide**, reemplazando Android por completo con aceleración 3D por hardware (GPU Mali-G57 vía `libhybris`), EmulationStation Desktop Edition (ES-DE), RetroArch, audio, Wi-Fi, Bluetooth y controles físicos completos.
+Distribución Linux nativa (Debian 13 Trixie arm64) para consolas portátiles con procesador **Unisoc T820 (`ums9620_2h10`)** de Anbernic (**RG Slide**, **RG406H** y **RG476H**), reemplazando Android por completo con aceleración 3D por hardware (Mesa PanVK Vulkan 1.3 nativo + GPU Mali-G57 vía `libhybris`), EmulationStation Desktop Edition (ES-DE), RetroArch, audio, Wi-Fi, Bluetooth, pantallas táctiles y controles físicos completos.
+
+---
+
+## Dispositivos soportados
+
+| Dispositivo | Pantalla | Refresco | Formato y Controles | Perfil |
+| :--- | :--- | :--- | :--- | :--- |
+| **Anbernic RG Slide** | 4.7" 1280x960 | Hasta 120 Hz | Deslizador con sensor Hall (`KEY_WAKEUP`), `retrogame_joypad` | `devices/rgslide` |
+| **Anbernic RG406H** | 4.0" 960x720 | 60 Hz | Horizontal, sticks/gatillos Hall, LEDs RGB en sticks (`rg406h-leds`) | `devices/rg406h` |
+| **Anbernic RG476H** | 4.7" 1280x960 | Hasta 120 Hz | Horizontal, sticks/gatillos Hall, multiplexor AMUX | `devices/rg476h` |
 
 ---
 
@@ -99,25 +109,36 @@ Este proyecto mantiene una única convención de slots en todo el repositorio (`
 
 ### Flashear una release precompilada (BROM -> Slot B)
 
-El script de flasheo está versionado y auditable en [`tools/flash-rgslide.sh`](tools/flash-rgslide.sh):
+Los paquetes de release BROM autónomos (`.tar.zst`, menos de 800 MB cada uno) incluyen el script de flasheo auditable (`flash.sh` / `flash-rgslide.sh`) y cargadores BROM de fábrica:
 
-1. Descomprime el archivo `.tar.zst` en un PC Linux x86_64 y verifica `SHA256SUMS`.
+- **Anbernic RG Slide:** `rgslide-linux-brom-v0.9.1.tar.zst`
+- **Anbernic RG406H:** `rg406h-linux-brom-v0.9.1.tar.zst`
+- **Anbernic RG476H:** `rg476h-linux-brom-v0.9.1.tar.zst`
+
+1. Descomprime el archivo `.tar.zst` en un PC Linux x86_64 y verifica `SHA256SUMS`:
+   ```bash
+   tar -xvf rg*-linux-brom-v0.9.1.tar.zst
+   cd rg*-brom-flasher
+   ```
 2. Previsualiza exactamente qué se va a escribir sin tocar la consola:
    ```bash
-   ./flash-rgslide.sh --dry-run
+   ./flash.sh --dry-run   # (o ./flash-rgslide.sh --dry-run)
    ```
-3. Apaga la RG Slide por completo (`Vol-Down + Power` si estuviera colgada).
-4. Mantén pulsado el botón **Back** (lado derecho de la pantalla) y conecta el cable USB-C al PC.
+3. Apaga tu consola por completo (`Vol-Down + Power` si estuviera colgada).
+4. Mantén pulsado el botón **Back** y conecta el cable USB-C al PC.
 5. Ejecuta el flasher (escribe `boot_b`, `misc` y `userdata`, pidiendo confirmación `FLASH`):
    ```bash
-   sudo ./flash-rgslide.sh
+   sudo ./flash.sh
    ```
 
 ### Iterar en desarrollo (Fastboot -> Slot A)
 
+Para probar una nueva imagen compilada sin tocar el Slot B de respaldo:
+
 ```bash
-./tools/flash-rgslide.sh --mode fastboot --slot a --dir out --dry-run
-./tools/flash-rgslide.sh --mode fastboot --slot a --dir out
+fastboot flash boot_a out/boot-<dispositivo>.img
+fastboot flash userdata out/rootfs-<dispositivo>-v0.9.1.ext4
+fastboot reboot
 ```
 
 ---
@@ -193,16 +214,29 @@ El flujo de construcción permite la compilación cruzada completa de todo el es
    ```
    Compila RetroArch 1.22.2 con Vulkan nativo, contexto hybris y puente de vibración física en `out/retroarch-root/opt/retroarch/bin/retroarch`. Los núcleos libretro adicionales se ubican en `out/extra-cores/` y sus archivos info en `out/extra-cores-info/`.
 
-7. **Ensamblar la imagen final de Rootfs:**
+7. **Ensamblar la imagen final de Rootfs (por dispositivo):**
    ```bash
-   ./scripts/build-full-rootfs.sh out/rootfs-full.ext4
-   ```
-   Integra todos los componentes, firmware, drivers Mali, servicios systemd (`rgslide-sleep`, `rgslide-ch`, `rgslide-imu`, `rgslide-dp`, etc.), configuraciones de ES-DE y produce el sistema ext4 final arrancable.
+   # Para RG Slide (por defecto)
+   DEVICE=rgslide ./scripts/build-full-rootfs.sh out/rootfs-rgslide-v0.9.1.ext4
 
-8. **Flashear al Slot A de pruebas por Fastboot:**
+   # Para RG406H
+   DEVICE=rg406h ./scripts/build-full-rootfs.sh out/rootfs-rg406h-v0.9.1.ext4
+
+   # Para RG476H
+   DEVICE=rg476h ./scripts/build-full-rootfs.sh out/rootfs-rg476h-v0.9.1.ext4
+   ```
+   Integra todos los componentes, overlays específicos (`devices/<dispositivo>/overlay/`), firmware, drivers Mali, servicios systemd (`rgslide-sleep`, `rgslide-ch`, `rgslide-imu`, `rgslide-dp`, etc.), configuraciones de ES-DE y produce el sistema ext4 final arrancable.
+
+8. **Empaquetar imagen de arranque (boot por dispositivo):**
    ```bash
-   ./tools/flash-rgslide.sh --mode fastboot --slot a --dir out --dry-run
-   ./tools/flash-rgslide.sh --mode fastboot --slot a --dir out
+   DEVICE=<dispositivo> ./scripts/pack-boot.sh out/boot-<dispositivo>.img
+   ```
+
+9. **Flashear al Slot A de pruebas por Fastboot:**
+   ```bash
+   fastboot flash boot_a out/boot-<dispositivo>.img
+   fastboot flash userdata out/rootfs-<dispositivo>-v0.9.1.ext4
+   fastboot reboot
    ```
 
 ---

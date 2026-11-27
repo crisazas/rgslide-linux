@@ -1,12 +1,22 @@
-# rgslide-linux: Native Linux on the Anbernic RG Slide (Unisoc T820 / ums9620_2h10)
+# rgslide-linux: Native Linux on Anbernic Unisoc T820 Handhelds (RG Slide, RG406H, RG476H)
 
 > **Language:** English | [Español (README.es.md)](README.es.md)
 > *(Internal reverse-engineering notes in `docs/` and commit history are maintained in Spanish.)*
 
-> **Status: Experimental Pre-Release (`v0.9.x`) — NOT production-ready `1.0`.**
+> **Status: Experimental Pre-Release (`v0.9.1`) — NOT production-ready `1.0`.**
 > Boot stability still has open validation items (a stock-module race condition between `apsys_dvfs` and `mmdvfs` caused 2/14 measured boot panics; a `softdep` workaround is deployed with limited cold-boot verification so far), deep sleep (`s2idle`) is restricted, and USB-C DisplayPort output does not work yet.
 
-Native Linux distribution (Debian 13 Trixie arm64) for the **Anbernic RG Slide** handheld gaming console, replacing Android with hardware-accelerated 3D graphics (Mali-G57 GPU via `libhybris`), EmulationStation Desktop Edition (ES-DE) frontend, RetroArch, audio, Wi-Fi, Bluetooth, and full physical controls.
+Native Linux distribution (Debian 13 Trixie arm64) for **Anbernic Unisoc T820 (`ums9620_2h10`)** handheld gaming consoles (**RG Slide**, **RG406H**, and **RG476H**), replacing Android with hardware-accelerated 3D graphics (Mesa PanVK Vulkan 1.3 + Mali-G57 via `libhybris`), EmulationStation Desktop Edition (ES-DE) frontend, RetroArch, audio, Wi-Fi, Bluetooth, touchscreens, and physical controls.
+
+---
+
+## Supported Devices
+
+| Device | Display | Refresh Rate | Form Factor & Controls | Profile Config |
+| :--- | :--- | :--- | :--- | :--- |
+| **Anbernic RG Slide** | 4.7" 1280x960 | Up to 120 Hz | Slider with Hall sensor (`KEY_WAKEUP`), `retrogame_joypad` | `devices/rgslide` |
+| **Anbernic RG406H** | 4.0" 960x720 | 60 Hz | Horizontal, Hall sticks + triggers, RGB stick LEDs (`rg406h-leds`) | `devices/rg406h` |
+| **Anbernic RG476H** | 4.7" 1280x960 | Up to 120 Hz | Horizontal, Hall sticks + triggers, AMUX multiplexer | `devices/rg476h` |
 
 ---
 
@@ -15,21 +25,22 @@ Native Linux distribution (Debian 13 Trixie arm64) for the **Anbernic RG Slide**
 ### Working
 
 * **Display & 3D Hardware Acceleration (Mali-G57 GPU):**
-  - Native display panel running at full resolution (1280x960) with proper orientation and up to 120 Hz refresh rate.
-  - **Vulkan 1.3 (Native Linux):** Open-source **Mesa PanVK 26.3** (`libvulkan_panfrost.so`) talking directly to `/dev/mali0` (`mali_kbase` JM v9) with zero-copy `VK_KHR_display` presentation on `/dev/dri/card0` (60/90/120 Hz) — no `libhybris`, no `tlspad`, no Android blobs.
+  - Native display panels running at full resolution (1280x960 or 960x720) with proper orientation and up to 120 Hz refresh rate.
+  - **Vulkan 1.3 (Native Linux):** Open-source **Mesa PanVK 26.3** (`libvulkan_panfrost.so`) talking directly to `/dev/mali0` (`mali_kbase` JM v9) with zero-copy `VK_KHR_display` presentation on `/dev/dri/card0` (60/90/120 Hz) across all supported devices — no `libhybris`, no `tlspad`, no Android blobs.
   - **OpenGL ES 2.0 / 3.x:** Hardware acceleration through `libhybris` + Android vendor Mali blob + `libtlspad.so`.
-  - **EmulationStation Desktop Edition (ES-DE 3.5.0)** and **RetroArch (1.22.2)** running natively (RetroArch supports both Vulkan + `.slang` shaders via `khr_display` and OpenGL ES).
+  - **EmulationStation Desktop Edition (ES-DE 3.5.0)** and **RetroArch (1.22.2)** running natively (RetroArch defaults to Vulkan + `.slang` shaders via `khr_display`).
 * **Audio Subsystem:**
   - Stereo audio output via built-in speakers and 3.5 mm headphone jack through the Unisoc UMP9620 codec (`snd_soc_sprd_codec_ump9620`).
   - Regulator softdep ordering (`rgslide-audio.conf`) mitigating boot static noise / `DPOP`.
-  - Dedicated ALSA audio mixing daemon (`rgslide-audiod`) for UI navigation sounds and in-game audio.
-* **Controls, Slider & Standby:**
-  - Integrated internal gamepad (`retrogame_joypad`, `/dev/input/event3`) mapped and calibrated.
-  - **Touchscreen (`fts_ts`):** Native multi-touch support integrated into RetroArch (`UDEV_TOUCH_SUPPORT`), filtering out the ghost `virtual_gamepad` node and mapping touches to pointer devices (`RETRO_DEVICE_POINTER`, NDS stylus, lightgun, and XMB menu navigation).
+  - True mute at volume level 0; dedicated ALSA audio mixing daemon (`rgslide-audiod`) for UI navigation sounds and in-game audio.
+* **Controls, Standby & Touch:**
+  - Integrated gamepad (`retrogame_joypad`, `/dev/input/event3`) mapped and calibrated for each model with dedicated RetroArch autoconfig.
+  - **Touchscreen (`fts_ts`):** Native multi-touch support integrated into RetroArch (`UDEV_TOUCH_SUPPORT`), filtering out the ghost `virtual_gamepad` node and mapping touches to pointer devices (`RETRO_DEVICE_POINTER`, NDS stylus via DeSmuME, lightgun, and XMB menu navigation).
   - Native in-game rumble / force feedback: RetroArch's `udev` joypad driver is patched to bridge `retrogame_joypad` to `sc27xx:vibrator` (16 FF effects) with zero extra daemons.
   - Physical volume rocker (`/dev/input/event0` via `gpio-keys`) integrated with `rgslide-hotkeyd` and `rgslide-volume`.
-  - Hall slider sensor (`KEY_WAKEUP`) and short Power key press trigger instant low-power standby (`rgslide-sleepd`): blanks backlight, pauses (`SIGSTOP`) ES-DE/RetroArch mid-game, and drops CPUs to `powersave`; sliding open resumes immediately.
-  - Motion sensors: the CM4 sensorhub (`rgslide-ch`) feeds an on-demand DSU/Cemuhook UDP server (`rgslide-imud`, `127.0.0.1:26760`) with accelerometer data; idle CPU cost is zero. The gyroscope channel still reads zeros (handle 10 is unidentified).
+  - Instant low-power standby (`rgslide-sleepd`): blanks backlight, pauses (`SIGSTOP`) ES-DE/RetroArch mid-game, and drops CPUs to `powersave`. Triggered by short Power press or slider close (on RG Slide).
+  - Emergency app termination / rescue shortcut in the Quick Menu (`Back + Select`).
+  - Motion sensors: the CM4 sensorhub (`rgslide-ch`) feeds an on-demand DSU/Cemuhook UDP server (`rgslide-imud`, `127.0.0.1:26760`) with accelerometer data.
   - USB-C DisplayPort: `eglplatform_drm` prefers a connected DP/HDMI connector over the internal panel and `rgslide-dpd` handles hotplug. **Untested with a real monitor** (only the fallback to the internal panel has been verified).
   - On-screen quick menu / tools overlay (`rgslide-ui`) accessible via `Back + Select`.
 * **Connectivity & Networking:**
@@ -40,7 +51,7 @@ Native Linux distribution (Debian 13 Trixie arm64) for the **Anbernic RG Slide**
   - Minimal Debian 13 (Trixie) arm64 base.
   - CM4 coprocessor kept alive (`rgslide-cm4-prep`) to prevent the ~284 s hardware watchdog reboot.
   - Hardware RTC (`sc27xx-rtc`) persistence + automatic SNTP synchronization (`rgslide-clock`) with `/var/lib/rgslide/lasttime` fallback.
-  - Dynamic language synchronization (English / Spanish) between ES-DE and the Tools menu.
+  - Dynamic language synchronization (English / Spanish) between ES-DE and the Tools menu; complete persistent timezone selector.
 
 ### Known Limitations & Open Issues
 
@@ -99,27 +110,36 @@ This project uses a single, consistent slot convention across releases, `tools/f
 
 ### Flashing a Prebuilt Release (BROM Mode -> Slot B)
 
-The flashing script is versioned and auditable in [`tools/flash-rgslide.sh`](tools/flash-rgslide.sh).
+The standalone release packages (`.tar.zst`, < 800 MB each) include an auditable flashing script (`flash.sh` / `flash-rgslide.sh`) and stock BROM loaders:
 
-1. Extract the release `.tar.zst` archive on a Linux x86_64 host and verify `SHA256SUMS`.
+- **Anbernic RG Slide:** `rgslide-linux-brom-v0.9.1.tar.zst`
+- **Anbernic RG406H:** `rg406h-linux-brom-v0.9.1.tar.zst`
+- **Anbernic RG476H:** `rg476h-linux-brom-v0.9.1.tar.zst`
+
+1. Extract the release `.tar.zst` archive on a Linux x86_64 host and verify `SHA256SUMS`:
+   ```bash
+   tar -xvf rg*-linux-brom-v0.9.1.tar.zst
+   cd rg*-brom-flasher
+   ```
 2. Preview the exact flash command safely without touching the device:
    ```bash
-   ./flash-rgslide.sh --dry-run
+   ./flash.sh --dry-run   # (or ./flash-rgslide.sh --dry-run)
    ```
-3. Power off the RG Slide completely (hold `Vol-Down + Power` if frozen).
-4. Hold the **Back** button on the right side of the screen and connect USB-C to your PC.
-5. Run the flasher (writes `boot_b`, `misc`, and `userdata`, and prompts for `FLASH` confirmation):
+3. Power off your console completely (hold `Vol-Down + Power` if frozen).
+4. Hold the **Back** button on the device and connect USB-C to your PC.
+5. Run the flasher (writes `boot_b`, `misc`, and `userdata`, prompting for `FLASH` confirmation):
    ```bash
-   sudo ./flash-rgslide.sh
+   sudo ./flash.sh
    ```
 
 ### Iterating During Development (Fastboot -> Slot A)
 
-When testing a newly built `boot.img` or `userdata.ext4` without touching the known-good Slot B:
+When testing a newly built `boot-<device>.img` or `rootfs-<device>-v0.9.1.ext4` without touching the known-good Slot B:
 
 ```bash
-./tools/flash-rgslide.sh --mode fastboot --slot a --dir out --dry-run
-./tools/flash-rgslide.sh --mode fastboot --slot a --dir out
+fastboot flash boot_a out/boot-<device>.img
+fastboot flash userdata out/rootfs-<device>-v0.9.1.ext4
+fastboot reboot
 ```
 
 `tools/flash-rgslide.sh` checks `fastboot getvar product` and `fastboot getvar current-slot` before writing.
@@ -233,16 +253,29 @@ The build pipeline cross-compiles the entire userland (Debian 13 Trixie arm64, l
    ```
    Compiles RetroArch 1.22.2 with native Vulkan, hybris context, and physical rumble bridge into `out/retroarch-root/opt/retroarch/bin/retroarch`. Extra libretro cores should be placed in `out/extra-cores/` and info files in `out/extra-cores-info/`.
 
-7. **Assemble Final Rootfs Image:**
+7. **Assemble Final Rootfs Image (Select Device):**
    ```bash
-   ./scripts/build-full-rootfs.sh out/rootfs-full.ext4
-   ```
-   Integrates all components, firmware, Mali drivers, systemd services (`rgslide-sleep`, `rgslide-ch`, `rgslide-imu`, `rgslide-dp`, etc.), ES-DE configs, and generates the final bootable ext4 filesystem.
+   # For RG Slide (default)
+   DEVICE=rgslide ./scripts/build-full-rootfs.sh out/rootfs-rgslide-v0.9.1.ext4
 
-8. **Flash to Testing Slot (Slot A) via Fastboot:**
+   # For RG406H
+   DEVICE=rg406h ./scripts/build-full-rootfs.sh out/rootfs-rg406h-v0.9.1.ext4
+
+   # For RG476H
+   DEVICE=rg476h ./scripts/build-full-rootfs.sh out/rootfs-rg476h-v0.9.1.ext4
+   ```
+   Integrates all components, device-specific overlays (`devices/<device>/overlay/`), firmware, Mali drivers, systemd services (`rgslide-sleep`, `rgslide-ch`, `rgslide-imu`, `rgslide-dp`, etc.), ES-DE configs, and generates the final bootable ext4 filesystem.
+
+8. **Pack Boot Image (Select Device):**
    ```bash
-   ./tools/flash-rgslide.sh --mode fastboot --slot a --dir out --dry-run
-   ./tools/flash-rgslide.sh --mode fastboot --slot a --dir out
+   DEVICE=<device> ./scripts/pack-boot.sh out/boot-<device>.img
+   ```
+
+9. **Flash to Testing Slot (Slot A) via Fastboot:**
+   ```bash
+   fastboot flash boot_a out/boot-<device>.img
+   fastboot flash userdata out/rootfs-<device>-v0.9.1.ext4
+   fastboot reboot
    ```
 
 ---
