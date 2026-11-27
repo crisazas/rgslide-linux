@@ -9,6 +9,7 @@ export SDL_VIDEODRIVER=hybris
 export PYSDL2_DLL_PATH=/usr/local/lib/aarch64-linux-gnu
 export LD_LIBRARY_PATH="/usr/local/lib/aarch64-linux-gnu:/opt/hybris/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export PATH="/usr/local/lib/rgslide-pybin:$PATH"
+export LC_NUMERIC=C
 unset HYBRIS_DRM_REFRESH
 
 RGSLIDE_GCDB="19009b4d4b4800000111000000010000,retrogame_joypad,a:b0,b:b1,x:b3,y:b4,back:b10,guide:b12,start:b11,leftstick:b13,rightstick:b14,leftshoulder:b6,rightshoulder:b7,dpup:b15,dpdown:b16,dpleft:b17,dpright:b18,leftx:a0,lefty:a1,rightx:a3,righty:a4,lefttrigger:a2,righttrigger:a5,crc:4d9b,platform:Linux,"

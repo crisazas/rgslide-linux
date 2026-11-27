@@ -479,12 +479,14 @@ cmd_kill_game() {
 	say "Cerrando juego..."
 	mkdir -p /run/rgslide 2>/dev/null
 	touch /run/rgslide/kill-game 2>/dev/null
-	# Enviar SIGTERM a posibles emuladores y retroarch
-	killall -TERM retroarch 2>/dev/null || true
+	# Enviar SIGTERM a posibles emuladores, retroarch y helpers de ports
+	pkill -TERM -x retroarch 2>/dev/null || true
+	sudo -n pkill -9 -x gptokeyb2 2>/dev/null || true
+	sudo -n pkill -9 -x gptokeyb 2>/dev/null || true
 	# Si en 1 segundo no responde, SIGKILL
-	( sleep 1; killall -9 retroarch 2>/dev/null || true ) &
-	# Si rgslide-ui esta corriendo, salir del menu para volver a ES
-	killall -TERM rgslide-ui 2>/dev/null || true
+	( sleep 1; pkill -9 -x retroarch 2>/dev/null || true ) >/dev/null 2>&1 &
+	# Cerrar rgslide-ui (el panel) para volver directo a ES-DE
+	pkill -TERM -x rgslide-ui 2>/dev/null || true
 }
 
 c=$1; [ $# -gt 0 ] && shift

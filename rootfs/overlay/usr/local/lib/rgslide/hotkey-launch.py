@@ -225,12 +225,11 @@ def _cleanup_port_helpers():
 
 
 def run_generic(cmd):
-    """Emulador que no es RetroArch: sin estados. Primer combo = aviso (vibracion); segundo en CONFIRM_S s = cierra y abre el panel."""
+    """Emulador o port que no es RetroArch: al pulsar Select+Home cierra el juego de inmediato y abre el panel."""
     set_session("game")
     p = subprocess.Popen(cmd, start_new_session=True)
-    armed = 0.0
     try:
-        return _generic_loop(p, armed)
+        return _generic_loop(p)
     finally:
         if p.poll() is None:
             _kill_group(p, signal.SIGKILL)
@@ -241,33 +240,31 @@ def run_generic(cmd):
         _cleanup_port_helpers()
 
 
-def _generic_loop(p, armed):
+def _generic_loop(p):
+    started = time.monotonic()
     while p.poll() is None:
         if os.path.exists(REQ):
             take_request()
-            now = time.monotonic()
-            if armed and now - armed <= CONFIRM_S:
-                buzz(2)
-                _kill_group(p, signal.SIGTERM)
-                try:
-                    p.wait(QUIT_TIMEOUT)
-                except subprocess.TimeoutExpired:
-                    _kill_group(p, signal.SIGKILL)
-                    try:
-                        p.wait(3)
-                    except subprocess.TimeoutExpired:
-                        pass
-                _cleanup_port_helpers()
-                run_panel()
-                if os.path.exists(KILLREQ):
-                    try:
-                        os.unlink(KILLREQ)
-                    except OSError:
-                        pass
-                return 0
-            armed = now
+            if time.monotonic() - started < 1.5:  # ignora rebotes recien arrancado
+                continue
             buzz(1)
-            log("este juego se cerrara si repites el combo en", CONFIRM_S, "s (no se puede guardar su estado)")
+            _kill_group(p, signal.SIGTERM)
+            try:
+                p.wait(QUIT_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                _kill_group(p, signal.SIGKILL)
+                try:
+                    p.wait(3)
+                except subprocess.TimeoutExpired:
+                    pass
+            _cleanup_port_helpers()
+            run_panel()
+            if os.path.exists(KILLREQ):
+                try:
+                    os.unlink(KILLREQ)
+                except OSError:
+                    pass
+            return 0
         time.sleep(0.15)
     return p.returncode
 
