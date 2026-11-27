@@ -164,7 +164,8 @@ fi
 
 echo "7/8 Configuracion de usuario console (ES-DE, Ajustes, Wi-Fi base) y servicios systemd ..."
 HDIR="$T/home/console"
-sudo mkdir -p "$HDIR/ROMs/settings" "$HDIR/ROMs/ports" "$HDIR/ES-DE/custom_systems" "$HDIR/ES-DE/gamelists/nes" "$HDIR/ES-DE/gamelists/nds" "$HDIR/.config/retroarch"
+sudo mkdir -p "$HDIR/ROMs/settings" "$HDIR/ROMs/ports" "$HDIR/ES-DE/custom_systems" "$HDIR/ES-DE/gamelists/nes" "$HDIR/ES-DE/gamelists/nds" "$HDIR/.config/retroarch" "$T/opt/tools"
+sudo chown 1000:1000 "$T/opt/tools"
 sudo ln -sfn /opt/retroarch/share/assets "$HDIR/.config/retroarch/assets"
 sudo cp -a rootfs/overlay/usr/share/rgslide/settings/*.sh "$HDIR/ROMs/settings/"
 sudo chmod 755 "$HDIR/ROMs/settings/"*.sh

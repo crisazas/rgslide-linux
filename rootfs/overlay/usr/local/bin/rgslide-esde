@@ -21,6 +21,11 @@ while true; do
     /opt/es-de/bin/es-de "$@"
     ret=$?
 
+    if [ -f /run/rgslide/esde-rescan ]; then
+        rm -f /run/rgslide/esde-rescan
+        continue
+    fi
+
     EXIT_MODE=$(sed -n 's/^EXIT_MODE=//p' /etc/default/rgslide-es 2>/dev/null | tail -n 1 | tr -d "\"' ")
     [ -n "$EXIT_MODE" ] || EXIT_MODE=ui
     case "$EXIT_MODE" in
