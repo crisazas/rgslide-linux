@@ -22,9 +22,10 @@ Distribución Linux nativa (Debian 13 Trixie arm64) para la consola portátil **
   - Altavoces estéreo y jack de 3.5 mm vía códec Unisoc UMP9620 (`snd_soc_sprd_codec_ump9620`).
   - Ordenación `softdep` de reguladores (`rgslide-audio.conf`) mitigando estática/chasquidos (`DPOP`) al arrancar.
   - Demonio de mezcla ALSA (`rgslide-audiod`) para sonidos de interfaz y juegos.
-* **Controles y botones físicos:**
+* **Controles, deslizador y modo reposo (standby):**
   - Mando integrado (`retrogame_joypad`, `/dev/input/event3`) mapeado y calibrado.
   - Botones físicos de volumen (`/dev/input/event0`) integrados con `rgslide-hotkeyd` y `rgslide-volume`.
+  - Sensor Hall del deslizador (`KEY_WAKEUP`) y pulsación corta del botón Power activan reposo instantáneo (`rgslide-sleepd`): apaga retroiluminación (`brightness=0`), pausa (`SIGSTOP`) ES-DE y RetroArch a mitad de juego y reduce las CPUs a `powersave`; al abrir o volver a pulsar reanuda de inmediato.
   - Menú rápido en pantalla (`rgslide-ui`) accesible con `Back + Select`.
 * **Conectividad:**
   - **Wi-Fi:** 2.4 / 5 GHz con DHCP automático (`systemd-networkd`).
@@ -39,8 +40,8 @@ Distribución Linux nativa (Debian 13 Trixie arm64) para la consola portátil **
 
 * **Carrera de módulos en arranque (`apsys_dvfs` vs `mmdvfs`):**
   - Ambos módulos de fábrica registran el gobernador `vdsp_dvfs`; si `mmdvfs` gana la carrera, `apsys_dvfs` falla sin limpiar y el reintento produce un panic use-after-free (medido en 2 de 14 arranques antes del parche; ver [`docs/agent-panic.md`](docs/agent-panic.md)). Se desplegó `softdep mmdvfs pre: apsys_dvfs`, pendiente de más ciclos de arranque en frío.
-* **Suspensión profunda (`s2idle`):**
-  - Restringida a suspensión ligera para evitar bloqueos del bus I2C/sensorhub al reanudar.
+* **Suspensión profunda a nivel de kernel (`mem` / `s2idle`):**
+  - Implementada mediante reposo instantáneo en espacio de usuario (`rgslide-sleepd`), ya que la suspensión del kernel stock 5.4 (`mem`/`s2idle`) se cuelga en los callbacks de gestión de energía de Unisoc (`sprd_pcm_pm_notifier`) al tener la pila de audio y DRM activa.
 * **Salida de vídeo externa (USB-C DisplayPort / HDMI Alt Mode):**
   - Sin implementar todavía.
 * **Reinicio del RTC en cada arranque:**
