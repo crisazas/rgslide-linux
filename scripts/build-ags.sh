@@ -14,6 +14,19 @@ if [ ! -d "$SRC/.git" ]; then
   git clone --depth 1 --branch "$TAG" https://github.com/adventuregamestudio/ags.git "$SRC"
 fi
 
+# Permitir activar AGS_OPENGL_ES2=1 en Linux arm64 (Mali-G57 via SDL2-hybris)
+if ! grep -q '^#ifndef AGS_OPENGL_ES2' "$SRC/Common/platform/platform.h"; then
+  python3 - "$SRC/Common/platform/platform.h" << 'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+old = "#define AGS_OPENGL_ES2 (AGS_PLATFORM_OS_ANDROID    || \\\n                        AGS_PLATFORM_OS_EMSCRIPTEN || \\\n                        AGS_PLATFORM_OS_IOS)"
+new = "#ifndef AGS_OPENGL_ES2\n" + old + "\n#endif"
+assert old in s, "patron AGS_OPENGL_ES2 no encontrado"
+open(p, "w").write(s.replace(old, new, 1))
+PY
+fi
+
 mkdir -p "$BUILD"
 docker run --rm --platform linux/amd64 \
   -v "$SRC:/src:ro" \
@@ -46,6 +59,8 @@ cmake -G Ninja -S /src -B /build \
   -DCMAKE_TOOLCHAIN_FILE=/tmp/tc.cmake \
   -DSDL2_DIR=/usr/lib/aarch64-linux-gnu/cmake/SDL2 \
   -DALLEGRO_USE_CONSTRUCTOR_EXITCODE=0 \
+  -DAGS_OPENGLES2=ON \
+  -DCMAKE_CXX_FLAGS="-DAGS_OPENGL_ES2=1" \
   -DCMAKE_BUILD_TYPE=Release \
   -DAGS_USE_LOCAL_ALL_LIBRARIES=OFF \
   -DAGS_USE_LOCAL_SDL2=ON \

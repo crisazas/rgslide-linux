@@ -55,14 +55,19 @@ if [ $# -lt 1 ]; then
     exit 2
 fi
 
-# Para juegos del motor AGS (Adventure Game Studio): usar /usr/local/bin/rgslide-ags
-# (enlazado dinamicamente a libSDL2 con Wayland) para que corra con OpenGL 4.2 real
-# en la GPU Mali-G57 via Wayland + Mesa Zink + PanVK.
+# Atajo nativo GPU Mali-G57 para juegos del motor AGS (Adventure Game Studio):
+# evita Weston/XWayland por completo usando /usr/local/bin/rgslide-ags (compilado con OpenGL ES 2.0)
+# directo sobre SDL2-hybris + libhybris Mali-G57.
 case "$(basename "$1")" in
     ags|ags.*)
         if [ -x /usr/local/bin/rgslide-ags ]; then
             shift
-            set -- /usr/local/bin/rgslide-ags "$@"
+            [ -r /opt/hybris-glvnd/etc/rgslide-hybris.sh ] && . /opt/hybris-glvnd/etc/rgslide-hybris.sh
+            export SDL_VIDEODRIVER=hybris
+            export LD_LIBRARY_PATH="/usr/local/lib/aarch64-linux-gnu:/opt/hybris/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+            export SDL_GAMECONTROLLERCONFIG="19009b4d4b4800000111000000010000,retrogame_joypad,a:b0,b:b1,x:b3,y:b4,back:b10,guide:b12,start:b11,leftstick:b13,rightstick:b14,leftshoulder:b6,rightshoulder:b7,dpup:b15,dpdown:b16,dpleft:b17,dpright:b18,leftx:a0,lefty:a1,rightx:a3,righty:a4,lefttrigger:a2,righttrigger:a5,crc:4d9b,platform:Linux,"
+            unset LIBGL_ALWAYS_SOFTWARE MESA_LOADER_DRIVER_OVERRIDE GALLIUM_DRIVER HYBRIS_DRM_REFRESH
+            exec env "${GAME_ENV[@]}" /usr/local/bin/rgslide-ags "$@"
         fi ;;
 esac
 
@@ -147,22 +152,15 @@ export SDL_GAMECONTROLLERCONFIG="19009b4d4b4800000111000000010000,retrogame_joyp
 export LD_LIBRARY_PATH="/usr/lib/aarch64-linux-gnu${CLEAN_WLP:+:$CLEAN_WLP}"
 unset LD_PRELOAD HYBRIS_LINKER_DIR HYBRIS_EGLPLATFORM_DIR HYBRIS_EGLPLATFORM LIBEGL LIBGLESV2 LIBGLESV1_CM HYBRIS_LD_LIBRARY_PATH
 
-# Detectar si el binario soporta Wayland (enlace dinamico a libwayland-client o libSDL2 de Debian):
-# - Con Wayland: usar Mesa Zink + PanVK (GPU Mali-G57 via VK_KHR_wayland_surface).
-# - Solo X11 (p. ej. ags estatico sin Wayland o Allegro4): XWayland sin DRI3 no soporta swapchain GLX en Zink,
-#   asi que usamos X11 + llvmpipe (o software 2D directo en ags para maxima fluidez y audio limpio).
-GAME_BIN="$1"
-if [ -x "$GAME_BIN" ] && ldd "$GAME_BIN" 2>/dev/null | grep -qE 'libwayland-client|libSDL2-2\.0'; then
+# Dentro de Weston (--use-pixman, sin zwp_linux_dmabuf_v1), usar Mesa llvmpipe (4 hilos, 640x480 scale=2)
+# para evitar fugas de memoria de swapchain en Zink sobre Pixman.
+export LIBGL_ALWAYS_SOFTWARE=1
+export LP_NUM_THREADS=4
+unset MESA_LOADER_DRIVER_OVERRIDE GALLIUM_DRIVER
+if [ -x "$1" ] && ldd "$1" 2>/dev/null | grep -qE 'libwayland-client|libSDL2-2\.0'; then
     export SDL_VIDEODRIVER=wayland
-    export VK_ICD_FILENAMES=/etc/vulkan/icd.d/panfrost_icd.aarch64.json
-    export MESA_LOADER_DRIVER_OVERRIDE=zink
-    export GALLIUM_DRIVER=zink
-    unset LIBGL_ALWAYS_SOFTWARE
 else
     export SDL_VIDEODRIVER=x11
-    export LIBGL_ALWAYS_SOFTWARE=1
-    export LP_NUM_THREADS=4
-    unset MESA_LOADER_DRIVER_OVERRIDE GALLIUM_DRIVER
 fi
 
 env "${GAME_ENV[@]}" "$@"
