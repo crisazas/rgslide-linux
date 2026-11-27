@@ -55,6 +55,21 @@ if [ $# -lt 1 ]; then
     exit 2
 fi
 
+# Atajo nativo GPU Mali-G57 para juegos del motor AGS (Adventure Game Studio):
+# evita Weston/XWayland por completo usando /usr/local/bin/rgslide-ags enlazado a SDL2-hybris.
+case "$(basename "$1")" in
+    ags|ags.*)
+        if [ -x /usr/local/bin/rgslide-ags ]; then
+            shift
+            [ -r /opt/hybris-glvnd/etc/rgslide-hybris.sh ] && . /opt/hybris-glvnd/etc/rgslide-hybris.sh
+            export SDL_VIDEODRIVER=hybris
+            export LD_LIBRARY_PATH="/usr/local/lib/aarch64-linux-gnu:/opt/hybris/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+            export SDL_GAMECONTROLLERCONFIG="19009b4d4b4800000111000000010000,retrogame_joypad,a:b0,b:b1,x:b3,y:b4,back:b10,guide:b12,start:b11,leftstick:b13,rightstick:b14,leftshoulder:b6,rightshoulder:b7,dpup:b15,dpdown:b16,dpleft:b17,dpright:b18,leftx:a0,lefty:a1,rightx:a3,righty:a4,lefttrigger:a2,righttrigger:a5,crc:4d9b,platform:Linux,"
+            unset LIBGL_ALWAYS_SOFTWARE MESA_LOADER_DRIVER_OVERRIDE GALLIUM_DRIVER HYBRIS_DRM_REFRESH
+            exec env "${GAME_ENV[@]}" /usr/local/bin/rgslide-ags "$@"
+        fi ;;
+esac
+
 trap stop_weston EXIT INT TERM
 stop_weston
 

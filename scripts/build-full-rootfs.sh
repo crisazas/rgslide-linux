@@ -122,6 +122,9 @@ sudo cp -a "$T/opt/hybris-glvnd/aux/libhybris/libEGL_libhybris.so"* \
     "$T/opt/hybris-glvnd/aux/libhybris/libui.so"* "$T/opt/hybris-glvnd/lib/"
 sudo install -m 755 out/libtlspad.so "$T/opt/hybris-glvnd/lib/libtlspad.so"
 sudo install -m 755 out/rgslide-python3 "$T/usr/local/bin/rgslide-python3"
+if [ -x out/rgslide-ags ]; then
+    sudo install -m 755 out/rgslide-ags "$T/usr/local/bin/rgslide-ags"
+fi
 sudo mkdir -p "$T/usr/local/lib/rgslide-pybin"
 sudo ln -sf /usr/local/bin/rgslide-python3 "$T/usr/local/lib/rgslide-pybin/python3"
 sudo ln -sf /usr/local/bin/rgslide-retroarch "$T/usr/bin/retroarch"
