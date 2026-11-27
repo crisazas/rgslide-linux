@@ -180,11 +180,23 @@ if [ "$MODE" = "brom" ]; then
   fi
 fi
 
-# Verify optional SHA256SUMS if present in payload directory
+# Verify required SHA256SUMS if present in payload directory
 if [ -f "$PAYLOAD_DIR/SHA256SUMS" ]; then
   echo "Verifying SHA256SUMS in $PAYLOAD_DIR ..."
-  (cd "$PAYLOAD_DIR" && sha256sum -c --ignore-missing SHA256SUMS)
+  (cd "$PAYLOAD_DIR" && sha256sum --strict -c SHA256SUMS)
 fi
+
+# Validate boot.img Android magic before touching any partitions
+validate_boot_img() {
+  local img="$1"
+  local magic
+  magic="$(head -c 8 "$img" 2>/dev/null || true)"
+  if [ "$magic" != "ANDROID!" ]; then
+    echo "ERROR: Invalid boot image: $img does not have 'ANDROID!' header magic." >&2
+    exit 1
+  fi
+}
+validate_boot_img "$BOOT_IMG"
 
 echo "=========================================================="
 echo "          rgslide-linux Flashing Utility                  "
@@ -228,8 +240,14 @@ if [ "$MODE" = "fastboot" ]; then
   echo "  Detected product:      ${FB_PRODUCT:-<unknown>}"
   echo "  Detected current-slot: ${FB_SLOT:-<unknown>}"
 
-  if [ -n "$FB_PRODUCT" ] && [[ "$FB_PRODUCT" != *ums9620* ]] && [[ "$FB_PRODUCT" != *rgslide* ]]; then
-    echo "ERROR: Refusing to flash unexpected device product '$FB_PRODUCT' (expected ums9620 / rgslide)." >&2
+  FB_PRODUCT_LOWER="$(echo "$FB_PRODUCT" | tr '[:upper:]' '[:lower:]')"
+  # Accept Unisoc T820 platforms and known Anbernic model variants (RG Slide, RG406H, RG476H)
+  if [ -n "$FB_PRODUCT" ] && [[ "$FB_PRODUCT_LOWER" != *ums9620* ]] && \
+     [[ "$FB_PRODUCT_LOWER" != *rgslide* ]] && \
+     [[ "$FB_PRODUCT_LOWER" != *rg*406* ]] && \
+     [[ "$FB_PRODUCT_LOWER" != *rg*476* ]] && \
+     [[ "$FB_PRODUCT_LOWER" != *anbernic* ]]; then
+    echo "ERROR: Refusing to flash unexpected device product '$FB_PRODUCT' (expected ums9620 / rgslide / rg406h / rg476h)." >&2
     exit 1
   fi
 
@@ -250,6 +268,25 @@ if [ "$MODE" = "fastboot" ]; then
     "$FASTBOOT_BIN" flash userdata "$USERDATA_IMG"
   fi
   "$FASTBOOT_BIN" set_active "$SLOT"
+
+  echo "Verifying flashed boot partition via fastboot..."
+  # When fastboot supports reading back boot partition, verify sha256 checksum
+  VERIFY_TMP="$(mktemp -d /tmp/fb_verify.XXXXXX)"
+  BOOT_SIZE="$(stat -c %s "$BOOT_IMG")"
+  if "$FASTBOOT_BIN" fetch "boot_${SLOT}" "$VERIFY_TMP/boot_read.img" >/dev/null 2>&1; then
+    truncate -s "$BOOT_SIZE" "$VERIFY_TMP/boot_read.img" 2>/dev/null || true
+    HASH_ORIG="$(sha256sum "$BOOT_IMG" | awk '{print $1}')"
+    HASH_READ="$(sha256sum "$VERIFY_TMP/boot_read.img" | awk '{print $1}')"
+    if [ "$HASH_ORIG" = "$HASH_READ" ]; then
+      echo "  -> boot_${SLOT} hash verification SUCCESS ($HASH_READ)"
+    else
+      echo "WARNING: boot_${SLOT} read-back hash mismatch (wrote $HASH_ORIG, read $HASH_READ)" >&2
+    fi
+  else
+    echo "  (fastboot fetch not supported by device LK; skipping read-back hash)"
+  fi
+  rm -rf "$VERIFY_TMP"
+
   echo "Fastboot flashing completed. Run '$FASTBOOT_BIN reboot' when ready."
   exit 0
 fi
@@ -284,7 +321,7 @@ if [ "$SLOT" = "a" ] && [ "$SKIP_MISC" -eq 0 ]; then
 fi
 
 if [ "$ASSUME_YES" -eq 0 ]; then
-  read -r -p "Confirm this is an Anbernic RG Slide (ums9620) and you have a stock backup. Type FLASH to proceed: " CONFIRM
+  read -r -p "Confirm this is an Anbernic T820 device (RG Slide / RG406H / RG476H) and you have a stock backup. Type FLASH to proceed: " CONFIRM
   if [ "$CONFIRM" != "FLASH" ]; then
     echo "Aborted."
     exit 1
@@ -293,11 +330,11 @@ fi
 
 echo ""
 echo "INSTRUCTIONS:"
-echo "1. Power OFF your Anbernic RG Slide completely (hold Vol-Down + Power if frozen)."
-echo "2. Hold the BACK button on the right side of the screen."
+echo "1. Power OFF your console completely (hold Vol-Down + Power if frozen)."
+echo "2. Hold the BACK button (or BROM key for your model)."
 echo "3. While holding the BACK button, connect the USB-C cable to your PC."
 echo ""
-echo "Waiting for RG Slide in BROM mode (up to ${WAIT_SECS} seconds)..."
+echo "Waiting for device in BROM mode (up to ${WAIT_SECS} seconds)..."
 
 chmod +x "$SPD_DUMP" 2>/dev/null || true
 if [ "$(id -u)" -ne 0 ]; then
