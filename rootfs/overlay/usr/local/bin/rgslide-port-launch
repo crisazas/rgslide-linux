@@ -1,6 +1,7 @@
 #!/bin/bash
 # Lanzador de PortMaster y ports (.sh) desde ES-DE en la RG Slide.
-# Configura libhybris, SDL2-hybris y rgslide-python3 (para evitar la colision TLS con Mali).
+# Configura libhybris, SDL2-hybris, rgslide-python3, mapeo exacto del mando RG Slide
+# y supervision con hotkey-launch.py (Select+Home dos veces en 4 s abre el panel y vuelve a ES-DE).
 set -u
 
 [ -r /opt/hybris-glvnd/etc/rgslide-hybris.sh ] && . /opt/hybris-glvnd/etc/rgslide-hybris.sh
@@ -10,9 +11,19 @@ export LD_LIBRARY_PATH="/usr/local/lib/aarch64-linux-gnu:/opt/hybris/lib${LD_LIB
 export PATH="/usr/local/lib/rgslide-pybin:$PATH"
 unset HYBRIS_DRM_REFRESH
 
-mkdir -p /run/rgslide 2>/dev/null || true
-echo game >/run/rgslide/session 2>/dev/null || true
-trap 'echo menu >/run/rgslide/session 2>/dev/null || true' EXIT
+RGSLIDE_GCDB="19009b4d4b4800000111000000010000,retrogame_joypad,a:b0,b:b1,x:b3,y:b4,back:b10,guide:b12,start:b11,leftstick:b13,rightstick:b14,leftshoulder:b6,rightshoulder:b7,dpup:b15,dpdown:b16,dpleft:b17,dpright:b18,leftx:a0,lefty:a1,rightx:a3,righty:a4,lefttrigger:a2,righttrigger:a5,crc:4d9b,platform:Linux,"
+export SDL_GAMECONTROLLERCONFIG="$RGSLIDE_GCDB"
+
+# Garantizar que gamecontrollerdb.txt de PortMaster tenga el mapeo exacto de la RG Slide
+# (reemplaza la entrada generica 190000004b4800000111000000010000 con botones distintos).
+PM_GCDB="/opt/tools/PortMaster/gamecontrollerdb.txt"
+RGSLIDE_GCDB_FILE="/usr/share/rgslide/ports/rgslide-gamecontrollerdb.txt"
+if [ -f "$PM_GCDB" ] && [ -r "$RGSLIDE_GCDB_FILE" ] && ! grep -q '^19009b4d4b4800000111000000010000,' "$PM_GCDB" 2>/dev/null; then
+    tmpdb=$(mktemp /tmp/gcdb.XXXXXX)
+    cat "$RGSLIDE_GCDB_FILE" > "$tmpdb"
+    grep -v '^190000004b4800000111000000010000,' "$PM_GCDB" >> "$tmpdb" 2>/dev/null || true
+    mv -f "$tmpdb" "$PM_GCDB" 2>/dev/null || rm -f "$tmpdb"
+fi
 
 if [ $# -lt 1 ]; then
     echo "uso: rgslide-port-launch <script.sh> [args...]" >&2
@@ -21,4 +32,12 @@ fi
 
 script="$1"
 shift
+
+if [ -x /usr/local/lib/rgslide/hotkey-launch.py ]; then
+    exec /usr/local/lib/rgslide/hotkey-launch.py -- bash "$script" "$@"
+fi
+
+mkdir -p /run/rgslide 2>/dev/null || true
+echo game >/run/rgslide/session 2>/dev/null || true
+trap 'echo menu >/run/rgslide/session 2>/dev/null || true' EXIT
 bash "$script" "$@"

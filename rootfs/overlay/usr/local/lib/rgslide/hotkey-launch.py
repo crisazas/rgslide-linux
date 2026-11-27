@@ -205,17 +205,40 @@ def _run_retroarch(core, rom):
             g.close()
 
 
+def _kill_group(p, sig):
+    try:
+        os.killpg(p.pid, sig)
+    except OSError:
+        try:
+            p.send_signal(sig)
+        except OSError:
+            pass
+
+
+def _cleanup_port_helpers():
+    for proc in ("gptokeyb2", "gptokeyb"):
+        try:
+            subprocess.run(["sudo", "-n", "pkill", "-9", "-x", proc],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
+
 def run_generic(cmd):
     """Emulador que no es RetroArch: sin estados. Primer combo = aviso (vibracion); segundo en CONFIRM_S s = cierra y abre el panel."""
     set_session("game")
-    p = subprocess.Popen(cmd)
+    p = subprocess.Popen(cmd, start_new_session=True)
     armed = 0.0
     try:
         return _generic_loop(p, armed)
     finally:
         if p.poll() is None:
-            p.kill()
-            p.wait()
+            _kill_group(p, signal.SIGKILL)
+            try:
+                p.wait(3)
+            except subprocess.TimeoutExpired:
+                pass
+        _cleanup_port_helpers()
 
 
 def _generic_loop(p, armed):
@@ -225,12 +248,16 @@ def _generic_loop(p, armed):
             now = time.monotonic()
             if armed and now - armed <= CONFIRM_S:
                 buzz(2)
-                p.terminate()
+                _kill_group(p, signal.SIGTERM)
                 try:
                     p.wait(QUIT_TIMEOUT)
                 except subprocess.TimeoutExpired:
-                    p.kill()
-                    p.wait()
+                    _kill_group(p, signal.SIGKILL)
+                    try:
+                        p.wait(3)
+                    except subprocess.TimeoutExpired:
+                        pass
+                _cleanup_port_helpers()
                 run_panel()
                 if os.path.exists(KILLREQ):
                     try:
