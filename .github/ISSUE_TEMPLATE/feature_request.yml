@@ -1,0 +1,19 @@
+name: Feature / Hardware Support Request
+description: Propose an improvement, hardware driver effort, or build-system enhancement
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What capability or fix are you proposing?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Hardware / Technical Context
+      description: Any relevant references, datasheets, upstream commits, or RG Slide observations.
+    validations:
+      required: false

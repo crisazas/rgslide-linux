@@ -7,7 +7,7 @@ Plan completo: `PLAN.md`. Estado: `PROGRESS.md`.
 - Anbernic RG Slide, SoC Unisoc T820 = `ums9620_2h10`. Sin microSD: todo por USB (`fastboot` para iterar, `spd_dump`/BROM solo para `uboot` y rescate).
 - Entrar en BROM: botón **Back del lado derecho de la pantalla** mantenido al conectar el USB (confirmado por el usuario; a veces varía). Forzar apagado: **Vol-down + Power**.
 - El usuario NO quiere respaldar datos personales de la Slide (partidas, ROMs, capturas).
-- Slot A = pruebas, slot B = último arranque bueno.
+- Slot A = pruebas de desarrollo (`fastboot`), slot B = último arranque bueno / instalación de release (`boot_b` + `misc`).
 
 ## Rutas
 - `third_party/` clones (sin push): `rg-rotate-linux`, `base618`, `UnisocBypass`, `mu300-linux`.
@@ -17,6 +17,6 @@ Plan completo: `PLAN.md`. Estado: `PROGRESS.md`.
 ## Reglas
 - El proyecto vive dentro del repo del home (`/home/console`), que solo versiona config: aquí hay `.git` propio y `rgslide/` está en el `.gitignore` del home. **Nunca** `git add` desde el home.
 - Los subagentes escriben, pero **no commitean**: el índice de git lo mueve un solo agente.
-- Antes de escribir en el equipo, `fastboot getvar current-slot` y confirmar que se escribe en A.
+- Antes de escribir en el equipo en iteración de desarrollo, `fastboot getvar current-slot` y confirmar que se escribe en A (Slot B queda reservado para la imagen buena / release).
 - Verificación: `python3 -m compileall -q scripts tools initramfs` si hay `*.py`; `dtc -I dtb -O dts` sobre cualquier DTB que se toque.
 - `sudo` sin contraseña; instalar paquetes pide OK.

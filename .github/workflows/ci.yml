@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check required legal and manifest files
+        run: |
+          for f in LICENSE NOTICE THIRD-PARTY.md MANIFEST.md CONTRIBUTING.md README.md README.es.md tools/flash-rgslide.sh; do
+            test -s "$f" || { echo "Missing required file: $f"; exit 1; }
+          done
+
+      - name: Verify vendored tool checksums (MANIFEST.md)
+        run: |
+          sha256sum -c <<'EOF'
+          e5a664a38db623da00f080219bc0ee60a640a9dc4a872803616fae4938ac749b  tools/avbtool.py
+          37d84b3d162e0bc62e36c1f4e1c63c85ea0caa9f29be023eb2f8efe006ad948c  tools/mkbootimg.py
+          a9d260978a63bd06a24b6347e7dee8a28ff96639793caea15dff6aa491316308  tools/unpack_bootimg.py
+          1bb1feec68a13da18d581aa2c631798f86f6bc10b55d587b2dd31446a0f8a203  tools/gki/generate_gki_certificate.py
+          26f3f2c8f577ad27dd309bb9413d5a240888537fead7a75c85cd20b52a3fe78f  tools/lpunpack
+          5740b3815b6d16f4d6ab37d101544c12feb5f751069c98cafd0adca010be721b  tools/spd_dump
+          EOF
+
+      - name: Compile-check Python scripts
+        run: python3 -m compileall -q scripts tools initramfs
+
+      - name: Syntax-check shell scripts
+        run: |
+          bash -n tools/flash-rgslide.sh
+          for s in scripts/*.sh; do
+            sh -n "$s"
+          done
+
+      - name: Smoke-test flash-rgslide.sh --dry-run
+        run: |
+          TMP="$(mktemp -d)"
+          trap 'rm -rf "$TMP"' EXIT
+          touch "$TMP/boot.img" "$TMP/misc.img" "$TMP/userdata.ext4" "$TMP/fdl1-dl.bin" "$TMP/fdl2-dl.bin"
+          printf 'dummy' > "$TMP/boot.img"
+          printf 'dummy' > "$TMP/misc.img"
+          printf 'dummy' > "$TMP/userdata.ext4"
+          printf 'dummy' > "$TMP/fdl1-dl.bin"
+          printf 'dummy' > "$TMP/fdl2-dl.bin"
+          bash tools/flash-rgslide.sh --dir "$TMP" --dry-run
+          bash tools/flash-rgslide.sh --mode fastboot --slot a --dir "$TMP" --dry-run

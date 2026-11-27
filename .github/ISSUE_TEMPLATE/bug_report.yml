@@ -1,0 +1,41 @@
+name: Bug Report
+description: Report a boot panic, hardware quirk, graphics glitch, or flashing issue on the RG Slide
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check `README.md` (Known Limitations) and `docs/quirks.md` before filing a duplicate report.
+  - type: input
+    id: release
+    attributes:
+      label: Release / Commit
+      description: Release tag (e.g. v0.9.0-rc1) or git commit hash
+      placeholder: v0.9.0-rc1
+    validations:
+      required: true
+  - type: dropdown
+    id: slot
+    attributes:
+      label: Boot Slot & Flash Method
+      options:
+        - Slot B (BROM release flash)
+        - Slot A (fastboot dev build)
+        - Custom build
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Clear description of the bug and how often it reproduces (e.g. 1 in 5 cold boots).
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs (`journalctl`, `dmesg`, `/var/lib/systemd/pstore/`, or `spd_dump`)
+      render: shell
+    validations:
+      required: false

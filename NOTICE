@@ -1,0 +1,54 @@
+rgslide-linux
+Copyright (c) 2026 rgslide-linux contributors
+
+This repository and its prebuilt release archives include or rely upon
+third-party software components under their respective licenses:
+
+1. Android Open Source Project (AOSP) tools in tools/
+   - tools/mkbootimg.py, tools/unpack_bootimg.py,
+     tools/gki/generate_gki_certificate.py
+     Copyright (c) 2015-2024 The Android Open Source Project
+     Licensed under the Apache License, Version 2.0.
+   - tools/avbtool.py
+     Copyright (c) 2016 The Android Open Source Project
+     Licensed under the MIT License.
+
+2. lpunpack (tools/lpunpack)
+   - Upstream: https://github.com/unix3dgforce/lpunpack (commit c59b8f3)
+   - Pure Python Android dynamic partition (super.img) unpacker.
+
+3. spd_dump (tools/spd_dump)
+   - Prebuilt x86_64 static musl binary obtained from
+     beebono/rg-rotate-linux (commit 94d2d27), originally built via
+     TomKing062/action_spd_dump_it (closed-source fork/extensions of
+     ilyakurdyukov/spreadtrum_flash).
+
+4. RetroArch 1.22.2 and libretro cores (in prebuilt release images)
+   - RetroArch: Copyright (c) The RetroArch Team, licensed under GPLv3.
+   - Corresponding source code and patches: see THIRD-PARTY.md.
+
+5. EmulationStation Desktop Edition (ES-DE) 3.5.0 (in prebuilt release images)
+   - Copyright (c) Leon Styhre and contributors, licensed under the MIT
+     License (with bundled third-party components under their respective
+     licenses, including GPL/LGPL where applicable).
+   - Corresponding source code and patches: see THIRD-PARTY.md.
+
+6. libhybris, Halium android-headers / hybris-patches, AOSP bionic 13, SDL2
+   - libhybris: Apache-2.0 (https://github.com/libhybris/libhybris)
+   - Halium android-headers & hybris-patches: Apache-2.0
+   - AOSP bionic (Android 13): BSD / Apache-2.0
+   - SDL2 2.32.4: zlib License
+
+7. Debian 13 (Trixie) arm64 base packages (in prebuilt release images)
+   - Distributed under their respective free/open-source licenses; source
+     packages are available from Debian (https://deb.debian.org/debian/).
+
+8. Proprietary device blobs (in prebuilt release images ONLY, NOT in Git)
+   - Prebuilt release images contain vendor binaries extracted from stock
+     Anbernic RG Slide firmware (Arm Mali-G57 libGLES_mali.so, Android vendor
+     libraries, Unisoc kernel 5.4.233 modules, Wi-Fi/BT firmware, FDL1/FDL2).
+   - These remain the property of their respective copyright holders (Arm,
+     Unisoc, Anbernic, Google/AOSP) and are not covered by the MIT License.
+
+For complete license details, exact upstream commits, source tarballs, and
+GPLv3 written offer for source code, see THIRD-PARTY.md and MANIFEST.md.
