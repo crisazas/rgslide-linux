@@ -131,16 +131,35 @@ done
 export XDG_RUNTIME_DIR="$RT_DIR"
 export WAYLAND_DISPLAY="wayland-1"
 [ -n "$XDISP" ] && export DISPLAY="$XDISP"
-export SDL_VIDEODRIVER=wayland
 export __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json
-export VK_ICD_FILENAMES=/etc/vulkan/icd.d/panfrost_icd.aarch64.json
-export MESA_LOADER_DRIVER_OVERRIDE=zink
-export GALLIUM_DRIVER=zink
-export LIBGL_KOPPER_DRI2=1
 export SDL_GAMECONTROLLERCONFIG="19009b4d4b4800000111000000010000,retrogame_joypad,a:b0,b:b1,x:b3,y:b4,back:b10,guide:b12,start:b11,leftstick:b13,rightstick:b14,leftshoulder:b6,rightshoulder:b7,dpup:b15,dpdown:b16,dpleft:b17,dpright:b18,leftx:a0,lefty:a1,rightx:a3,righty:a4,lefttrigger:a2,righttrigger:a5,crc:4d9b,platform:Linux,"
 export LD_LIBRARY_PATH="/usr/lib/aarch64-linux-gnu${CLEAN_WLP:+:$CLEAN_WLP}"
-unset LIBGL_ALWAYS_SOFTWARE LD_PRELOAD HYBRIS_LINKER_DIR HYBRIS_EGLPLATFORM_DIR HYBRIS_EGLPLATFORM LIBEGL LIBGLESV2 LIBGLESV1_CM HYBRIS_LD_LIBRARY_PATH
+unset LD_PRELOAD HYBRIS_LINKER_DIR HYBRIS_EGLPLATFORM_DIR HYBRIS_EGLPLATFORM LIBEGL LIBGLESV2 LIBGLESV1_CM HYBRIS_LD_LIBRARY_PATH
 
-env "${GAME_ENV[@]}" "$@"
-rc=$?
+# Detectar si el binario soporta Wayland (enlace dinamico a libwayland-client o libSDL2 de Debian):
+# - Con Wayland: usar Mesa Zink + PanVK (GPU Mali-G57 via VK_KHR_wayland_surface).
+# - Solo X11 (p. ej. ags estatico sin Wayland o Allegro4): XWayland sin DRI3 no soporta swapchain GLX en Zink,
+#   asi que usamos X11 + llvmpipe (o software 2D directo en ags para maxima fluidez y audio limpio).
+GAME_BIN="$1"
+if [ -x "$GAME_BIN" ] && ldd "$GAME_BIN" 2>/dev/null | grep -qE 'libwayland-client|libSDL2-2\.0'; then
+    export SDL_VIDEODRIVER=wayland
+    export VK_ICD_FILENAMES=/etc/vulkan/icd.d/panfrost_icd.aarch64.json
+    export MESA_LOADER_DRIVER_OVERRIDE=zink
+    export GALLIUM_DRIVER=zink
+    unset LIBGL_ALWAYS_SOFTWARE
+else
+    export SDL_VIDEODRIVER=x11
+    export LIBGL_ALWAYS_SOFTWARE=1
+    export LP_NUM_THREADS=4
+    unset MESA_LOADER_DRIVER_OVERRIDE GALLIUM_DRIVER
+fi
+
+if [ "$(basename "$GAME_BIN")" = "ags" ]; then
+    shift
+    env "${GAME_ENV[@]}" "$GAME_BIN" --gfxdriver software "$@"
+    rc=$?
+else
+    env "${GAME_ENV[@]}" "$@"
+    rc=$?
+fi
 exit "$rc"
