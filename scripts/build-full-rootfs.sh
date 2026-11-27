@@ -104,6 +104,10 @@ if [ -d out/retroarch-stage/opt/retroarch ]; then
     sudo cp -a out/retroarch-stage/opt/retroarch "$T/opt/"
     [ -f out/retroarch-root/opt/retroarch/bin/retroarch ] && \
         sudo install -m 755 out/retroarch-root/opt/retroarch/bin/retroarch "$T/opt/retroarch/bin/retroarch"
+    [ -d out/extra-cores ] && \
+        sudo cp -a out/extra-cores/*.so "$T/opt/retroarch/lib/libretro/" 2>/dev/null || true
+    [ -d out/extra-cores-info ] && \
+        sudo cp -a out/extra-cores-info/*.info "$T/opt/retroarch/info/" 2>/dev/null || true
     [ -d out/ra-extra-libs/usr/lib/aarch64-linux-gnu ] && \
         sudo cp -a out/ra-extra-libs/usr/lib/aarch64-linux-gnu/. "$T/opt/retroarch/lib/"
     if [ -d out/ra-assets-x/usr/share/libretro/assets ]; then
