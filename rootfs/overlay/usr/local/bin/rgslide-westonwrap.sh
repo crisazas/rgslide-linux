@@ -66,6 +66,10 @@ idle-time=0
 
 [shell]
 locking=false
+
+[output]
+name=DSI-1
+scale=2
 EOF
 
 # Lanzar Weston DRM + Pixman (sin libhybris ni libtlspad)
@@ -126,6 +130,8 @@ export WAYLAND_DISPLAY="wayland-1"
 [ -n "$XDISP" ] && export DISPLAY="$XDISP"
 export __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json
 export LIBGL_ALWAYS_SOFTWARE=1
+export LP_NUM_THREADS=4
+export SDL_GAMECONTROLLERCONFIG="19009b4d4b4800000111000000010000,retrogame_joypad,a:b0,b:b1,x:b3,y:b4,back:b10,guide:b12,start:b11,leftstick:b13,rightstick:b14,leftshoulder:b6,rightshoulder:b7,dpup:b15,dpdown:b16,dpleft:b17,dpright:b18,leftx:a0,lefty:a1,rightx:a3,righty:a4,lefttrigger:a2,righttrigger:a5,crc:4d9b,platform:Linux,"
 export LD_LIBRARY_PATH="${CLEAN_WLP:+$CLEAN_WLP:}/usr/lib/aarch64-linux-gnu"
 unset LD_PRELOAD SDL_VIDEODRIVER HYBRIS_LINKER_DIR HYBRIS_EGLPLATFORM_DIR HYBRIS_EGLPLATFORM LIBEGL LIBGLESV2 LIBGLESV1_CM HYBRIS_LD_LIBRARY_PATH
 
