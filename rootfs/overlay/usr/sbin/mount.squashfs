@@ -31,6 +31,17 @@ if [ -z "$src" ] || [ -z "$dst" ]; then
     exit 1
 fi
 
+# Limpiar posibles montajes FUSE huerfanos (Transport endpoint is not connected) en $dst
+dst_clean="${dst%/}"
+for _ in 1 2 3 4 5; do
+    if grep -q " ${dst_clean} " /proc/mounts 2>/dev/null; then
+        umount -l "$dst_clean" 2>/dev/null || break
+    else
+        break
+    fi
+done
+mkdir -p "$dst_clean" 2>/dev/null || true
+
 real_src="$src"
 case "$src" in
     /dev/loop*)

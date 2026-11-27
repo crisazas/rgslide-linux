@@ -228,6 +228,16 @@ def _cleanup_port_helpers():
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
         except (OSError, subprocess.TimeoutExpired):
             pass
+    # Limpiar montajes fuse.squashfuse temporales bajo /tmp (p. ej. /tmp/demo de Zniw Adventure)
+    try:
+        with open("/proc/mounts") as f:
+            mounts = [line.split()[1] for line in f
+                      if len(line.split()) >= 3 and line.split()[2] == "fuse.squashfuse" and line.split()[1].startswith("/tmp/")]
+        for m in reversed(mounts):
+            subprocess.run(["sudo", "-n", "umount", "-l", m],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
 
 
 def run_generic(cmd):
