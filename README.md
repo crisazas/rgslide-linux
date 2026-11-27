@@ -4,9 +4,9 @@ Native Linux distribution (Debian 13 Trixie arm64) for the **Anbernic RG Slide**
 
 ---
 
-## 🎮 Project Status: What Works & Known Limitations
+## Project Status: What Works & Known Limitations
 
-### ✅ Fully Working
+### Fully Working
 
 * **Display & 3D Hardware Acceleration (Mali-G57 GPU):**
   - Native display panel running at full resolution with proper orientation and high refresh rate (up to 120 Hz).
@@ -31,7 +31,7 @@ Native Linux distribution (Debian 13 Trixie arm64) for the **Anbernic RG Slide**
 
 ---
 
-### ⏳ Work in Progress / Known Limitations
+### Work in Progress / Known Limitations
 
 * **Deep Sleep (S2idle):**
   - Currently restricted to light sleep to prevent I2C/sensorhub bus lockups on resume.
@@ -42,7 +42,7 @@ Native Linux distribution (Debian 13 Trixie arm64) for the **Anbernic RG Slide**
 
 ---
 
-## 🛠️ Architecture Overview
+## Architecture Overview
 
 ```
 +-------------------------------------------------------------+
@@ -63,7 +63,7 @@ Native Linux distribution (Debian 13 Trixie arm64) for the **Anbernic RG Slide**
 
 ---
 
-## 📂 Repository Layout
+## Repository Layout
 
 - `rootfs/overlay/`: Complete Debian system overlay (systemd units, network configuration, sound daemons, hotkey scripts).
 - `tools/`: Source code for custom utilities:
@@ -87,7 +87,7 @@ Native Linux distribution (Debian 13 Trixie arm64) for the **Anbernic RG Slide**
 
 ---
 
-## 🏗️ Building the Image
+## Building the Image
 
 ### Prerequisites (Host PC)
 - Linux x86_64 or aarch64 (Ubuntu 22.04+ or Debian 12+ recommended).
@@ -119,6 +119,6 @@ Native Linux distribution (Debian 13 Trixie arm64) for the **Anbernic RG Slide**
 
 ---
 
-## ⚠️ Disclaimer
+## Disclaimer
 
 This project replaces the stock Android operating system. Proprietary firmware and Android vendor blobs (`dump/`) are not distributed in this repository due to copyright restrictions; you must dump them from your own device before assembling the final rootfs.
