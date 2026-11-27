@@ -1,7 +1,9 @@
 #!/bin/sh
 # Helper para `mount -t squashfs` (y autodeteccion blkid) en kernels sin squashfs.ko:
-# delega transparentemente en squashfuse usando el soporte FUSE integrado en el kernel.
-# Necesario para runtimes .squashfs de PortMaster (weston, dotnet, gmtoolkit, godot, mono, etc.).
+# 1) Si se monta weston_pkg_*.squashfs y existe /usr/local/bin/rgslide-westonwrap.sh,
+#    monta un tmpfs con nuestro westonwrap.sh nativo (Weston DRM+Pixman+XWayland de Debian).
+# 2) Para el resto de imagenes .squashfs (dotnet, gmtoolkit, godot, mono, etc.),
+#    delega transparentemente en squashfuse usando el soporte FUSE integrado en el kernel.
 set -e
 
 src=""
@@ -28,5 +30,21 @@ if [ -z "$src" ] || [ -z "$dst" ]; then
     echo "uso: mount.squashfs <imagen.squashfs> <punto_montaje>" >&2
     exit 1
 fi
+
+real_src="$src"
+case "$src" in
+    /dev/loop*)
+        bf="/sys/block/$(basename "$src")/loop/backing_file"
+        [ -r "$bf" ] && real_src=$(cat "$bf" 2>/dev/null || echo "$src") ;;
+esac
+
+case "$(basename "$real_src")" in
+    weston_pkg_*.squashfs)
+        if [ -x /usr/local/bin/rgslide-westonwrap.sh ]; then
+            mount -t tmpfs -o size=1M tmpfs "$dst"
+            ln -sf /usr/local/bin/rgslide-westonwrap.sh "$dst/westonwrap.sh"
+            exit 0
+        fi ;;
+esac
 
 exec squashfuse -o allow_other,ro "$src" "$dst"

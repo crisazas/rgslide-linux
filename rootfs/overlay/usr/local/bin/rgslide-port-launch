@@ -34,6 +34,15 @@ fi
 script="$1"
 shift
 
+# Desactivar copias viejas de libSDL2_image empaquetadas para Ubuntu (enlazan libjpeg.so.8)
+# que impiden arrancar en Debian Trixie (libjpeg.so.62).
+script_dir=$(dirname "$script")
+for cand in "$script_dir"/*/libs/libSDL2_image-2.0.so.0 "$script_dir"/*/libs.aarch64/libSDL2_image-2.0.so.0; do
+    if [ -f "$cand" ] && ldd "$cand" 2>/dev/null | grep -q 'libjpeg.so.8 => not found'; then
+        mv -f "$cand" "${cand}.bak" 2>/dev/null || true
+    fi
+done
+
 if [ -x /usr/local/lib/rgslide/hotkey-launch.py ]; then
     exec /usr/local/lib/rgslide/hotkey-launch.py -- bash "$script" "$@"
 fi

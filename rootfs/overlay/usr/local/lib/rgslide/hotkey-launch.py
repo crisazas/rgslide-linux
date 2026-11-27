@@ -216,9 +216,15 @@ def _kill_group(p, sig):
 
 
 def _cleanup_port_helpers():
-    for proc in ("gptokeyb2", "gptokeyb"):
+    for proc in ("gptokeyb2", "gptokeyb", "weston"):
         try:
             subprocess.run(["sudo", "-n", "pkill", "-9", "-x", proc],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    if os.path.ismount("/tmp/weston"):
+        try:
+            subprocess.run(["sudo", "-n", "umount", "-l", "/tmp/weston"],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
         except (OSError, subprocess.TimeoutExpired):
             pass

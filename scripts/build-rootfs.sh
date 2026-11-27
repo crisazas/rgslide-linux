@@ -6,7 +6,7 @@ set -eu
 cd "$(dirname "$0")/.."
 OUT=$PWD/out; R=$OUT/rootfs; IMG=$OUT/rootfs.ext4; SIZE=${SIZE:-1500M}
 MIRROR=${MIRROR:-http://deb.debian.org/debian}
-PKGS="systemd systemd-sysv init systemd-resolved openssh-server iwd wpasupplicant bluez usbutils pciutils evtest libinput-tools iproute2 iputils-ping ca-certificates locales sudo vim-tiny htop strace picocom mesa-utils kmscube weston fonts-noto-core fonts-dejavu-core libpython3.13 libsdl2-mixer-2.0-0 libsdl2-image-2.0-0 libsdl2-ttf-2.0-0 libsdl2-net-2.0-0 libsdl2-gfx-1.0-0 libopenal1 libvorbisfile3 libmodplug1 libopusfile0 libtheora0 squashfuse fuse3 unzip curl"
+PKGS="systemd systemd-sysv init systemd-resolved openssh-server iwd wpasupplicant bluez usbutils pciutils evtest libinput-tools iproute2 iputils-ping ca-certificates locales sudo vim-tiny htop strace picocom mesa-utils kmscube weston xwayland seatd libxpm4 fonts-noto-core fonts-dejavu-core libpython3.13 libsdl2-mixer-2.0-0 libsdl2-image-2.0-0 libsdl2-ttf-2.0-0 libsdl2-net-2.0-0 libsdl2-gfx-1.0-0 libopenal1 libvorbisfile3 libmodplug1 libopusfile0 libtheora0 squashfuse fuse3 unzip curl"
 
 umnt() { for m in dev sys proc; do mountpoint -q "$R/$m" && { sudo mount --make-rslave "$R/$m"; sudo umount -R "$R/$m"; }; done; return 0; }
 trap umnt EXIT
