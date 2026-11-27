@@ -2,12 +2,16 @@
 # Sustituto nativo de PortMaster Westonpack (westonwrap.sh) para la Anbernic RG Slide.
 # En sprd_drm no existe driver GBM/Mesa para Wayland, por lo que Westonpack original falla.
 # Este wrapper arranca el Weston nativo de Debian con --backend=drm --use-pixman + kiosk-shell
-# + XWayland y ejecuta el juego con Mesa software EGL/GL (llvmpipe) y SDL2 Wayland/X11 de Debian.
+# + XWayland y ejecuta los juegos X11/OpenGL acelerados por GPU Mali-G57 via Mesa Zink + PanVK
+# (kopper sobre X11 MIT-SHM con LIBGL_KOPPER_DRI2=1 y PANVK_KBASE_DRI3=0, OpenGL 4.2 / GLES 3.1).
+# Si se define RGSLIDE_WESTON_SW=1 (o falta PanVK), cae a Mesa llvmpipe (4 hilos).
 set -u
 
-RT_DIR="/tmp/rgslide-weston-rt"
-PID_FILE="/tmp/rgslide-weston.pid"
-INI_FILE="/tmp/rgslide-weston.ini"
+UID_TAG="$(id -u)"
+RT_DIR="/tmp/rgslide-weston-rt-${UID_TAG}"
+PID_FILE="/tmp/rgslide-weston-${UID_TAG}.pid"
+INI_FILE="/tmp/rgslide-weston-${UID_TAG}.ini"
+LOG_FILE="/tmp/rgslide-weston-${UID_TAG}.log"
 
 stop_weston() {
     if [ -f "$PID_FILE" ]; then
@@ -40,7 +44,7 @@ GAME_ENV=()
 while [ $# -gt 0 ]; do
     case "$1" in
         SDL_VIDEODRIVER=)
-            # Ignorar SDL_VIDEODRIVER vacio para que SDL2 use wayland (Zink + PanVK) en lugar de X11 sin DRI3
+            # Ignorar SDL_VIDEODRIVER vacio para usar X11 (Zink + PanVK sobre XWayland MIT-SHM)
             shift ;;
         [A-Za-z_]*=*)
             GAME_ENV+=("$1")
@@ -101,7 +105,7 @@ env -u LD_PRELOAD \
     __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json \
     LIBGL_ALWAYS_SOFTWARE=1 \
     /usr/bin/weston --config="$INI_FILE" --backend=drm --drm-device=card0 --use-pixman --socket=wayland-1 \
-    >/tmp/rgslide-weston.log 2>&1 &
+    >"$LOG_FILE" 2>&1 &
 WPID=$!
 echo "$WPID" > "$PID_FILE"
 
@@ -118,7 +122,7 @@ done
 
 if [ "$ready" -ne 1 ]; then
     echo "rgslide-westonwrap: weston no pudo iniciar:" >&2
-    cat /tmp/rgslide-weston.log >&2 || true
+    cat "$LOG_FILE" >&2 || true
     exit 1
 fi
 
@@ -152,15 +156,28 @@ export SDL_GAMECONTROLLERCONFIG="19009b4d4b4800000111000000010000,retrogame_joyp
 export LD_LIBRARY_PATH="/usr/lib/aarch64-linux-gnu${CLEAN_WLP:+:$CLEAN_WLP}"
 unset LD_PRELOAD HYBRIS_LINKER_DIR HYBRIS_EGLPLATFORM_DIR HYBRIS_EGLPLATFORM LIBEGL LIBGLESV2 LIBGLESV1_CM HYBRIS_LD_LIBRARY_PATH
 
-# Dentro de Weston (--use-pixman, sin zwp_linux_dmabuf_v1), usar Mesa llvmpipe (4 hilos, 640x480 scale=2)
-# para evitar fugas de memoria de swapchain en Zink sobre Pixman.
-export LIBGL_ALWAYS_SOFTWARE=1
-export LP_NUM_THREADS=4
-unset MESA_LOADER_DRIVER_OVERRIDE GALLIUM_DRIVER
-if [ -x "$1" ] && ldd "$1" 2>/dev/null | grep -qE 'libwayland-client|libSDL2-2\.0'; then
-    export SDL_VIDEODRIVER=wayland
-else
+# Aceleracion GPU Mali-G57 para juegos X11/OpenGL dentro de Westonpack via Zink + PanVK:
+# - PANVK_KBASE_DRI3=0 activa la presentacion X11 MIT-SHM/PutImage en PanVK (sin requerir DRI3)
+# - LIBGL_KOPPER_DRI2=1 permite a Mesa GLX Zink usar kopper sobre XWayland sin DRI3
+# - SDL_VIDEODRIVER=x11 enruta clientes SDL2 por XWayland para aprovechar Zink+PanVK (OpenGL 4.2)
+# Fallback a Mesa llvmpipe (4 hilos) si RGSLIDE_WESTON_SW=1 o si no existe el ICD PanVK.
+if [ "${RGSLIDE_WESTON_SW:-0}" != "1" ] && [ -r /etc/vulkan/icd.d/panfrost_icd.aarch64.json ]; then
+    unset LIBGL_ALWAYS_SOFTWARE
+    export VK_ICD_FILENAMES=/etc/vulkan/icd.d/panfrost_icd.aarch64.json
+    export PANVK_KBASE_DRI3=0
+    export LIBGL_KOPPER_DRI2=1
+    export MESA_LOADER_DRIVER_OVERRIDE=zink
+    export GALLIUM_DRIVER=zink
     export SDL_VIDEODRIVER=x11
+else
+    export LIBGL_ALWAYS_SOFTWARE=1
+    export LP_NUM_THREADS=4
+    unset MESA_LOADER_DRIVER_OVERRIDE GALLIUM_DRIVER LIBGL_KOPPER_DRI2 PANVK_KBASE_DRI3
+    if [ -x "$1" ] && ldd "$1" 2>/dev/null | grep -qE 'libwayland-client|libSDL2-2\.0'; then
+        export SDL_VIDEODRIVER=wayland
+    else
+        export SDL_VIDEODRIVER=x11
+    fi
 fi
 
 env "${GAME_ENV[@]}" "$@"
