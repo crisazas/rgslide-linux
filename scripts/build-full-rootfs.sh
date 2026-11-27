@@ -52,7 +52,8 @@ sudo chmod 755 "$T/usr/local/bin/rgslide-"* "$T/usr/local/sbin/rgslide-"* "$T/us
 echo "3/8 Modulos de fabrica 5.4.233 y firmware Wi-Fi ..."
 if [ -d "$DUMP_ROOT/live/dlkm" ] && [ -d "$DUMP_ROOT/boot/rd_vendor/lib/modules" ]; then
     sudo mkdir -p "$T/lib/modules/5.4.233"
-    sudo cp -a "$DUMP_ROOT/live/dlkm/"*.ko "$DUMP_ROOT/boot/rd_vendor/lib/modules/"*.ko "$T/lib/modules/5.4.233/"
+    sudo cp -a -f "$DUMP_ROOT/boot/rd_vendor/lib/modules/"*.ko "$T/lib/modules/5.4.233/"
+    sudo cp -a -f "$DUMP_ROOT/live/dlkm/"*.ko "$T/lib/modules/5.4.233/"
 fi
 if [ -d "$WIFI_FW_DIR" ]; then
     sudo mkdir -p "$T/usr/lib/firmware"
