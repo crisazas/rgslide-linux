@@ -39,6 +39,9 @@ fi
 GAME_ENV=()
 while [ $# -gt 0 ]; do
     case "$1" in
+        SDL_VIDEODRIVER=)
+            # Ignorar SDL_VIDEODRIVER vacio para que SDL2 use wayland (Zink + PanVK) en lugar de X11 sin DRI3
+            shift ;;
         [A-Za-z_]*=*)
             GAME_ENV+=("$1")
             shift ;;
@@ -128,6 +131,7 @@ done
 export XDG_RUNTIME_DIR="$RT_DIR"
 export WAYLAND_DISPLAY="wayland-1"
 [ -n "$XDISP" ] && export DISPLAY="$XDISP"
+export SDL_VIDEODRIVER=wayland
 export __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json
 export VK_ICD_FILENAMES=/etc/vulkan/icd.d/panfrost_icd.aarch64.json
 export MESA_LOADER_DRIVER_OVERRIDE=zink
@@ -135,7 +139,7 @@ export GALLIUM_DRIVER=zink
 export LIBGL_KOPPER_DRI2=1
 export SDL_GAMECONTROLLERCONFIG="19009b4d4b4800000111000000010000,retrogame_joypad,a:b0,b:b1,x:b3,y:b4,back:b10,guide:b12,start:b11,leftstick:b13,rightstick:b14,leftshoulder:b6,rightshoulder:b7,dpup:b15,dpdown:b16,dpleft:b17,dpright:b18,leftx:a0,lefty:a1,rightx:a3,righty:a4,lefttrigger:a2,righttrigger:a5,crc:4d9b,platform:Linux,"
 export LD_LIBRARY_PATH="${CLEAN_WLP:+$CLEAN_WLP:}/usr/lib/aarch64-linux-gnu"
-unset LIBGL_ALWAYS_SOFTWARE LD_PRELOAD SDL_VIDEODRIVER HYBRIS_LINKER_DIR HYBRIS_EGLPLATFORM_DIR HYBRIS_EGLPLATFORM LIBEGL LIBGLESV2 LIBGLESV1_CM HYBRIS_LD_LIBRARY_PATH
+unset LIBGL_ALWAYS_SOFTWARE LD_PRELOAD HYBRIS_LINKER_DIR HYBRIS_EGLPLATFORM_DIR HYBRIS_EGLPLATFORM LIBEGL LIBGLESV2 LIBGLESV1_CM HYBRIS_LD_LIBRARY_PATH
 
 env "${GAME_ENV[@]}" "$@"
 rc=$?
