@@ -1,0 +1,24 @@
+#!/bin/bash
+# Lanzador de PortMaster y ports (.sh) desde ES-DE en la RG Slide.
+# Configura libhybris, SDL2-hybris y rgslide-python3 (para evitar la colision TLS con Mali).
+set -u
+
+[ -r /opt/hybris-glvnd/etc/rgslide-hybris.sh ] && . /opt/hybris-glvnd/etc/rgslide-hybris.sh
+export SDL_VIDEODRIVER=hybris
+export PYSDL2_DLL_PATH=/usr/local/lib/aarch64-linux-gnu
+export LD_LIBRARY_PATH="/usr/local/lib/aarch64-linux-gnu:/opt/hybris/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export PATH="/usr/local/lib/rgslide-pybin:$PATH"
+unset HYBRIS_DRM_REFRESH
+
+mkdir -p /run/rgslide 2>/dev/null || true
+echo game >/run/rgslide/session 2>/dev/null || true
+trap 'echo menu >/run/rgslide/session 2>/dev/null || true' EXIT
+
+if [ $# -lt 1 ]; then
+    echo "uso: rgslide-port-launch <script.sh> [args...]" >&2
+    exit 2
+fi
+
+script="$1"
+shift
+bash "$script" "$@"

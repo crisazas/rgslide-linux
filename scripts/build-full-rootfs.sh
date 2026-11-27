@@ -26,7 +26,8 @@ fi
 SIZE=${SIZE:-3500M}
 
 [ -x "$BASE/usr/bin/dpkg" ] || { echo "falta $BASE (ejecuta scripts/build-rootfs.sh --no-image)"; exit 1; }
-for req in out/libselinux-shim.so out/libpropshim.so out/libtlspad.so out/build.prop \
+[ -x out/rgslide-python3 ] || scripts/build-rgslide-python3.sh
+for req in out/libselinux-shim.so out/libpropshim.so out/libtlspad.so out/rgslide-python3 out/build.prop \
            out/bionic-patched/libc.so out/audiod out/rgslide-ui \
            out/hybris-build/egl/platforms/drm/.libs/eglplatform_drm.so \
            out/esde-root/opt/es-de/bin/es-de out/retroarch-root/opt/retroarch/bin/retroarch; do
@@ -120,6 +121,9 @@ sudo cp -a "$T/opt/hybris-glvnd/aux/libhybris/libEGL_libhybris.so"* \
     "$T/opt/hybris-glvnd/aux/libhybris/libsync.so"* \
     "$T/opt/hybris-glvnd/aux/libhybris/libui.so"* "$T/opt/hybris-glvnd/lib/"
 sudo install -m 755 out/libtlspad.so "$T/opt/hybris-glvnd/lib/libtlspad.so"
+sudo install -m 755 out/rgslide-python3 "$T/usr/local/bin/rgslide-python3"
+sudo mkdir -p "$T/usr/local/lib/rgslide-pybin"
+sudo ln -sf /usr/local/bin/rgslide-python3 "$T/usr/local/lib/rgslide-pybin/python3"
 sudo mkdir -p "$T/usr/share/glvnd/egl_vendor.d" "$T/etc/ld.so.conf.d" "$T/etc/profile.d" "$T/etc/environment.d"
 sudo cp -a "$T/opt/hybris-glvnd/etc/10_libhybris.json" "$T/usr/share/glvnd/egl_vendor.d/"
 sudo cp -a "$T/opt/hybris-glvnd/etc/rgslide-hybris.conf" "$T/etc/ld.so.conf.d/"
@@ -160,11 +164,14 @@ fi
 
 echo "7/8 Configuracion de usuario console (ES-DE, Ajustes, Wi-Fi base) y servicios systemd ..."
 HDIR="$T/home/console"
-sudo mkdir -p "$HDIR/ROMs/settings" "$HDIR/ES-DE/custom_systems" "$HDIR/ES-DE/gamelists/nes" "$HDIR/ES-DE/gamelists/nds" "$HDIR/.config/retroarch"
+sudo mkdir -p "$HDIR/ROMs/settings" "$HDIR/ROMs/ports" "$HDIR/ES-DE/custom_systems" "$HDIR/ES-DE/gamelists/nes" "$HDIR/ES-DE/gamelists/nds" "$HDIR/.config/retroarch"
 sudo ln -sfn /opt/retroarch/share/assets "$HDIR/.config/retroarch/assets"
 sudo cp -a rootfs/overlay/usr/share/rgslide/settings/*.sh "$HDIR/ROMs/settings/"
 sudo chmod 755 "$HDIR/ROMs/settings/"*.sh
+sudo cp -a rootfs/overlay/usr/share/rgslide/ports/PortMaster.sh "$HDIR/ROMs/ports/PortMaster.sh"
+sudo chmod 755 "$HDIR/ROMs/ports/PortMaster.sh"
 sudo ln -sfn /home/console/ROMs "$HDIR/roms"
+sudo ln -sfn /home/console/ROMs "$T/roms"
 sudo tee "$HDIR/ES-DE/custom_systems/es_find_rules.xml" >/dev/null <<'XML'
 <?xml version="1.0"?>
 <ruleList>
@@ -197,6 +204,15 @@ sudo tee "$HDIR/ES-DE/custom_systems/es_systems.xml" >/dev/null <<'XML'
         <command>/bin/sh %ROM%</command>
         <platform>pc</platform>
         <theme>tools</theme>
+    </system>
+    <system>
+        <name>ports</name>
+        <fullname>Ports</fullname>
+        <path>%ROMPATH%/ports</path>
+        <extension>.sh .SH</extension>
+        <command>/usr/local/bin/rgslide-port-launch %ROM%</command>
+        <platform>pc</platform>
+        <theme>ports</theme>
     </system>
 </systemList>
 XML
