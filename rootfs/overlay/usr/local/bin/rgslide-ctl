@@ -442,6 +442,19 @@ cmd_lang() {
 	esac
 }
 
+# ---------- rescate / matar juego ----------
+cmd_kill_game() {
+	say "Cerrando juego..."
+	mkdir -p /run/rgslide 2>/dev/null
+	touch /run/rgslide/kill-game 2>/dev/null
+	# Enviar SIGTERM a posibles emuladores y retroarch
+	killall -TERM retroarch 2>/dev/null || true
+	# Si en 1 segundo no responde, SIGKILL
+	( sleep 1; killall -9 retroarch 2>/dev/null || true ) &
+	# Si rgslide-ui esta corriendo, salir del menu para volver a ES
+	killall -TERM rgslide-ui 2>/dev/null || true
+}
+
 c=$1; [ $# -gt 0 ] && shift
 case "$c" in
 status|"") cmd_status "$@";;
@@ -454,6 +467,7 @@ display) cmd_display "$@";;
 net) cmd_net;;
 lang) cmd_lang "$@";;
 time) cmd_time "$@";;
+kill-game) cmd_kill_game;;
 reboot) cmd_power reboot;;
 poweroff) cmd_power poweroff;;
 *) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 2;;

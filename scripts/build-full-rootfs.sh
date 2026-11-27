@@ -150,9 +150,9 @@ if [ -d out/retroarch-stage/opt/retroarch ]; then
             out/ra-assets-x/usr/share/libretro/assets/branding \
             out/ra-assets-x/usr/share/libretro/assets/wallpapers \
             out/ra-assets-x/usr/share/libretro/assets/pkg "$T/opt/retroarch/share/assets/"
-        sudo ln -sf /usr/share/fonts/truetype/noto/NotoSans-Regular.ttf "$T/opt/retroarch/share/assets/xmb/monochrome/font.ttf"
-        [ -d "$T/opt/retroarch/share/assets/xmb/pixel" ] && \
-            sudo ln -sf /usr/share/fonts/truetype/noto/NotoSans-Regular.ttf "$T/opt/retroarch/share/assets/xmb/pixel/font.ttf" || true
+        for d in "$T/opt/retroarch/share/assets/xmb"/*; do
+            [ -d "$d" ] && sudo ln -sf /usr/share/fonts/truetype/noto/NotoSans-Regular.ttf "$d/font.ttf" || true
+        done
     fi
     sudo ln -sfn /opt/retroarch/info "$T/opt/retroarch/share/info"
     sudo chmod -R a+rwX "$T/opt/retroarch/saves" "$T/opt/retroarch/states" "$T/opt/retroarch/system" "$T/opt/retroarch/config" "$T/opt/retroarch/info"

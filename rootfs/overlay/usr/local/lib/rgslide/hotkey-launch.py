@@ -17,6 +17,7 @@ SLOT = 99
 SAVE_TIMEOUT = float(os.environ.get("RGSLIDE_SAVE_TIMEOUT", "8"))
 QUIT_TIMEOUT = float(os.environ.get("RGSLIDE_QUIT_TIMEOUT", "8"))
 CONFIRM_S = float(os.environ.get("RGSLIDE_CONFIRM_S", "4"))
+KILLREQ = os.path.join(RUN, "kill-game")
 REQ = os.path.join(RUN, "settings-request")
 SESSION = os.path.join(RUN, "session")
 CONFS = "/etc/retroarch-es.cfg|/etc/retroarch-hotkey.cfg"
@@ -174,9 +175,8 @@ def _run_retroarch(core, rom):
                         continue
                     buzz(1)
                     if not save_state(g):
-                        log("no se guardo el estado: el juego sigue, Ajustes cancelado")
-                        buzz(3)
-                        continue
+                        log("no se pudo guardar estado (juego colgado o sin respuesta): forzando parada para abrir Ajustes")
+                        drop_state(rom)
                     g.stop(QUIT_TIMEOUT)
                     break
                 time.sleep(0.15)
@@ -184,6 +184,14 @@ def _run_retroarch(core, rom):
                 rc = g.p.returncode
                 return rc  # RetroArch salio solo (20+Start o fallo): ES retoma la pantalla
             run_panel()
+            if os.path.exists(KILLREQ):
+                try:
+                    os.unlink(KILLREQ)
+                except OSError:
+                    pass
+                log("cierre forzado solicitado desde el panel: saliendo a ES")
+                drop_state(rom)
+                return 0
             if not state_files(rom):
                 log("el estado desaparecio: no se relanza el juego")
                 return 0
@@ -224,6 +232,11 @@ def _generic_loop(p, armed):
                     p.kill()
                     p.wait()
                 run_panel()
+                if os.path.exists(KILLREQ):
+                    try:
+                        os.unlink(KILLREQ)
+                    except OSError:
+                        pass
                 return 0
             armed = now
             buzz(1)
