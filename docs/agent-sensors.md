@@ -12,8 +12,14 @@
 - Sin cambios medidos fuera de lo listado: sin panic, pstore igual que antes (el panic previo `sipa_recv_skb` a 901 s es de un arranque anterior, sin relacion).
 - No funciona aun: `raw_data_als`/`raw_data_ps` (`read RegMapR_Get*RawData failed`, ETIMEDOUT) y `in_illuminance_raw`: luz y proximidad no responden (puede que haga falta habilitar su handle antes; no probado).
 
+## MEDIDO (actualizacion 2026-11-27: giroscopio en `rgslide-imud`)
+- Handle `1` = acelerometro calibrado (`m/s^2`, 50 Hz).
+- Handle `4` (`SENSOR_TYPE_GYROSCOPE`) = **giroscopio calibrado** (`rad/s`, 50 Hz, 72 muestras en 1.5 s; handle `16` = giroscopio sin calibrar).
+- Handle `10` (`SENSOR_TYPE_LINEAR_ACCELERATION`) permanece inactivo/constante en este firmware CM4 y NO es el giroscopio.
+- `rootfs/overlay/usr/local/sbin/rgslide-imud` usa `HANDLE_ACCEL = 1` y `HANDLE_GYRO = 4`, convirtiendo `rad/s` a `deg/s` para el protocolo DSU/Cemuhook en `127.0.0.1:26760`. Verificado en vivo recibiendo paquetes con acelerometro y giroscopio reales.
+
 ## SUPUESTO (no medido)
-- Handle 10 = giroscopio (valores pequenos), 127 = evento tipo hall/orientacion/"device orientation" (x=-1). Ejes/orientacion respecto al chasis sin verificar girando la Slide (nadie la movio).
+- Handle 127 = evento tipo hall/orientacion/"device orientation" (x=-1). Ejes/orientacion del giroscopio respecto al chasis sin verificar girando fisicamente la Slide.
 - Luz y proximidad: handles distintos, formato desconocido.
 - Para que sea permanente al arrancar: sustituir el `ExecStart` de `rgslide-cm4` por `modem_control_ch` (el PM tambien lo gestiona; no probado en frio) + `chmod o+r` de sda30/31 en `rgslide-cm4-prep`. NO se ha tocado el overlay.
 

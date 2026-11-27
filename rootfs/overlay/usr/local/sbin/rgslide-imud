@@ -3,7 +3,7 @@
 
 Listens on 127.0.0.1:26760 (standard DSU/Cemuhook protocol used by Dolphin,
 melonDS, Citra/Azahar, Cemu, and RetroArch). Uses 0% CPU while idle: only
-enables /dev/iio:device0 (accel handle 1 + gyro handle 10 at 50 Hz) when a
+enables /dev/iio:device0 (accel handle 1 + gyro handle 4 at 50 Hz) when a
 client subscribes, and stops streaming 5 seconds after the last client request.
 """
 import math
@@ -42,15 +42,19 @@ def write_sys(path, val):
         return False
 
 
+HANDLE_ACCEL = 1
+HANDLE_GYRO = 4  # SENSOR_TYPE_GYROSCOPE (calibrado, rad/s a 50 Hz en el CM4)
+
+
 def iio_start():
     write_sys(f"{IIO_SYS}/buffer/enable", 0)
     write_sys(f"{IIO_SYS}/trigger/current_trigger", "sprd-sensor-dev0")
     for ch in ("in_accel_x_en", "in_accel_y_en", "in_accel_z_en", "in_timestamp_en"):
         write_sys(f"{IIO_SYS}/scan_elements/{ch}", 1)
-    write_sys(f"{SH_SYS}/batch", "1 0 20000 0")
-    write_sys(f"{SH_SYS}/enable", "1 1")
-    write_sys(f"{SH_SYS}/batch", "10 0 20000 0")
-    write_sys(f"{SH_SYS}/enable", "10 1")
+    write_sys(f"{SH_SYS}/batch", f"{HANDLE_ACCEL} 0 20000 0")
+    write_sys(f"{SH_SYS}/enable", f"{HANDLE_ACCEL} 1")
+    write_sys(f"{SH_SYS}/batch", f"{HANDLE_GYRO} 0 20000 0")
+    write_sys(f"{SH_SYS}/enable", f"{HANDLE_GYRO} 1")
     write_sys(f"{IIO_SYS}/buffer/enable", 1)
     return os.open(IIO_DEV, os.O_RDONLY | os.O_NONBLOCK)
 
@@ -62,8 +66,8 @@ def iio_stop(fd):
         except OSError:
             pass
     write_sys(f"{IIO_SYS}/buffer/enable", 0)
-    write_sys(f"{SH_SYS}/enable", "1 0")
-    write_sys(f"{SH_SYS}/enable", "10 0")
+    write_sys(f"{SH_SYS}/enable", f"{HANDLE_ACCEL} 0")
+    write_sys(f"{SH_SYS}/enable", f"{HANDLE_GYRO} 0")
 
 
 def pack_dsu(msg_type, payload):
@@ -148,10 +152,10 @@ def main():
                     x, y, z = struct.unpack_from("<fff", raw, off + 3)
                     ts_ns = struct.unpack_from("<Q", raw, off + 27)[0]
                     ts_us = ts_ns // 1000 if ts_ns else int(time.monotonic() * 1e6)
-                    if handle == 1:
+                    if handle == HANDLE_ACCEL:
                         ax, ay, az = x / G0, y / G0, z / G0
                         updated = True
-                    elif handle == 10:
+                    elif handle == HANDLE_GYRO:
                         gx, gy, gz = math.degrees(x), math.degrees(y), math.degrees(z)
                         updated = True
                 if updated and clients:
