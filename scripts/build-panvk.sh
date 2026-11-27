@@ -34,12 +34,23 @@ if [ ! -d "$MESA/.git" ]; then
   done
 fi
 
-# 2. Cabeceras arm64 de libdrm (Debian Trixie)
-if [ ! -f "$DEPS/usr/lib/aarch64-linux-gnu/pkgconfig/libdrm.pc" ]; then
+# 2. Cabeceras arm64 de libdrm + Wayland + X11/XCB (Debian Trixie) para WSI Wayland/X11 (Zink)
+if [ ! -f "$DEPS/usr/lib/aarch64-linux-gnu/pkgconfig/wayland-client.pc" ] || [ ! -f "$DEPS/usr/lib/aarch64-linux-gnu/pkgconfig/xcb-render.pc" ]; then
   mkdir -p "$DEPS"
   docker run --rm --platform linux/arm64 -v "$DEPS:/deps" debian:trixie sh -c '
     apt-get update -qq &&
-    apt-get download -qq libdrm-dev libdrm2 libdrm-common &&
+    apt-get download -qq \
+      libdrm-dev libdrm2 libdrm-common \
+      libwayland-dev libwayland-client0 libffi-dev libffi8 wayland-protocols \
+      libx11-dev libx11-6 libx11-xcb-dev libx11-xcb1 \
+      libxcb1-dev libxcb1 libxcb-dri3-dev libxcb-dri3-0 \
+      libxcb-present-dev libxcb-present0 libxcb-sync-dev libxcb-sync1 \
+      libxcb-shm0-dev libxcb-shm0 libxcb-xfixes0-dev libxcb-xfixes0 \
+      libxcb-randr0-dev libxcb-randr0 libxcb-render0-dev libxcb-render0 \
+      libxcb-shape0-dev libxcb-shape0 \
+      libxshmfence-dev libxshmfence1 libxrandr-dev libxrandr2 \
+      libxext-dev libxext6 libxrender-dev libxrender1 \
+      libxau-dev libxau6 libxdmcp-dev libxdmcp6 x11proto-dev &&
     for d in *.deb; do dpkg-deb -x "$d" /deps; done
   '
 fi
@@ -61,7 +72,7 @@ c_link_args = ['-L$DEPS/usr/lib/aarch64-linux-gnu', '-L$R/out/esde-deps/usr/lib/
 cpp_link_args = ['-L$DEPS/usr/lib/aarch64-linux-gnu', '-L$R/out/esde-deps/usr/lib/aarch64-linux-gnu', '-Wl,-rpath-link,$DEPS/usr/lib/aarch64-linux-gnu:$R/out/esde-deps/usr/lib/aarch64-linux-gnu']
 
 [properties]
-pkg_config_libdir = '$DEPS/usr/lib/aarch64-linux-gnu/pkgconfig:$R/out/esde-deps/usr/lib/aarch64-linux-gnu/pkgconfig'
+pkg_config_libdir = '$DEPS/usr/lib/aarch64-linux-gnu/pkgconfig:$DEPS/usr/share/pkgconfig:$R/out/esde-deps/usr/lib/aarch64-linux-gnu/pkgconfig'
 needs_exe_wrapper = true
 
 [host_machine]
@@ -87,7 +98,7 @@ apt-get update -qq
 apt-get install -y -qq --no-install-recommends \
   build-essential binutils gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
   meson ninja-build pkg-config python3 python3-mako python3-yaml \
-  bison flex glslang-tools \
+  bison flex glslang-tools wayland-protocols libwayland-bin \
   llvm-19-dev libclang-19-dev libclang-cpp19-dev libclang-common-19-dev \
   libclc-19-dev libllvmspirvlib-19-dev spirv-tools zlib1g-dev libexpat1-dev libdrm-dev
 
@@ -114,7 +125,7 @@ if [ ! -f /arm64-build/build.ninja ]; then
   meson setup /arm64-build /src \
     --cross-file /cross.ini \
     -Dbuildtype=release \
-    -Dplatforms= \
+    -Dplatforms=wayland,x11 \
     -Dgallium-drivers= \
     -Dvulkan-drivers=panfrost \
     -Dpanfrost-kmds=kbase \
