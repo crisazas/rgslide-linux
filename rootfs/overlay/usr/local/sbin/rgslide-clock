@@ -1,25 +1,74 @@
 #!/bin/sh
-# rgslide-clock load|save : equivalente a fake-hwclock + escritura al RTC (sc27xx-rtc).
+# rgslide-clock load|save|sync : persistencia de reloj en RTC hardware (sc27xx-rtc),
+# respaldo en /var/lib/rgslide/lasttime (por si se agota la bateria) y sincronizacion SNTP.
 F=/var/lib/rgslide/lasttime
-case "$1" in
+MIN_EPOCH=1700000000
+
+save_clock() {
+	now=$(date -u +%s)
+	[ "$now" -ge "$MIN_EPOCH" ] || return 0
+	mkdir -p /var/lib/rgslide
+	echo "$now" > "$F.tmp" && mv "$F.tmp" "$F"
+	busybox hwclock -w -u 2>/dev/null || true
+}
+
+sync_ntp() {
+	python3 - <<'PY'
+import socket, struct, subprocess, sys, time
+SERVERS = ("pool.ntp.org", "time.cloudflare.com", "time.google.com")
+for host in SERVERS:
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.settimeout(3.0)
+    try:
+        s.sendto(b"\x1b" + 47 * b"\0", (host, 123))
+        data, _ = s.recvfrom(48)
+        if len(data) < 48:
+            continue
+        ts = struct.unpack("!12I", data)[10] - 2208988800
+        if ts < 1700000000:
+            continue
+        drift = ts - time.time()
+        if abs(drift) > 2.0:
+            subprocess.run(["date", "-u", "-s", f"@{ts}"], check=True, stdout=subprocess.DEVNULL)
+            print(f"rgslide-clock: NTP ({host}) ajustado {drift:+.1f}s -> {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime(ts))}")
+        else:
+            print(f"rgslide-clock: NTP ({host}) ok (drift {drift:+.2f}s)")
+        sys.exit(0)
+    except OSError:
+        continue
+    finally:
+        s.close()
+sys.exit(1)
+PY
+}
+
+case "${1:-}" in
 load)
 	now=$(date -u +%s)
 	last=$(cat "$F" 2>/dev/null)
 	case "$last" in ''|*[!0-9]*) last=0;; esac
-	if [ "$now" -lt "$last" ]; then
-		date -u -s "@$last" >/dev/null && busybox hwclock -w -u
+	if [ "$now" -lt "$last" ] || [ "$now" -lt "$MIN_EPOCH" ]; then
+		target=$last
+		[ "$target" -lt "$MIN_EPOCH" ] && target=$MIN_EPOCH
+		date -u -s "@$target" >/dev/null && busybox hwclock -w -u 2>/dev/null || true
 		echo "rgslide-clock: hora restaurada a $(date -u) (era $now)"
 	else
 		echo "rgslide-clock: hora del sistema ok ($(date -u)), no se toca"
 	fi
 	;;
 save)
-	now=$(date -u +%s)
-	# no guardar horas anteriores a sep-2026 (reloj aun sin poner)
-	[ "$now" -ge 1790000000 ] || exit 0
-	mkdir -p /var/lib/rgslide
-	echo "$now" > "$F.tmp" && mv "$F.tmp" "$F"
-	busybox hwclock -w -u
+	save_clock
 	;;
-*) echo "uso: $0 load|save" >&2; exit 2;;
+sync)
+	if sync_ntp; then
+		save_clock
+	else
+		save_clock
+		exit 0
+	fi
+	;;
+*)
+	echo "uso: $0 load|save|sync" >&2
+	exit 2
+	;;
 esac

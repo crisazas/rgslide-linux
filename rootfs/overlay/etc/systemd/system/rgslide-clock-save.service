@@ -1,6 +1,6 @@
 [Unit]
-Description=Guarda la hora actual (rgslide-clock)
+Description=Sincroniza (NTP) y guarda la hora actual en RTC y disco (rgslide-clock)
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/rgslide-clock save
+ExecStart=/usr/local/sbin/rgslide-clock sync

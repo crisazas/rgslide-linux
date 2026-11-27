@@ -34,6 +34,7 @@ Native Linux distribution (Debian 13 Trixie arm64) for the **Anbernic RG Slide**
 * **System & Integration:**
   - Minimal Debian 13 (Trixie) arm64 base.
   - CM4 coprocessor kept alive (`rgslide-cm4-prep`) to prevent the ~284 s hardware watchdog reboot.
+  - Hardware RTC (`sc27xx-rtc`) persistence + automatic SNTP synchronization (`rgslide-clock`) with `/var/lib/rgslide/lasttime` fallback.
   - Dynamic language synchronization (English / Spanish) between ES-DE and the Tools menu.
 
 ### Known Limitations & Open Issues
@@ -44,8 +45,6 @@ Native Linux distribution (Debian 13 Trixie arm64) for the **Anbernic RG Slide**
   - Currently handled via instant userspace standby (`rgslide-sleepd`) because stock kernel 5.4 `mem`/`s2idle` hangs in Unisoc PM notifiers (`sprd_pcm_pm_notifier`) when audio/DRM are active.
 * **External Video Output (USB-C DisplayPort / HDMI Alt Mode):**
   - Not working; DP negotiation and display muxing remain unimplemented.
-* **RTC Resets on Reboot:**
-  - The hardware RTC resets to April 2026 on every reboot (`hwclock -w` does not persist across power cycles). **This breaks `apt` repository signature/validity checks** until the clock is synced over Wi-Fi/NTP or set manually over SSH (e.g. `sudo date -s "..."`).
 * **Single-Client ALSA Mixing:**
   - Audio streams currently route through the `rgslide-audiod` pipeline rather than direct multi-client ALSA mixing.
 

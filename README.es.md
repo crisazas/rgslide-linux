@@ -34,6 +34,7 @@ Distribución Linux nativa (Debian 13 Trixie arm64) para la consola portátil **
 * **Sistema:**
   - Base Debian 13 (Trixie) arm64 mínima.
   - Coprocesador CM4 mantenido vivo (`rgslide-cm4-prep`) para evitar el reinicio por watchdog a los ~284 s.
+  - Persistencia del reloj RTC (`sc27xx-rtc`) + sincronización automática SNTP (`rgslide-clock`) con respaldo en `/var/lib/rgslide/lasttime`.
   - Sincronización dinámica de idioma (inglés / español) entre ES-DE y el menú Tools.
 
 ### Limitaciones conocidas y deuda abierta
@@ -44,8 +45,6 @@ Distribución Linux nativa (Debian 13 Trixie arm64) para la consola portátil **
   - Implementada mediante reposo instantáneo en espacio de usuario (`rgslide-sleepd`), ya que la suspensión del kernel stock 5.4 (`mem`/`s2idle`) se cuelga en los callbacks de gestión de energía de Unisoc (`sprd_pcm_pm_notifier`) al tener la pila de audio y DRM activa.
 * **Salida de vídeo externa (USB-C DisplayPort / HDMI Alt Mode):**
   - Sin implementar todavía.
-* **Reinicio del RTC en cada arranque:**
-  - El reloj hardware vuelve a abril de 2026 en cada reinicio (`hwclock -w` no persiste). **Esto rompe la verificación de firmas de `apt`** hasta sincronizar la hora por Wi-Fi/NTP o fijarla manualmente por SSH (`sudo date -s "..."`).
 * **Mezcla ALSA:**
   - Enrutada actualmente a través de `rgslide-audiod` en lugar de mezcla ALSA multicliente directa.
 
