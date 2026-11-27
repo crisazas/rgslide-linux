@@ -34,6 +34,33 @@ static void lang_file_var(const char *path, const char *key, char *out, size_t c
 	fclose(fp);
 }
 
+static void lang_esde(char *out, size_t cap)
+{
+	const char *h = getenv("HOME");
+	char path[256], line[512];
+	out[0] = 0;
+	snprintf(path, sizeof path, "%s/ES-DE/settings/es_settings.xml", (h && *h) ? h : "/home/console");
+	FILE *fp = fopen(path, "r");
+	if (!fp && h && *h) fp = fopen("/home/console/ES-DE/settings/es_settings.xml", "r");
+	if (!fp) return;
+	while (fgets(line, sizeof line, fp)) {
+		char *p = strstr(line, "name=\"ApplicationLanguage\"");
+		char *q = p ? strstr(p, "value=\"") : NULL;
+		if (q) {
+			q += 7;
+			char *end = strchr(q, '"');
+			if (end) {
+				size_t len = (size_t)(end - q);
+				if (len >= cap) len = cap - 1;
+				memcpy(out, q, len); out[len] = 0;
+				if (!strcmp(out, "automatic")) out[0] = 0;
+			}
+			break;
+		}
+	}
+	fclose(fp);
+}
+
 static const char *lang_detect(void)
 {
 	char v[96];
@@ -42,7 +69,7 @@ static const char *lang_detect(void)
 	lang_file_var("/etc/default/rgslide-lang", "RGSLIDE_LANG", v, sizeof v);
 	if (!strcmp(v, "es")) return "es";
 	if (!strcmp(v, "en")) return "en";
-	v[0] = 0;
+	lang_esde(v, sizeof v);
 	const char *envs[3] = {getenv("LC_ALL"), getenv("LC_MESSAGES"), getenv("LANG")};
 	for (int i = 0; i < 3 && !v[0]; i++) if (envs[i] && *envs[i]) snprintf(v, sizeof v, "%s", envs[i]);
 	if (!v[0]) lang_file_var("/etc/default/locale", "LANG", v, sizeof v);

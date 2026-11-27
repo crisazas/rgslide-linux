@@ -32,7 +32,16 @@ num() { case "$1" in ''|*[!0-9]*) return 1;; esac; }
 LANGDIR=${RGSLIDE_LANGDIR:-/usr/share/rgslide/lang}
 LANGCFG=/etc/default/rgslide-lang
 lang_cfg() { sed -n 's/^RGSLIDE_LANG=//p' $LANGCFG 2>/dev/null | tail -n 1 | tr -d "\"' "; }
+lang_esde() {
+	for h in "$HOME" /home/console; do
+		f="$h/ES-DE/settings/es_settings.xml"
+		[ -r "$f" ] || continue
+		v=$(sed -n 's/.*<string name="ApplicationLanguage" value="\([^"]*\)".*/\1/p' "$f" | head -n 1)
+		case "$v" in ""|automatic) ;; *) echo "$v"; return;; esac
+	done
+}
 lang_sys() {
+	v=$(lang_esde); [ -n "$v" ] && { echo "$v"; return; }
 	for v in "$LC_ALL" "$LC_MESSAGES" "$LANG"; do [ -n "$v" ] && { echo "$v"; return; }; done
 	for f in /etc/default/locale /etc/locale.conf; do
 		v=$(sed -n 's/^LANG=//p' $f 2>/dev/null | tail -n 1 | tr -d "\"' "); [ -n "$v" ] && { echo "$v"; return; }

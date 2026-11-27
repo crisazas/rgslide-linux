@@ -17,6 +17,7 @@ while true; do
     esac
 
     mkdir -p /run/rgslide 2>/dev/null && echo menu >/run/rgslide/session 2>/dev/null || true
+    /usr/local/bin/rgslide-ctl lang apply >/dev/null 2>&1 || true
     /opt/es-de/bin/es-de "$@"
     ret=$?
 
