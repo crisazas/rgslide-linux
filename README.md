@@ -3,7 +3,7 @@
 > **Language:** English | [Español (README.es.md)](README.es.md)
 > *(Internal reverse-engineering notes in `docs/` and commit history are maintained in Spanish.)*
 
-> **Status: Pre-Release (`v0.9.1`)**
+> **Status: Pre-Release (`v0.9.2`)**
 
 Native Linux distribution (Debian 13 Trixie arm64) for **Anbernic Unisoc T820 (`ums9620_2h10`)** handheld gaming consoles (**RG Slide**, **RG406H**, and **RG476H**), replacing Android with hardware-accelerated 3D graphics (Mesa PanVK Vulkan 1.3 + Mali-G57 via `libhybris`), EmulationStation Desktop Edition (ES-DE) frontend, RetroArch, audio, Wi-Fi, Bluetooth, touchscreens, and physical controls.
 
@@ -115,13 +115,13 @@ This project uses a single, consistent slot convention across releases, `tools/f
 
 The standalone release packages (`.tar.zst`, < 800 MB each) include an auditable flashing script (`flash.sh` / `flash-rgslide.sh`) and stock BROM loaders:
 
-- **Anbernic RG Slide:** `rgslide-linux-brom-v0.9.1.tar.zst`
-- **Anbernic RG406H:** `rg406h-linux-brom-v0.9.1.tar.zst`
-- **Anbernic RG476H:** `rg476h-linux-brom-v0.9.1.tar.zst`
+- **Anbernic RG Slide:** `rgslide-linux-brom-v0.9.2.tar.zst`
+- **Anbernic RG406H:** `rg406h-linux-brom-v0.9.2.tar.zst`
+- **Anbernic RG476H:** `rg476h-linux-brom-v0.9.2.tar.zst`
 
 1. Extract the release `.tar.zst` archive on a Linux x86_64 host and verify `SHA256SUMS`:
    ```bash
-   tar -xvf rg*-linux-brom-v0.9.1.tar.zst
+   tar -xvf rg*-linux-brom-v0.9.2.tar.zst
    cd rg*-brom-flasher
    ```
 2. Preview the exact flash command safely without touching the device:
@@ -137,11 +137,11 @@ The standalone release packages (`.tar.zst`, < 800 MB each) include an auditable
 
 ### Iterating During Development (Fastboot -> Slot A)
 
-When testing a newly built `boot-<device>.img` or `rootfs-<device>-v0.9.1.ext4` without touching the known-good Slot B:
+When testing a newly built `boot-<device>.img` or `rootfs-<device>-v0.9.2.ext4` without touching the known-good Slot B:
 
 ```bash
 fastboot flash boot_a out/boot-<device>.img
-fastboot flash userdata out/rootfs-<device>-v0.9.1.ext4
+fastboot flash userdata out/rootfs-<device>-v0.9.2.ext4
 fastboot reboot
 ```
 
@@ -262,13 +262,13 @@ The build pipeline cross-compiles the entire userland (Debian 13 Trixie arm64, l
 7. **Assemble Final Rootfs Image (Select Device):**
    ```bash
    # For RG Slide (default)
-   DEVICE=rgslide ./scripts/build-full-rootfs.sh out/rootfs-rgslide-v0.9.1.ext4
+   DEVICE=rgslide ./scripts/build-full-rootfs.sh out/rootfs-rgslide-v0.9.2.ext4
 
    # For RG406H
-   DEVICE=rg406h ./scripts/build-full-rootfs.sh out/rootfs-rg406h-v0.9.1.ext4
+   DEVICE=rg406h ./scripts/build-full-rootfs.sh out/rootfs-rg406h-v0.9.2.ext4
 
    # For RG476H
-   DEVICE=rg476h ./scripts/build-full-rootfs.sh out/rootfs-rg476h-v0.9.1.ext4
+   DEVICE=rg476h ./scripts/build-full-rootfs.sh out/rootfs-rg476h-v0.9.2.ext4
    ```
    Integrates all components, device-specific overlays (`devices/<device>/overlay/`), firmware, Mali drivers, systemd services (`rgslide-sleep`, `rgslide-ch`, `rgslide-imu`, `rgslide-dp`, etc.), ES-DE configs, and generates the final bootable ext4 filesystem.
 
@@ -280,7 +280,7 @@ The build pipeline cross-compiles the entire userland (Debian 13 Trixie arm64, l
 9. **Flash to Testing Slot (Slot A) via Fastboot:**
    ```bash
    fastboot flash boot_a out/boot-<device>.img
-   fastboot flash userdata out/rootfs-<device>-v0.9.1.ext4
+   fastboot flash userdata out/rootfs-<device>-v0.9.2.ext4
    fastboot reboot
    ```
 

@@ -3,7 +3,7 @@
 > **Idioma:** [English (README.md)](README.md) | Español
 > *(Las notas técnicas en `docs/` y el historial de commits se mantienen en español.)*
 
-> **Estado: Pre-release (`v0.9.1`)**
+> **Estado: Pre-release (`v0.9.2`)**
 
 Distribución Linux nativa (Debian 13 Trixie arm64) para consolas portátiles con procesador **Unisoc T820 (`ums9620_2h10`)** de Anbernic (**RG Slide**, **RG406H** y **RG476H**), reemplazando Android por completo con aceleración 3D por hardware (Mesa PanVK Vulkan 1.3 nativo + GPU Mali-G57 vía `libhybris`), EmulationStation Desktop Edition (ES-DE), RetroArch, audio, Wi-Fi, Bluetooth, pantallas táctiles y controles físicos completos.
 
@@ -114,13 +114,13 @@ Este proyecto mantiene una única convención de slots en todo el repositorio (`
 
 Los paquetes de release BROM autónomos (`.tar.zst`, menos de 800 MB cada uno) incluyen el script de flasheo auditable (`flash.sh` / `flash-rgslide.sh`) y cargadores BROM de fábrica:
 
-- **Anbernic RG Slide:** `rgslide-linux-brom-v0.9.1.tar.zst`
-- **Anbernic RG406H:** `rg406h-linux-brom-v0.9.1.tar.zst`
-- **Anbernic RG476H:** `rg476h-linux-brom-v0.9.1.tar.zst`
+- **Anbernic RG Slide:** `rgslide-linux-brom-v0.9.2.tar.zst`
+- **Anbernic RG406H:** `rg406h-linux-brom-v0.9.2.tar.zst`
+- **Anbernic RG476H:** `rg476h-linux-brom-v0.9.2.tar.zst`
 
 1. Descomprime el archivo `.tar.zst` en un PC Linux x86_64 y verifica `SHA256SUMS`:
    ```bash
-   tar -xvf rg*-linux-brom-v0.9.1.tar.zst
+   tar -xvf rg*-linux-brom-v0.9.2.tar.zst
    cd rg*-brom-flasher
    ```
 2. Previsualiza exactamente qué se va a escribir sin tocar la consola:
@@ -140,7 +140,7 @@ Para probar una nueva imagen compilada sin tocar el Slot B de respaldo:
 
 ```bash
 fastboot flash boot_a out/boot-<dispositivo>.img
-fastboot flash userdata out/rootfs-<dispositivo>-v0.9.1.ext4
+fastboot flash userdata out/rootfs-<dispositivo>-v0.9.2.ext4
 fastboot reboot
 ```
 
@@ -222,13 +222,13 @@ El flujo de construcción permite la compilación cruzada completa de todo el es
 7. **Ensamblar la imagen final de Rootfs (por dispositivo):**
    ```bash
    # Para RG Slide (por defecto)
-   DEVICE=rgslide ./scripts/build-full-rootfs.sh out/rootfs-rgslide-v0.9.1.ext4
+   DEVICE=rgslide ./scripts/build-full-rootfs.sh out/rootfs-rgslide-v0.9.2.ext4
 
    # Para RG406H
-   DEVICE=rg406h ./scripts/build-full-rootfs.sh out/rootfs-rg406h-v0.9.1.ext4
+   DEVICE=rg406h ./scripts/build-full-rootfs.sh out/rootfs-rg406h-v0.9.2.ext4
 
    # Para RG476H
-   DEVICE=rg476h ./scripts/build-full-rootfs.sh out/rootfs-rg476h-v0.9.1.ext4
+   DEVICE=rg476h ./scripts/build-full-rootfs.sh out/rootfs-rg476h-v0.9.2.ext4
    ```
    Integra todos los componentes, overlays específicos (`devices/<dispositivo>/overlay/`), firmware, drivers Mali, servicios systemd (`rgslide-sleep`, `rgslide-ch`, `rgslide-imu`, `rgslide-dp`, etc.), configuraciones de ES-DE y produce el sistema ext4 final arrancable.
 
@@ -240,7 +240,7 @@ El flujo de construcción permite la compilación cruzada completa de todo el es
 9. **Flashear al Slot A de pruebas por Fastboot:**
    ```bash
    fastboot flash boot_a out/boot-<dispositivo>.img
-   fastboot flash userdata out/rootfs-<dispositivo>-v0.9.1.ext4
+   fastboot flash userdata out/rootfs-<dispositivo>-v0.9.2.ext4
    fastboot reboot
    ```
 
