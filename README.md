@@ -60,7 +60,7 @@ Native Linux distribution (Debian 13 Trixie arm64) for **Anbernic Unisoc T820 (`
 * **Kernel Deep Sleep (`mem` / `s2idle`):**
   - Currently handled via instant userspace standby (`rgslide-sleepd`) because stock kernel 5.4 `mem`/`s2idle` hangs in Unisoc PM notifiers (`sprd_pcm_pm_notifier`) when audio/DRM are active.
 * **External Video Output (USB-C DisplayPort / HDMI Alt Mode):**
-  - Not working; DP negotiation and display muxing remain unimplemented.
+  - Untested with a real external monitor (`eglplatform_drm` / `rgslide-dpd` hotplug hooks exist, but only fallback to the internal panel has been verified; do not rely on DP/HDMI working yet).
 * **Single-Client ALSA Mixing:**
   - Audio streams currently route through the `rgslide-audiod` pipeline rather than direct multi-client ALSA mixing.
 
@@ -76,8 +76,8 @@ Before flashing or contributing, be aware of the structural workarounds currentl
    - `servicemanager`, `vndservicemanager`, `hwservicemanager`, and `android.hardware.graphics.allocator@4.0-service` must stay running under Android's `linker64` (uid `1000`) so the Mali blob can allocate `gralloc` buffers.
 3. **Single DRM Master Limit:**
    - Only one process can hold DRM master at a time. ES-DE is compiled with `DEINIT_ON_LAUNCH=ON` to release DRM before launching RetroArch or `rgslide-ui`.
-4. **Stock 5.4.233 Kernel (No Mainline / No Panfrost):**
-   - The system boots the stock Anbernic/Unisoc Android Linux 5.4.233 kernel binary with vendor modules. There is no mainline kernel or open-source Panfrost GPU driver support yet.
+4. **Stock 5.4.233 Kernel (No Mainline / No Mesa Panfrost GLES):**
+   - The system boots the stock Anbernic/Unisoc Android Linux 5.4.233 kernel binary with vendor modules (`mali_kbase`). While **Vulkan 1.3** runs via open-source **Mesa PanVK 26.3** directly on top of stock `/dev/mali0` (`mali_kbase`), **there is NO Mesa Panfrost (OpenGL ES) or mainline kernel yet** — all OpenGL ES workloads (ES-DE, `rgslide-ui`, GLES cores) still rely on `libhybris` + the proprietary Arm Mali userspace blob.
 
 ---
 

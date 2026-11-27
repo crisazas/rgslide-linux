@@ -59,7 +59,7 @@ Distribución Linux nativa (Debian 13 Trixie arm64) para consolas portátiles co
 * **Suspensión profunda a nivel de kernel (`mem` / `s2idle`):**
   - Implementada mediante reposo instantáneo en espacio de usuario (`rgslide-sleepd`), ya que la suspensión del kernel stock 5.4 (`mem`/`s2idle`) se cuelga en los callbacks de gestión de energía de Unisoc (`sprd_pcm_pm_notifier`) al tener la pila de audio y DRM activa.
 * **Salida de vídeo externa (USB-C DisplayPort / HDMI Alt Mode):**
-  - Sin implementar todavía.
+  - Sin probar con un monitor externo real (existen hooks de hotplug en `eglplatform_drm` / `rgslide-dpd`, pero solo se ha verificado el retorno al panel interno; no asumir que DP/HDMI funciona).
 * **Mezcla ALSA:**
   - Enrutada actualmente a través de `rgslide-audiod` en lugar de mezcla ALSA multicliente directa.
 
@@ -75,8 +75,8 @@ Antes de flashear o contribuir, ten en cuenta los mecanismos frágiles sobre los
    - `servicemanager`, `vndservicemanager`, `hwservicemanager` y `android.hardware.graphics.allocator@4.0-service` deben seguir activos bajo `linker64` (uid `1000`) para que el blob Mali asigne buffers `gralloc`.
 3. **Límite de un único DRM master:**
    - Solo un proceso puede poseer DRM master a la vez. ES-DE se compila con `DEINIT_ON_LAUNCH=ON` para liberar DRM antes de lanzar RetroArch o `rgslide-ui`.
-4. **Kernel 5.4.233 de fábrica (sin mainline ni Panfrost):**
-   - Se utiliza el kernel Android 5.4.233 de fábrica con módulos propietarios de Unisoc/Anbernic; aún no hay soporte mainline ni Panfrost.
+4. **Kernel 5.4.233 de fábrica (sin mainline ni Mesa Panfrost GLES):**
+   - Se utiliza el kernel Android 5.4.233 de fábrica con módulos propietarios de Unisoc/Anbernic (`mali_kbase`). Aunque **Vulkan 1.3** funciona mediante el driver libre **Mesa PanVK 26.3** directamente sobre `/dev/mali0` (`mali_kbase`), **NO hay Mesa Panfrost (OpenGL ES) ni kernel mainline todavía**: toda la pila OpenGL ES (ES-DE, `rgslide-ui`, núcleos GLES) sigue dependiendo de `libhybris` + el blob propietario de Arm Mali.
 
 ---
 
