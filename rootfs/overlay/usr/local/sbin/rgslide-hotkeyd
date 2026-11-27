@@ -11,6 +11,7 @@ import fcntl, glob, os, re, select, struct, subprocess, sys, time
 CONF = os.environ.get("RGSLIDE_HOTKEY_CONF", "/etc/rgslide/hotkey.conf")
 RUN = os.environ.get("RGSLIDE_RUN", "/run/rgslide")
 DEVNAME = os.environ.get("RGSLIDE_PAD_NAME", "retrogame_joypad")
+KEYSNAME = os.environ.get("RGSLIDE_KEYS_NAME", "gpio-keys")
 AUTOCONF = os.environ.get("RGSLIDE_AUTOCONF", "/usr/share/rgslide/autoconfig/RG_Slide.cfg")
 RACFG = os.environ.get("RGSLIDE_RACFG", "/etc/retroarch.cfg")
 EV_KEY = 1
@@ -58,13 +59,13 @@ def check_conflicts(combo):
             pass
 
 
-def find_pad():
+def find_dev(name):
     try:
         txt = open("/proc/bus/input/devices").read()
     except OSError:
         return None
     for blk in txt.split("\n\n"):
-        if 'Name="%s"' % DEVNAME in blk:
+        if 'Name="%s"' % name in blk:
             m = re.search(r"Handlers=.*?\b(event\d+)", blk)
             if m:
                 return "/dev/input/" + m.group(1)
@@ -116,32 +117,43 @@ def navsound():
         log("navsound:", e)
 
 
-def run_pad(path, combo, hold_ms):
+def run_pad(path, keys_path, combo, hold_ms):
     fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)  # sin EVIOCGRAB, a proposito
+    kfd = None
+    if keys_path and keys_path != path:
+        try:
+            kfd = os.open(keys_path, os.O_RDONLY | os.O_NONBLOCK)
+        except OSError as e:
+            log("sin teclas", keys_path, e)
+    fds = [fd] + ([kfd] if kfd is not None else [])
     down = held_now(fd) & combo
     since = time.monotonic() if down == combo else None
     fired = False
-    log("leyendo", path, "combo", sorted(combo), "mantener", hold_ms, "ms")
+    log("leyendo", path, ("+ " + keys_path) if kfd is not None else "", "combo", sorted(combo), "mantener", hold_ms, "ms")
     try:
         while True:
             timeout = None
             if since is not None and not fired:
                 timeout = max(0.0, since + hold_ms / 1000.0 - time.monotonic())
-            r, _, _ = select.select([fd], [], [], timeout)
-            if r:
+            r, _, _ = select.select(fds, [], [], timeout)
+            for rfd in r:
                 try:
-                    data = os.read(fd, EVSZ * 64)
+                    data = os.read(rfd, EVSZ * 64)
                 except BlockingIOError:
                     continue
                 if not data:
                     return
                 for off in range(0, len(data) - EVSZ + 1, EVSZ):
                     _, _, typ, code, val = struct.unpack_from(EVFMT, data, off)
-                    if typ != EV_KEY or val == 2:
+                    if typ != EV_KEY:
                         continue
                     if code in VOL_KEYS:
-                        if val:
-                            volume(VOL_KEYS[code])  # una vez por pulsacion (val 0 = soltar)
+                        if val in (1, 2):
+                            volume(VOL_KEYS[code])  # sube/baja al pulsar o mantener
+                        continue
+                    if val == 2:
+                        continue
+                    if rfd != fd:
                         continue
                     if code in NAV_KEYS:
                         if val and session() == "menu":
@@ -162,7 +174,8 @@ def run_pad(path, combo, hold_ms):
                 fired = True
                 fire(combo)
     finally:
-        os.close(fd)
+        for f in fds:
+            os.close(f)
 
 
 def main():
@@ -173,12 +186,13 @@ def main():
     except OSError as e:
         log("no puedo crear", RUN, e)
     while True:
-        p = find_pad()
+        p = find_dev(DEVNAME)
         if p is None:
             time.sleep(2)
             continue
+        k = find_dev(KEYSNAME)
         try:
-            run_pad(p, combo, hold_ms)
+            run_pad(p, k, combo, hold_ms)
         except OSError as e:
             log("lectura de", p, "fallo:", e)
         time.sleep(1)
