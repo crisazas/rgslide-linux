@@ -15,6 +15,7 @@ import os
 import select
 import signal
 import stat
+import subprocess
 import sys
 import time
 
@@ -99,6 +100,16 @@ class AlsaOut:
             self.lib.snd_pcm_hw_params_free(params)
 
         self.lib.snd_pcm_prepare(self.handle)
+        # Re-apply persisted VBC DAC0 DG volume so AGDSP never resets to loud default on reopen
+        if os.path.exists("/usr/local/sbin/rgslide-mainline-volume"):
+            try:
+                subprocess.Popen(
+                    ["/usr/local/sbin/rgslide-mainline-volume", "apply"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except OSError:
+                pass
         return True
 
     def write(self, data):

@@ -1,0 +1,16 @@
+[Unit]
+Description=RG Slide mainline wpa_supplicant on wlan0
+ConditionKernelVersion=>=6.0
+After=rgslide-mainline-modules.service
+Requires=rgslide-mainline-modules.service
+Before=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/wpa_supplicant -c/etc/wpa_supplicant/wpa_supplicant-nl80211-wlan0.conf -Dnl80211 -iwlan0
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

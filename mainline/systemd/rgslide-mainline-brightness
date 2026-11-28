@@ -3,6 +3,12 @@
 # Usage: rgslide-mainline-brightness get|raw|max_brightness|set N|up|down|restore
 set -u
 
+case "${1:-get}" in
+    set|up|down|restore)
+        [ "$(id -u)" = 0 ] || exec sudo -n "$0" "$@"
+        ;;
+esac
+
 BL=""
 for d in /sys/class/backlight/backlight /sys/class/backlight/sprd_backlight /sys/class/backlight/*; do
     if [ -r "$d/max_brightness" ]; then

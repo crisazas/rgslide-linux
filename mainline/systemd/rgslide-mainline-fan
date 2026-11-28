@@ -250,6 +250,8 @@ def main():
         return
 
     cmd = args[0]
+    if cmd in ("mode", "set") and os.geteuid() != 0:
+        os.execvp("sudo", ["sudo", "-n", sys.argv[0]] + sys.argv[1:])
     if cmd == "status":
         mode = load_conf()
         tmax = read_max_temp()
@@ -261,7 +263,7 @@ def main():
             except OSError:
                 pass
         tstr = f"{tmax:.1f}" if tmax is not None else "?"
-        print(f"mode={mode} pwm={pwm} tmax={tstr}C")
+        print(f"modo={mode} pwm1={pwm} tmax={tstr}C")
         return
 
     if cmd == "mode" and len(args) == 2:
