@@ -16,7 +16,9 @@ apply() {
 		dg=127
 		python3 "$CTL" set "Speaker Mute" 1 >/dev/null 2>&1
 		python3 "$CTL" set "Speaker2 Mute" 1 >/dev/null 2>&1
-		python3 "$CTL" set "VBC_DL_MUTE" 1 >/dev/null 2>&1
+		# No activar VBC_DL_MUTE=1: congela el DMA/hw_ptr del AGDSP y atasca rgslide-audiod.
+		# Speaker Mute=1 + DG=127 garantizan silencio real manteniendo el reloj del PCM activo.
+		python3 "$CTL" set "VBC_DL_MUTE" 0 >/dev/null 2>&1
 	else
 		dg=$(( 64 - vol * 44 / 100 ))
 		python3 "$CTL" set "Speaker Mute" 0 >/dev/null 2>&1
