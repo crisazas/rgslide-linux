@@ -54,6 +54,20 @@ for m in $MODS; do
     cp -r "$MU300_UPSTREAM/modules/$m" "$MOD_BUILD/$m"
     [ -d "$MOD_BUILD/wcn_bsp" ] || cp -r "$MU300_UPSTREAM/modules/wcn_bsp" "$MOD_BUILD/wcn_bsp"
 
+    # RG Slide connects Marlin3 Wi-Fi over SDIO (hw_type == SPRD_HW_SC2355_SDIO),
+    # whereas mu300-linux only dispatches PCIe in sprd_wlan_probe().
+    if [ "$m" = "sprd_wlan_combo" ]; then
+        python3 - "$MOD_BUILD/$m/common/sprd_wlan.c" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+old = '\tif (p_match_data->hw_type == SPRD_HW_SC2355_PCIE) {\n\t\treturn pcie_probe(pdev);\n\t} else {'
+new = '\tif (p_match_data->hw_type == SPRD_HW_SC2355_PCIE) {\n\t\treturn pcie_probe(pdev);\n\t} else if (p_match_data->hw_type == SPRD_HW_SC2355_SDIO) {\n\t\treturn sc2355_sdio_probe(pdev);\n\t} else {'
+assert old in s, 'sprd_wlan_probe anchor changed'
+open(p, 'w').write(s.replace(old, new, 1))
+PY
+    fi
+
     make -C "$BUILD_DIR" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
         "${HOST_MAKE_ARGS[@]}" M="$MOD_BUILD/$m" \
         KBUILD_EXTRA_SYMBOLS="$EXTRA_SYMS" -j"$(nproc)" modules \

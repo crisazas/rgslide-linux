@@ -104,7 +104,7 @@ assert misc_md5 in res, f'misc MD5 mismatch! expected {misc_md5}'
 
 print('[mainline] boot_a and misc verified; triggering warm reboot into Slot A...')
 s = socket.create_connection((DEV_IP, 23), timeout=5)
-time.sleep(0.2)
-s.sendall(b'sync; reboot -f\n')
-time.sleep(0.5)
+time.sleep(0.4)
+s.sendall(b'sync; reboot -f\r\n')
+time.sleep(2.0)
 s.close()

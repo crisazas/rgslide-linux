@@ -1,0 +1,234 @@
+From: rgslide-linux <mainline@rgslide>
+Subject: [PATCH] drm/panfrost: add Unisoc UMS9620 (sprd,mali-natt) Mali-G57 support
+
+Add Mali-G57 GPU ID 0x9091, uppercase IRQ name fallbacks ("JOB", "MMU", "GPU"),
+and Unisoc UMS9620 syscon/PMIC power-on and clock initialization so Panfrost
+binds cleanly to the stock RG Slide vendor DT node (gpu@23140000).
+
+The stock DT marks the UMP9620 DCDC_GPU regulator as status = "disabled" while
+leaving the GPU node without an explicit *-supply property. When
+regulator_enable() returns -EPERM, fall back to clearing DCDC_GPU_PD (BIT(3))
+in UMP9620_POWER_PD_SW (0x201c) via the parent PMIC regmap.
+
+--- a/drivers/gpu/drm/panfrost/panfrost_device.c
++++ b/drivers/gpu/drm/panfrost/panfrost_device.c
+@@ -3,6 +3,11 @@
+ /* Copyright 2019 Linaro, Ltd, Rob Herring <robh@kernel.org> */
+ 
+ #include <linux/clk.h>
++#include <linux/delay.h>
++#include <linux/mfd/syscon.h>
++#include <linux/of.h>
++#include <linux/of_platform.h>
++#include <linux/regmap.h>
+ #include <linux/reset.h>
+ #include <linux/platform_device.h>
+ #include <linux/pm_domain.h>
+@@ -197,6 +202,118 @@
+ 	return err;
+ }
+ 
++
++static int panfrost_sprd_syscon_update(struct device_node *np, const char *prop,
++				       bool set)
++{
++	struct regmap *rm;
++	u32 args[2];
++
++	rm = syscon_regmap_lookup_by_phandle_args(np, prop, 2, args);
++	if (IS_ERR(rm))
++		return PTR_ERR(rm);
++
++	return regmap_update_bits(rm, args[0], args[1], set ? args[1] : 0);
++}
++
++static int panfrost_sprd_init(struct panfrost_device *pfdev)
++{
++	struct device *dev = pfdev->dev;
++	struct device_node *np = dev->of_node;
++	struct clk_bulk_data *clks;
++	struct regmap *state_rm;
++	struct regulator *gpu_reg;
++	u32 state_args[2], val = 0;
++	int nclks, ret, i;
++
++	gpu_reg = devm_regulator_get_optional(dev, "gpu");
++	if (IS_ERR(gpu_reg)) {
++		if (PTR_ERR(gpu_reg) == -EPROBE_DEFER)
++			return -EPROBE_DEFER;
++		gpu_reg = regulator_get(NULL, "DCDC_GPU");
++	}
++	if (!IS_ERR(gpu_reg)) {
++		ret = regulator_enable(gpu_reg);
++		if (ret == -EPERM) {
++			/* Vendor DT marks DCDC_GPU status="disabled", blocking regulator_enable.
++			 * Clear UMP9620_DCDC_GPU_PD_MASK (BIT(3)) in UMP9620_POWER_PD_SW (0x201c)
++			 * directly on the PMIC regmap. */
++			struct device_node *rnp = of_find_compatible_node(NULL, NULL, "sprd,ump962x-regulator");
++			struct platform_device *rpdev;
++			struct regmap *pmic_rm;
++
++			if (!rnp)
++				rnp = of_find_compatible_node(NULL, NULL, "sprd,ump9620-regulator");
++			rpdev = rnp ? of_find_device_by_node(rnp) : NULL;
++			pmic_rm = (rpdev && rpdev->dev.parent) ? dev_get_regmap(rpdev->dev.parent, NULL) : NULL;
++			if (pmic_rm) {
++				regmap_update_bits(pmic_rm, 0x201c, BIT(3), 0);
++				dev_info(dev, "sprd: enabled DCDC_GPU via UMP9620 PMIC regmap\n");
++			} else {
++				dev_err(dev, "sprd: could not locate UMP9620 PMIC regmap\n");
++				if (rpdev)
++					put_device(&rpdev->dev);
++				of_node_put(rnp);
++				return -ENODEV;
++			}
++			put_device(&rpdev->dev);
++			of_node_put(rnp);
++		} else if (ret) {
++			dev_err(dev, "sprd: gpu regulator enable failed: %d\n", ret);
++			return ret;
++		}
++		udelay(100);
++	}
++
++	panfrost_sprd_syscon_update(np, "top_dvfs_cfg", false);
++	panfrost_sprd_syscon_update(np, "gpu_sw_dvfs_ctrl", false);
++	panfrost_sprd_syscon_update(np, "dcdc_gpu_pd", false);
++	udelay(50);
++	panfrost_sprd_syscon_update(np, "gpll_cfg_frc_off", false);
++	udelay(100);
++	panfrost_sprd_syscon_update(np, "gpll_cfg_frc_on", true);
++	udelay(150);
++	panfrost_sprd_syscon_update(np, "top_force_shutdown", false);
++
++	if (pfdev->rstc) {
++		reset_control_assert(pfdev->rstc);
++		udelay(10);
++		reset_control_deassert(pfdev->rstc);
++		udelay(300);
++	}
++
++	nclks = devm_clk_bulk_get_all(dev, &clks);
++	if (nclks < 0)
++		return nclks;
++	if (nclks > 0) {
++		ret = clk_bulk_prepare_enable(nclks, clks);
++		if (ret) {
++			dev_err(dev, "sprd: clk_bulk_prepare_enable failed: %d\n", ret);
++			return ret;
++		}
++	}
++
++	panfrost_sprd_syscon_update(np, "clk_core_gpu_eb", true);
++	udelay(400);
++
++	state_rm = syscon_regmap_lookup_by_phandle_args(np, "gpu_top_state", 2, state_args);
++	if (!IS_ERR(state_rm)) {
++		for (i = 0; i < 200; i++) {
++			regmap_read(state_rm, state_args[0], &val);
++			if ((val & state_args[1]) == 0)
++				break;
++			udelay(50);
++		}
++		if (i == 200) {
++			dev_err(dev, "sprd: gpu_top_state timeout (0x%x), aborting probe safely\n", val);
++			return -ENODEV;
++		}
++	}
++
++	dev_info(dev, "sprd: UMS9620 Mali-G57 power/clock domain ready (top_state=0x%x)\n", val);
++	return 0;
++}
++
+ int panfrost_device_init(struct panfrost_device *pfdev)
+ {
+ 	int err;
+@@ -230,11 +339,17 @@
+ 		goto out_reset;
+ 	}
+ 
+-	err = panfrost_devfreq_init(pfdev);
+-	if (err) {
+-		if (err != -EPROBE_DEFER)
+-			dev_err(pfdev->dev, "devfreq init failed %d\n", err);
+-		goto out_clk;
++	if (of_device_is_compatible(pfdev->dev->of_node, "sprd,mali-natt")) {
++		err = panfrost_sprd_init(pfdev);
++		if (err)
++			goto out_clk;
++	} else {
++		err = panfrost_devfreq_init(pfdev);
++		if (err) {
++			if (err != -EPROBE_DEFER)
++				dev_err(pfdev->dev, "devfreq init failed %d\n", err);
++			goto out_clk;
++		}
+ 	}
+ 
+ 	/* OPP will handle regulators */
+--- a/drivers/gpu/drm/panfrost/panfrost_drv.c
++++ b/drivers/gpu/drm/panfrost/panfrost_drv.c
+@@ -929,6 +929,11 @@
+ 	.gpu_quirks = BIT(GPU_QUIRK_FORCE_AARCH64_PGTABLE),
+ };
+ 
++static const struct panfrost_compatible sprd_mali_natt_data = {
++	.num_supplies = 0,
++	.pm_features = 0,
++};
++
+ static const struct of_device_id dt_match[] = {
+ 	/* Set first to probe before the generic compatibles */
+ 	{ .compatible = "amlogic,meson-gxm-mali",
+@@ -953,6 +958,7 @@
+ 	{ .compatible = "mediatek,mt8192-mali", .data = &mediatek_mt8192_data },
+ 	{ .compatible = "mediatek,mt8370-mali", .data = &mediatek_mt8370_data },
+ 	{ .compatible = "allwinner,sun50i-h616-mali", .data = &allwinner_h616_data },
++	{ .compatible = "sprd,mali-natt", .data = &sprd_mali_natt_data },
+ 	{}
+ };
+ MODULE_DEVICE_TABLE(of, dt_match);
+--- a/drivers/gpu/drm/panfrost/panfrost_gpu.c
++++ b/drivers/gpu/drm/panfrost/panfrost_gpu.c
+@@ -240,6 +240,10 @@
+ 	/* MediaTek MT8188 Mali-G57 MC3 */
+ 	GPU_MODEL(g57, 0x9093,
+ 		GPU_REV(g57, 0, 0)),
++
++	/* Unisoc UMS9620 / T820 Mali-G57 */
++	GPU_MODEL(g57, 0x9091,
++		GPU_REV(g57, 0, 0)),
+ };
+ 
+ static void panfrost_gpu_init_features(struct panfrost_device *pfdev)
+@@ -500,6 +504,8 @@
+ 
+ 	pfdev->gpu_irq = platform_get_irq_byname(to_platform_device(pfdev->dev), "gpu");
+ 	if (pfdev->gpu_irq < 0)
++		pfdev->gpu_irq = platform_get_irq_byname(to_platform_device(pfdev->dev), "GPU");
++	if (pfdev->gpu_irq < 0)
+ 		return pfdev->gpu_irq;
+ 
+ 	err = devm_request_irq(pfdev->dev, pfdev->gpu_irq, panfrost_gpu_irq_handler,
+--- a/drivers/gpu/drm/panfrost/panfrost_job.c
++++ b/drivers/gpu/drm/panfrost/panfrost_job.c
+@@ -863,6 +863,8 @@
+ 
+ 	js->irq = platform_get_irq_byname(to_platform_device(pfdev->dev), "job");
+ 	if (js->irq < 0)
++		js->irq = platform_get_irq_byname(to_platform_device(pfdev->dev), "JOB");
++	if (js->irq < 0)
+ 		return js->irq;
+ 
+ 	ret = devm_request_threaded_irq(pfdev->dev, js->irq,
+--- a/drivers/gpu/drm/panfrost/panfrost_mmu.c
++++ b/drivers/gpu/drm/panfrost/panfrost_mmu.c
+@@ -898,6 +898,8 @@
+ 
+ 	pfdev->mmu_irq = platform_get_irq_byname(to_platform_device(pfdev->dev), "mmu");
+ 	if (pfdev->mmu_irq < 0)
++		pfdev->mmu_irq = platform_get_irq_byname(to_platform_device(pfdev->dev), "MMU");
++	if (pfdev->mmu_irq < 0)
+ 		return pfdev->mmu_irq;
+ 
+ 	err = devm_request_threaded_irq(pfdev->dev, pfdev->mmu_irq,

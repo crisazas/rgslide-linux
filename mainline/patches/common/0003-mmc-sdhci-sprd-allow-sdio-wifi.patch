@@ -1,0 +1,20 @@
+From: rgslide-linux <mainline@rgslide>
+Subject: [PATCH] mmc: sdhci-sprd: allow sdio_wifi host on Anbernic RG Slide
+
+Unlike the ZTE MU300 (which uses PCIe Wi-Fi), the Anbernic RG Slide connects
+its Marlin3 Wi-Fi/BT combo chip to the SDIO host labeled sprd,name = "sdio_wifi"
+(22220000.sdio). Allow "sdio_wifi" through the MU300 probe filter so wcn_bsp
+can bind to the SDIO host.
+
+--- a/drivers/mmc/host/sdhci-sprd.c
++++ b/drivers/mmc/host/sdhci-sprd.c
+@@ -803,7 +803,8 @@ static int sdhci_sprd_probe(struct platform_device *pdev)
+ 	int ret = 0;
+ 	/* MU300: only the eMMC and the card slot */
+ 	if (!of_property_read_bool(pdev->dev.of_node, "non-removable") &&
+-	    of_property_match_string(pdev->dev.of_node, "sprd,name", "sdio_sd") < 0)
++	    of_property_match_string(pdev->dev.of_node, "sprd,name", "sdio_sd") < 0 &&
++	    of_property_match_string(pdev->dev.of_node, "sprd,name", "sdio_wifi") < 0)
+ 		return -ENODEV;
+ 	/* MU300: the card slot waits for the eMMC's host. If that never binds, the card slot stays deferred:
+ 	 * no SD root without a working eMMC host. */
