@@ -1,0 +1,26 @@
+--- a/sprd/machine/sprd_card/sprd-asoc-card-utils.c
++++ b/sprd/machine/sprd_card/sprd-asoc-card-utils.c
+@@ -698,6 +698,15 @@
+ 			dev_dbg(dev, "\tlink %d:\n", i);
+ 			ret = asoc_sprd_card_dai_link_of(np, priv, i, false);
+ 			if (ret < 0) {
++				if (ret == -EPROBE_DEFER && dummy_on_defer) {
++					dev_info(dev, "%s: skipping deferred dai link %pOFn\n",
++						 __func__, np);
++					memset(sprd_priv_to_link(priv, i), 0,
++					       sizeof(struct snd_soc_dai_link));
++					memset(sprd_priv_to_props(priv, i), 0,
++					       sizeof(struct sprd_dai_props));
++					continue;
++				}
+ 				dev_err(dev,
+ 					"%s: Parsing dai link %d failed(%d)!\n",
+ 					__func__, i, ret);
+@@ -706,6 +715,7 @@
+ 			}
+ 			i++;
+ 		}
++		priv->snd_card.num_links = i;
+ 	} else {
+ 		/* For single DAI link & old style of DT node */
+ 		ret = asoc_sprd_card_dai_link_of(node, priv, 0, true);

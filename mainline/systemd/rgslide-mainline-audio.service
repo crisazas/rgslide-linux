@@ -1,0 +1,13 @@
+[Unit]
+Description=Bring up RG Slide mainline internal audio (AGDSP + UMP9620 + sprdphone-sc2730)
+ConditionKernelVersion=>=6.0
+After=rgslide-mainline-modules.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/rgslide-mainline-audio start
+ExecStartPost=/usr/local/sbin/rgslide-mainline-audio spk-on
+
+[Install]
+WantedBy=multi-user.target

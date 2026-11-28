@@ -30,7 +30,9 @@ if [ ! -f /usr/include/stdio.h ]; then
     )
 fi
 
-MODS="${*:-wcn_bsp sprd_wlan_combo sprdbt_tty}"
+MODS="${*:-wcn_bsp sprd_wlan_combo sprdbt_tty sprd_modem sprd_audio}"
+AUDIO_REF_SHA="b1f59b81ec9d7d7beee4db0a2fec669c07a4d5fb"
+AUDIO_REF_DIR="$OUT_ROOT/mu300-audio-ref"
 mkdir -p "$MOD_OUT" "$MOD_BUILD"
 
 echo "[mainline] preparing module build environment..."
@@ -51,7 +53,25 @@ EXTRA_SYMS=""
 for m in $MODS; do
     echo "[mainline] building out-of-tree module: $m"
     rm -rf "$MOD_BUILD/$m"
-    cp -r "$MU300_UPSTREAM/modules/$m" "$MOD_BUILD/$m"
+    if [ "$m" = "sprd_audio" ]; then
+        if [ ! -d "$AUDIO_REF_DIR/upstream/modules/sprd_audio" ]; then
+            echo "[mainline] fetching sprd_audio 6.18 port from mu300-linux@$AUDIO_REF_SHA..."
+            mkdir -p "$AUDIO_REF_DIR"
+            git -C "$AUDIO_REF_DIR" init -q
+            git -C "$AUDIO_REF_DIR" remote add origin https://github.com/dikeckaan/mu300-linux.git 2>/dev/null || true
+            git -C "$AUDIO_REF_DIR" fetch --depth=1 origin "$AUDIO_REF_SHA"
+            git -C "$AUDIO_REF_DIR" checkout -q FETCH_HEAD -- upstream/modules/sprd_audio
+        fi
+        cp -r "$AUDIO_REF_DIR/upstream/modules/sprd_audio" "$MOD_BUILD/sprd_audio"
+        cp "$SRC_DIR/drivers/dma/virt-dma.c" "$SRC_DIR/drivers/dma/virt-dma.h" \
+           "$SRC_DIR/drivers/dma/dmaengine.h" "$MOD_BUILD/sprd_audio/dma/"
+        [ -d "$MOD_BUILD/sprd_modem" ] || cp -r "$MU300_UPSTREAM/modules/sprd_modem" "$MOD_BUILD/sprd_modem"
+        for p in "$ROOT_DIR"/mainline/patches/audio/*.patch; do
+            [ -f "$p" ] && patch -d "$MOD_BUILD/sprd_audio" -p1 -s < "$p"
+        done
+    else
+        cp -r "$MU300_UPSTREAM/modules/$m" "$MOD_BUILD/$m"
+    fi
     [ -d "$MOD_BUILD/wcn_bsp" ] || cp -r "$MU300_UPSTREAM/modules/wcn_bsp" "$MOD_BUILD/wcn_bsp"
 
     # RG Slide connects Marlin3 Wi-Fi over SDIO (hw_type == SPRD_HW_SC2355_SDIO),
