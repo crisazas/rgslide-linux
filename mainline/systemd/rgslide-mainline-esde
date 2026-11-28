@@ -16,4 +16,10 @@ export LD_LIBRARY_PATH="/usr/lib/aarch64-linux-gnu:/opt/es-de/lib${LD_LIBRARY_PA
 mkdir -p /run/rgslide 2>/dev/null || true
 echo menu > /run/rgslide/session 2>/dev/null || true
 
+# Apply configured refresh rate (60/120 Hz from /etc/default/rgslide-display)
+# before SDL2 KMSDRM initializes so ES-DE inherits the active CRTC mode.
+if [ -x /usr/local/sbin/rgslide-mainline-refresh ]; then
+    /usr/local/sbin/rgslide-mainline-refresh es 2>/dev/null || true
+fi
+
 exec /opt/es-de/bin/es-de "$@"

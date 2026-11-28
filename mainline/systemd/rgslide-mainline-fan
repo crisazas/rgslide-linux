@@ -1,0 +1,295 @@
+#!/usr/bin/env python3
+"""rgslide-mainline-fan: PWM fan + enable-gpio controller for RG Slide on Linux 6.18.
+
+The stock DT defines enable-gpios = <&ap_gpio 121 GPIO_ACTIVE_HIGH> on pwm-fan,
+which mainline drivers/hwmon/pwm-fan.c ignores. This daemon drives both the
+pwmfan hwmon pwm1 node and /dev/gpiochip4 line 121 (HIGH when pwm > 0, LOW when
+stopped), while remaining CLI- and config-compatible with /etc/rgslide-fan.conf
+and rgslide-ctl.
+
+Usage:
+  rgslide-mainline-fan                  run thermal control daemon
+  rgslide-mainline-fan status           print mode, max temp, and pwm
+  rgslide-mainline-fan mode auto|off|max|N
+  rgslide-mainline-fan set N|off|max
+"""
+import fcntl
+import glob
+import os
+import signal
+import struct
+import sys
+import time
+
+CONF = "/etc/rgslide-fan.conf"
+CONF_OLD = "/etc/default/rgslide-fan"
+GPIO_CHIP = "/dev/gpiochip4"
+FAN_ENABLE_LINE = 121
+GPIO_V2_GET_LINE_IOCTL = 0xC250B407
+GPIO_V2_LINE_SET_VALUES_IOCTL = 0xC010B40F
+GPIO_V2_LINE_FLAG_OUTPUT = 1 << 3
+GPIO_V2_LINE_ATTR_ID_OUTPUT_VALUES = 2
+
+CURVE = [(45, 90), (52, 140), (58, 200), (64, 255)]
+HYST = 4
+PERIOD = 3
+SAFE = 58
+ZONES = (
+    "soc-thmzone", "big7-thmzone", "big7mid4-thmzone", "mid4-thmzone",
+    "mid5-thmzone", "mid6-thmzone", "gpu-thmzone", "apcpu0-thmzone",
+    "apcpu1-thmzone", "board-thmzone",
+)
+
+_running = True
+
+
+def _stop(_sig, _frame):
+    global _running
+    _running = False
+
+
+def find_pwm1():
+    for name_path in sorted(glob.glob("/sys/class/hwmon/hwmon*/name")):
+        try:
+            if open(name_path).read().strip() == "pwmfan":
+                p = os.path.join(os.path.dirname(name_path), "pwm1")
+                if os.path.exists(p):
+                    return p
+        except OSError:
+            pass
+    return None
+
+
+def load_conf():
+    global CURVE, HYST, PERIOD, SAFE
+    mode = "auto"
+    path = CONF if os.path.exists(CONF) else CONF_OLD
+    try:
+        for line in open(path):
+            line = line.split("#")[0].strip()
+            if "=" not in line:
+                continue
+            k, v = (x.strip().strip('"') for x in line.split("=", 1))
+            if k == "FAN_MODE":
+                mode = v
+            elif k == "FAN_CURVE":
+                CURVE = [(int(a), int(b)) for a, b in (p.split(":") for p in v.split(","))]
+            elif k == "FAN_HYST":
+                HYST = int(v)
+            elif k == "FAN_PERIOD":
+                PERIOD = max(1, int(v))
+            elif k == "FAN_SAFE":
+                SAFE = int(v)
+    except (OSError, ValueError):
+        pass
+    return mode
+
+
+def save_mode(mode):
+    lines = []
+    found = False
+    if os.path.exists(CONF):
+        for line in open(CONF):
+            if line.lstrip().startswith("FAN_MODE="):
+                lines.append(f"FAN_MODE={mode}\n")
+                found = True
+            else:
+                lines.append(line)
+    if not found:
+        lines.append(f"FAN_MODE={mode}\n")
+    tmp = CONF + ".tmp"
+    with open(tmp, "w") as f:
+        f.writelines(lines)
+    os.replace(tmp, CONF)
+
+
+def read_max_temp():
+    tmax = None
+    for z in glob.glob("/sys/class/thermal/thermal_zone*"):
+        try:
+            tname = open(os.path.join(z, "type")).read().strip()
+            if tname not in ZONES:
+                continue
+            val = int(open(os.path.join(z, "temp")).read().strip()) / 1000.0
+            if tmax is None or val > tmax:
+                tmax = val
+        except (OSError, ValueError):
+            pass
+    return tmax
+
+
+def curve_pwm(temp, prev_pwm):
+    if temp is None:
+        return 255
+    target = 0
+    for thresh, pwm in CURVE:
+        if temp >= thresh:
+            target = pwm
+    if target < prev_pwm:
+        # Apply hysteresis when stepping down
+        hyst_target = 0
+        for thresh, pwm in CURVE:
+            if (temp + HYST) >= thresh:
+                hyst_target = pwm
+        target = min(prev_pwm, hyst_target)
+    return target
+
+
+class FanEnableGpio:
+    def __init__(self):
+        self.chip_fd = -1
+        self.line_fd = -1
+        self.state = None
+
+    def _ensure_open(self, initial):
+        if self.line_fd >= 0:
+            return True
+        try:
+            self.chip_fd = os.open(GPIO_CHIP, os.O_RDWR)
+            offsets = struct.pack("<64I", FAN_ENABLE_LINE, *([0] * 63))
+            consumer = b"rgslide-fan".ljust(32, b"\x00")
+            attr0 = struct.pack("<IIQQ", GPIO_V2_LINE_ATTR_ID_OUTPUT_VALUES, 0, 1 if initial else 0, 1)
+            attrs = attr0 + b"\x00" * (24 * 9)
+            config = struct.pack("<QI5I", GPIO_V2_LINE_FLAG_OUTPUT, 1, 0, 0, 0, 0, 0) + attrs
+            req = bytearray(offsets + consumer + config + struct.pack("<II5Ii", 1, 0, 0, 0, 0, 0, 0, 0))
+            fcntl.ioctl(self.chip_fd, GPIO_V2_GET_LINE_IOCTL, req)
+            self.line_fd = struct.unpack_from("<i", req, 588)[0]
+            self.state = bool(initial)
+            return self.line_fd >= 0
+        except OSError as e:
+            print(f"rgslide-mainline-fan: GPIO_121 open failed: {e}", file=sys.stderr)
+            self.close()
+            return False
+
+    def set(self, on):
+        on = bool(on)
+        if self.line_fd < 0:
+            return self._ensure_open(on)
+        if self.state == on:
+            return True
+        try:
+            vals = struct.pack("<QQ", 1 if on else 0, 1)
+            fcntl.ioctl(self.line_fd, GPIO_V2_LINE_SET_VALUES_IOCTL, vals)
+            self.state = on
+            return True
+        except OSError:
+            self.close()
+            return self._ensure_open(on)
+
+    def close(self):
+        if self.line_fd >= 0:
+            try:
+                os.close(self.line_fd)
+            except OSError:
+                pass
+            self.line_fd = -1
+        if self.chip_fd >= 0:
+            try:
+                os.close(self.chip_fd)
+            except OSError:
+                pass
+            self.chip_fd = -1
+        self.state = None
+
+
+def write_pwm(pwm_path, val):
+    val = max(0, min(255, int(val)))
+    if pwm_path:
+        try:
+            with open(pwm_path, "w") as f:
+                f.write(f"{val}\n")
+        except OSError:
+            pass
+    return val
+
+
+def parse_mode_val(arg):
+    if arg == "off":
+        return 0
+    if arg == "max":
+        return 255
+    v = int(arg)
+    if 0 <= v <= 255:
+        return v
+    raise ValueError("out of range")
+
+
+def run_daemon():
+    signal.signal(signal.SIGTERM, _stop)
+    signal.signal(signal.SIGINT, _stop)
+    pwm_path = find_pwm1()
+    gpio = FanEnableGpio()
+    cur_pwm = 0
+    try:
+        while _running:
+            mode = load_conf()
+            tmax = read_max_temp()
+            auto_pwm = curve_pwm(tmax, cur_pwm)
+            if mode == "auto":
+                target = auto_pwm
+            else:
+                try:
+                    target = parse_mode_val(mode)
+                except ValueError:
+                    target = auto_pwm
+                if tmax is None or tmax >= SAFE:
+                    target = max(target, auto_pwm)
+            cur_pwm = write_pwm(pwm_path, target)
+            gpio.set(cur_pwm > 0)
+            time.sleep(PERIOD)
+    finally:
+        write_pwm(pwm_path, 0)
+        gpio.set(False)
+        gpio.close()
+
+
+def main():
+    args = sys.argv[1:]
+    if not args:
+        run_daemon()
+        return
+
+    cmd = args[0]
+    if cmd == "status":
+        mode = load_conf()
+        tmax = read_max_temp()
+        pwm_path = find_pwm1()
+        pwm = "?"
+        if pwm_path:
+            try:
+                pwm = open(pwm_path).read().strip()
+            except OSError:
+                pass
+        tstr = f"{tmax:.1f}" if tmax is not None else "?"
+        print(f"mode={mode} pwm={pwm} tmax={tstr}C")
+        return
+
+    if cmd == "mode" and len(args) == 2:
+        m = args[1]
+        if m != "auto":
+            try:
+                parse_mode_val(m)
+            except ValueError:
+                print("usage: rgslide-fan mode auto|off|max|0..255", file=sys.stderr)
+                sys.exit(1)
+        save_mode(m)
+        print(m)
+        return
+
+    if cmd == "set" and len(args) == 2:
+        try:
+            v = parse_mode_val(args[1])
+        except ValueError:
+            print("usage: rgslide-fan set off|max|0..255", file=sys.stderr)
+            sys.exit(1)
+        pwm_path = find_pwm1()
+        write_pwm(pwm_path, v)
+        print(v)
+        return
+
+    print("usage: rgslide-fan [status | mode auto|off|max|N | set off|max|N]", file=sys.stderr)
+    sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

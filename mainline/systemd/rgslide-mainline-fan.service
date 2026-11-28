@@ -1,11 +1,11 @@
 [Unit]
-Description=RG Slide mainline PWM fan thermal controller (hwmon pwmfan)
+Description=RG Slide mainline PWM fan thermal controller (hwmon pwmfan + GPIO_121)
 ConditionKernelVersion=>=6.0
 After=rgslide-mainline-modules.service
 
 [Service]
 Type=simple
-ExecStart=/usr/local/sbin/rgslide-fan
+ExecStart=/usr/local/sbin/rgslide-mainline-fan
 Restart=on-failure
 RestartSec=3
 

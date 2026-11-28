@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""rgslide-mainline-refresh: Native DRM refresh-rate switcher for RG Slide on Linux 6.18.
+
+Switches /dev/dri/card1 (DSI-1) to 60, 90, or 120 Hz via drmModeSetCrtc with a
+transient dumb framebuffer so SDL2 KMSDRM (ES-DE) and RetroArch KMS inherit the
+exact requested refresh rate with zero libhybris.
+
+Usage:
+  rgslide-mainline-refresh [60|90|120|es|game]
+    - No arg or "es": reads REFRESH from /etc/default/rgslide-display (auto/120 -> 120, else 60)
+    - "game":         reads REFRESH from /etc/default/rgslide-display (120 -> 120, auto/60 -> 60)
+    - Explicit Hz:    switches directly to 60, 90, or 120 Hz
+"""
+import ctypes
+import fcntl
+import os
+import struct
+import sys
+
+DISPCONF = "/etc/default/rgslide-display"
+DRM_DEV = "/dev/dri/card1"
+DRM_IOCTL_MODE_CREATE_DUMB = 0xC02064B2
+
+
+class ModeInfo(ctypes.Structure):
+    _fields_ = [
+        ("clock", ctypes.c_uint32),
+        ("hdisplay", ctypes.c_uint16), ("hsync_start", ctypes.c_uint16),
+        ("hsync_end", ctypes.c_uint16), ("htotal", ctypes.c_uint16),
+        ("hskew", ctypes.c_uint16),
+        ("vdisplay", ctypes.c_uint16), ("vsync_start", ctypes.c_uint16),
+        ("vsync_end", ctypes.c_uint16), ("vtotal", ctypes.c_uint16),
+        ("vscan", ctypes.c_uint16),
+        ("vrefresh", ctypes.c_uint32),
+        ("flags", ctypes.c_uint32), ("type", ctypes.c_uint32),
+        ("name", ctypes.c_char * 32),
+    ]
+
+
+class Res(ctypes.Structure):
+    _fields_ = [
+        ("count_fbs", ctypes.c_int), ("fbs", ctypes.POINTER(ctypes.c_uint32)),
+        ("count_crtcs", ctypes.c_int), ("crtcs", ctypes.POINTER(ctypes.c_uint32)),
+        ("count_connectors", ctypes.c_int), ("connectors", ctypes.POINTER(ctypes.c_uint32)),
+        ("count_encoders", ctypes.c_int), ("encoders", ctypes.POINTER(ctypes.c_uint32)),
+        ("min_w", ctypes.c_uint32), ("max_w", ctypes.c_uint32),
+        ("min_h", ctypes.c_uint32), ("max_h", ctypes.c_uint32),
+    ]
+
+
+class Conn(ctypes.Structure):
+    _fields_ = [
+        ("connector_id", ctypes.c_uint32), ("encoder_id", ctypes.c_uint32),
+        ("connector_type", ctypes.c_uint32), ("connector_type_id", ctypes.c_uint32),
+        ("connection", ctypes.c_int),
+        ("mmWidth", ctypes.c_uint32), ("mmHeight", ctypes.c_uint32),
+        ("subpixel", ctypes.c_int),
+        ("count_modes", ctypes.c_int), ("modes", ctypes.POINTER(ModeInfo)),
+        ("count_props", ctypes.c_int), ("props", ctypes.POINTER(ctypes.c_uint32)),
+        ("prop_values", ctypes.POINTER(ctypes.c_uint64)),
+        ("count_encoders", ctypes.c_int), ("encoders", ctypes.POINTER(ctypes.c_uint32)),
+    ]
+
+
+def read_conf_refresh():
+    try:
+        for line in open(DISPCONF):
+            line = line.split("#")[0].strip()
+            if line.startswith("REFRESH="):
+                return line.split("=", 1)[1].strip().strip("\"' ")
+    except OSError:
+        pass
+    return "60"
+
+
+def resolve_hz(arg):
+    if arg in ("60", "90", "120"):
+        return int(arg)
+    val = read_conf_refresh()
+    if arg == "game":
+        return 120 if val == "120" else 60
+    # default ("es" or omitted)
+    if val in ("120", "auto"):
+        return 120
+    if val == "90":
+        return 90
+    return 60
+
+
+def set_refresh(target_hz):
+    drm = ctypes.CDLL("libdrm.so.2")
+    drm.drmModeGetResources.restype = ctypes.POINTER(Res)
+    drm.drmModeGetConnector.restype = ctypes.POINTER(Conn)
+
+    fd = os.open(DRM_DEV, os.O_RDWR)
+    try:
+        res = drm.drmModeGetResources(fd)
+        if not res or res.contents.count_connectors < 1 or res.contents.count_crtcs < 1:
+            return 1
+        cid = res.contents.connectors[0]
+        crid = res.contents.crtcs[0]
+        conn = drm.drmModeGetConnector(fd, cid)
+        if not conn:
+            return 1
+
+        target = None
+        for i in range(conn.contents.count_modes):
+            m = conn.contents.modes[i]
+            if m.vrefresh == target_hz:
+                target = m
+                break
+        if target is None:
+            return 1
+
+        dumb = bytearray(struct.pack("<IIIIIIQ", target.vdisplay, target.hdisplay, 32, 0, 0, 0, 0))
+        fcntl.ioctl(fd, DRM_IOCTL_MODE_CREATE_DUMB, dumb)
+        _, _, _, _, handle, pitch, _ = struct.unpack("<IIIIIIQ", dumb)
+
+        fb_id = ctypes.c_uint32(0)
+        if drm.drmModeAddFB(fd, target.hdisplay, target.vdisplay, 24, 32, pitch, handle, ctypes.byref(fb_id)) != 0:
+            return 1
+
+        conn_arr = (ctypes.c_uint32 * 1)(cid)
+        rc = drm.drmModeSetCrtc(fd, crid, fb_id.value, 0, 0, conn_arr, 1, ctypes.byref(target))
+        return 0 if rc == 0 else 1
+    finally:
+        os.close(fd)
+
+
+def main():
+    arg = sys.argv[1] if len(sys.argv) > 1 else "es"
+    hz = resolve_hz(arg)
+    try:
+        rc = set_refresh(hz)
+    except OSError as e:
+        print(f"rgslide-mainline-refresh: {e}", file=sys.stderr)
+        rc = 1
+    sys.exit(rc)
+
+
+if __name__ == "__main__":
+    main()
