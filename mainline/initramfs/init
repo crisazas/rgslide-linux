@@ -58,18 +58,7 @@ if [ -n "$udc" ]; then
     if echo "$udc" > "$g/UDC"; then
         log "usb gadget bound to $udc"
         ifconfig usb0 10.55.0.2 netmask 255.255.255.0 up
-        cat > /tmp/udhcpd.conf <<'EOF'
-start 10.55.0.10
-end 10.55.0.20
-interface usb0
-option subnet 255.255.255.0
-lease_file /tmp/udhcpd.leases
-EOF
-        touch /tmp/udhcpd.leases
-        udhcpd /tmp/udhcpd.conf
-        telnetd -p 23 -l /bin/sh
-        (while :; do getty -L 115200 ttyGS0 vt100 2>/dev/null || sleep 3; done) &
-        log "usb0 up at 10.55.0.2 (telnet :23 + ttyGS0 ACM shell)"
+        log "usb0 up at 10.55.0.2"
     else
         log "ERROR: failed to bind usb gadget to $udc"
         sync
@@ -84,8 +73,63 @@ else
     reboot -f
 fi
 
+find_userdata() {
+    for u in /sys/class/block/*/uevent; do
+        [ -r "$u" ] || continue
+        grep -qx 'PARTNAME=userdata' "$u" 2>/dev/null || continue
+        d="${u%/uevent}"; d="${d##*/}"
+        [ -b "/dev/$d" ] && { echo "/dev/$d"; return 0; }
+    done
+    return 1
+}
+
+boot_rootfs() {
+    part=""
+    for _ in $(seq 1 10); do
+        part="$(find_userdata)" && break
+        sleep 0.5
+    done
+    [ -n "$part" ] || { log "rootfs: PARTNAME=userdata not found"; return 1; }
+    mkdir -p /mnt/root
+    if ! mount -t ext4 -o rw,noatime "$part" /mnt/root; then
+        log "rootfs: failed to mount $part"
+        return 1
+    fi
+    if [ ! -x /mnt/root/sbin/init ]; then
+        log "rootfs: /mnt/root/sbin/init missing"
+        umount /mnt/root
+        return 1
+    fi
+    log "rootfs: switching root to $part (/sbin/init)"
+    for d in proc sys dev run; do mkdir -p "/mnt/root/$d"; done
+    umount /sys/kernel/debug 2>/dev/null || true
+    umount /sys/fs/pstore 2>/dev/null || true
+    umount /config 2>/dev/null || true
+    mount --move /proc /mnt/root/proc
+    mount --move /sys /mnt/root/sys
+    mount --move /dev /mnt/root/dev
+    mount --move /run /mnt/root/run
+    exec switch_root /mnt/root /sbin/init
+}
+
+if ! grep -q 'rgslide.rescue=1' /proc/cmdline 2>/dev/null; then
+    boot_rootfs || log "rootfs: switch_root failed, dropping to rescue shell"
+fi
+
+# Rescue shell fallback (ECM telnet :23 + ACM ttyGS0)
+cat > /tmp/udhcpd.conf <<'EOF'
+start 10.55.0.10
+end 10.55.0.20
+interface usb0
+option subnet 255.255.255.0
+lease_file /tmp/udhcpd.leases
+EOF
+touch /tmp/udhcpd.leases
+udhcpd /tmp/udhcpd.conf
+telnetd -p 23 -l /bin/sh
+(while :; do getty -L 115200 ttyGS0 vt100 2>/dev/null || sleep 3; done) &
 dmesg > /tmp/dmesg-boot.txt 2>/dev/null || true
-log "M0 bring-up ready; userdata untouched"
+log "rescue shell ready at 10.55.0.2 (telnet :23 + ttyGS0)"
 
 while :; do
     sleep 60

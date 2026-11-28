@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Build in-tree (=m) and out-of-tree WCN Wi-Fi/BT modules (wcn_bsp,
+# sprd_wlan_combo, sprdbt_tty) against the mainline 6.18 LTS build in out/mainline/.
+#
+# Usage:
+#   mainline/scripts/build-modules.sh [module-dir...]
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+MU300_UPSTREAM="$ROOT_DIR/third_party/mu300-linux/upstream"
+OUT_ROOT="$ROOT_DIR/out/mainline"
+
+KV="${KV:-6.18.60}"
+SRC_DIR="$OUT_ROOT/src/linux-$KV"
+BUILD_DIR="$OUT_ROOT/build-$KV"
+MOD_BUILD="$OUT_ROOT/mod-build-$KV"
+MOD_OUT="$OUT_ROOT/modules"
+
+[ -d "$BUILD_DIR" ] || { echo "Error: $BUILD_DIR not found. Run mainline/scripts/build-kernel.sh first." >&2; exit 1; }
+
+HOST_MAKE_ARGS=()
+if [ ! -f /usr/include/stdio.h ]; then
+    HOSTDEV="$OUT_ROOT/hostdev"
+    HOST_INC="-I$HOSTDEV/root/usr/include -I$HOSTDEV/root/usr/include/x86_64-linux-gnu"
+    HOST_LIB="$HOSTDEV/root/usr/lib/x86_64-linux-gnu"
+    HOST_MAKE_ARGS+=(
+        "HOSTCFLAGS=$HOST_INC"
+        "HOSTLDFLAGS=-L$HOST_LIB -B$HOST_LIB"
+    )
+fi
+
+MODS="${*:-wcn_bsp sprd_wlan_combo sprdbt_tty}"
+mkdir -p "$MOD_OUT" "$MOD_BUILD"
+
+echo "[mainline] preparing module build environment..."
+make -C "$SRC_DIR" O="$BUILD_DIR" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+    "${HOST_MAKE_ARGS[@]}" -j"$(nproc)" modules_prepare > "$BUILD_DIR/modules.log" 2>&1 || {
+    tail -n 40 "$BUILD_DIR/modules.log" >&2
+    exit 1
+}
+
+if [ ! -f "$BUILD_DIR/Module.symvers" ] && [ -f "$BUILD_DIR/vmlinux.symvers" ]; then
+    cp "$BUILD_DIR/vmlinux.symvers" "$BUILD_DIR/Module.symvers"
+fi
+
+KREL="$(cat "$BUILD_DIR/include/config/kernel.release")"
+mkdir -p "$MOD_OUT/$KREL/extra"
+
+EXTRA_SYMS=""
+for m in $MODS; do
+    echo "[mainline] building out-of-tree module: $m"
+    rm -rf "$MOD_BUILD/$m"
+    cp -r "$MU300_UPSTREAM/modules/$m" "$MOD_BUILD/$m"
+    [ -d "$MOD_BUILD/wcn_bsp" ] || cp -r "$MU300_UPSTREAM/modules/wcn_bsp" "$MOD_BUILD/wcn_bsp"
+
+    make -C "$BUILD_DIR" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+        "${HOST_MAKE_ARGS[@]}" M="$MOD_BUILD/$m" \
+        KBUILD_EXTRA_SYMBOLS="$EXTRA_SYMS" -j"$(nproc)" modules \
+        > "$MOD_OUT/$m.log" 2>&1 || {
+        echo "[mainline] ERROR building $m:" >&2
+        tail -n 40 "$MOD_OUT/$m.log" >&2
+        exit 1
+    }
+
+    [ -f "$MOD_BUILD/$m/Module.symvers" ] && EXTRA_SYMS="$EXTRA_SYMS $MOD_BUILD/$m/Module.symvers"
+    for ko in $(find "$MOD_BUILD/$m" -name '*.ko'); do
+        cp "$ko" "$MOD_OUT/$KREL/extra/"
+        aarch64-linux-gnu-strip --strip-debug "$MOD_OUT/$KREL/extra/$(basename "$ko")"
+    done
+done
+
+depmod -b "$MOD_OUT/.." "$KREL" 2>/dev/null || true
+echo "[mainline] modules built for $KREL:"
+ls -lh "$MOD_OUT/$KREL/extra/"*.ko

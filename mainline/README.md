@@ -37,7 +37,7 @@ mainline/
 | Milestone | Subsystem / Goal | Status |
 | :--- | :--- | :--- |
 | **M0 — Minimal Boot** | Linux 6.18 LTS (`6.18.60-rgslide-m0`) + LK stub + stock `vendor_boot` DTB + USB ECM (`10.55.0.2`) & ACM (`/dev/ttyACM0`) + `ramoops`/pstore + 8 CPUs + 8 GiB RAM + `/dev/kvm` | **Done** |
-| **M1 — Storage & Net** | UFS (`22000000.ufs`, Samsung 128 GB, 73 GPT partitions, Debian 13 `userdata` verified `ro`) **Done**; Wi-Fi/BT (`wcn_bsp`) + full Debian 13 `switch_root` | **In Progress (UFS Done)** |
+| **M1 — Storage & Net** | UFS (`22000000.ufs`, 128 GB, 73 GPT parts) + **Debian 13 Trixie `switch_root` + `systemd` + SSH (`10.55.0.2`) + `/dev/ttyACM0` working**; WCN modules (`wcn_bsp`, `sprd_wlan_combo`, `sprdbt_tty`) built & loaded (SDIO host binding WIP) | **In Progress (Debian 13 Live)** |
 | **M2 — Display & GPU** | `DRM_SPRD` DPU/DSI + `FT8201P` panel (1280×960) + Mali-G57 **Panfrost/PanVK** (`panfrost_sprd`) | Planned |
 | **M3 — Console Input** | Integrated gamepad (`retrogame_joypad`), touchscreen (`fts_ts`), Hall lid sensor, volume keys, rumble | Planned |
 | **M4 — Full Parity** | UMP9620/AGDSP audio, CM4 watchdog/IMU, battery/charger (`aw32257`), VPU, `s2idle` suspend | Planned |
