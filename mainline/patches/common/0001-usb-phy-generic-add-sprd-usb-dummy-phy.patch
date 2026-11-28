@@ -1,0 +1,17 @@
+From: rgslide-linux <mainline@rgslide>
+Subject: [PATCH] usb: phy: generic: match sprd,usb-dummy-phy for UMS9620 DWC3
+
+On the Anbernic RG Slide (UMS9620) vendor device tree, dwc3@25100000 lists
+usb-phy = <&dummyphy &ssphy>, where dummyphy uses compatible "sprd,usb-dummy-phy".
+Bind it to usb-nop-xceiv so dwc3_core_get_phy() succeeds instead of deferring.
+
+--- a/drivers/usb/phy/phy-generic.c
++++ b/drivers/usb/phy/phy-generic.c
+@@ -338,6 +338,7 @@ static void usb_phy_generic_remove(struct platform_device *pdev)
+ 
+ static const struct of_device_id nop_xceiv_dt_ids[] = {
+ 	{ .compatible = "usb-nop-xceiv" },
++	{ .compatible = "sprd,usb-dummy-phy" },
+ 	{ }
+ };
+ 

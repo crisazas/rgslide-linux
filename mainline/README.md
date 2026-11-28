@@ -36,8 +36,8 @@ mainline/
 
 | Milestone | Subsystem / Goal | Status |
 | :--- | :--- | :--- |
-| **M0 — Minimal Boot** | Linux 6.18 LTS + LK stub + stock `vendor_boot` DTB + USB NCM/RNDIS shell + `ramoops`/pstore | Planned |
-| **M1 — Storage & Net** | UFS (`22000000.ufs`) read-only then read-write Debian 13 rootfs + Wi-Fi/BT (`wcn_bsp`) | Planned |
+| **M0 — Minimal Boot** | Linux 6.18 LTS (`6.18.60-rgslide-m0`) + LK stub + stock `vendor_boot` DTB + USB ECM (`10.55.0.2`) & ACM (`/dev/ttyACM0`) + `ramoops`/pstore + 8 CPUs + 8 GiB RAM + `/dev/kvm` | **Done** |
+| **M1 — Storage & Net** | UFS (`22000000.ufs`) read-only then read-write Debian 13 rootfs + Wi-Fi/BT (`wcn_bsp`) | Next |
 | **M2 — Display & GPU** | `DRM_SPRD` DPU/DSI + `FT8201P` panel (1280×960) + Mali-G57 **Panfrost/PanVK** (`panfrost_sprd`) | Planned |
 | **M3 — Console Input** | Integrated gamepad (`retrogame_joypad`), touchscreen (`fts_ts`), Hall lid sensor, volume keys, rumble | Planned |
 | **M4 — Full Parity** | UMP9620/AGDSP audio, CM4 watchdog/IMU, battery/charger (`aw32257`), VPU, `s2idle` suspend | Planned |

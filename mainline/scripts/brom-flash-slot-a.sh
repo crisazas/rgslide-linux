@@ -2,7 +2,12 @@
 # Flash a mainline boot image to Slot A (boot_a) over Unisoc BROM (spd_dump)
 # and set misc to try Slot A ONCE with automatic fallback to Slot B (v0.9.2).
 #
-# Never touches boot_b, vendor_boot_a/b, or userdata.
+# WARNING: Unisoc FDL2 (fdl2-dl.bin) automatically mirrors boot_a <-> boot_b
+# over BROM! Prefer mainline/scripts/usb-flash-slot-a.py (from Slot B Linux)
+# or fastboot to keep Slot B untouched.
+#
+# Also note: Unisoc LK triggers immediate rollback when tries_remaining<=1 with
+# successful_boot=0, so Slot A uses tries=2 for a single real boot attempt.
 #
 # Usage:
 #   mainline/scripts/brom-flash-slot-a.sh [out/mainline/boot-mainline-m0.img] [wait_seconds]
@@ -32,9 +37,9 @@ src, dst = sys.argv[1], sys.argv[2]
 m = bytearray(open(src, 'rb').read())
 o = 0x800
 m[o:o+4] = b'_a\0\0'
-m[o+12] = (15 & 15) | (1 << 4)               # slot a: prio 15, tries 1, not successful yet
+m[o+12] = (15 & 15) | (2 << 4)               # slot a: prio 15, tries 2 (1 real try), not successful yet
 m[o+13] = 0
-m[o+14] = (14 & 15) | (1 << 4) | (1 << 7)    # slot b: prio 14, tries 1, successful (fallback)
+m[o+14] = (14 & 15) | (2 << 4) | (1 << 7)    # slot b: prio 14, tries 2, successful (fallback)
 m[o+15] = 0
 struct.pack_into('<I', m, o + 0x1c, zlib.crc32(bytes(m[o:o+0x1c])) & 0xffffffff)
 open(dst, 'wb').write(m)

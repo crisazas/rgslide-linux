@@ -28,6 +28,11 @@ for _ in $(seq 1 20); do
     sleep 1
 done
 
+# Ensure USB-C/DWC3 role is set to device mode when userspace role control is active
+for r in /sys/class/usb_role/*/role; do
+    [ -w "$r" ] && echo device > "$r" 2>/dev/null || true
+done
+
 udc="$(ls /sys/class/udc 2>/dev/null | head -n 1)"
 log "udc: ${udc:-none}"
 log "deferred: $(tr '\n' ';' < /sys/kernel/debug/devices_deferred 2>/dev/null | cut -c1-700)"
@@ -67,7 +72,16 @@ EOF
         log "usb0 up at 10.55.0.2 (telnet :23 + ttyGS0 ACM shell)"
     else
         log "ERROR: failed to bind usb gadget to $udc"
+        sync
+        reboot -f
     fi
+else
+    log "ERROR: no UDC found after 20s; usb/dwc3/phy drivers:"
+    log "$(ls /sys/bus/platform/drivers 2>/dev/null | grep -iE 'usb|dwc|phy|sprd' | tr '\n' ' ')"
+    log "warm rebooting to Slot B so ramoops preserves dmesg"
+    sync
+    sleep 1
+    reboot -f
 fi
 
 dmesg > /tmp/dmesg-boot.txt 2>/dev/null || true
