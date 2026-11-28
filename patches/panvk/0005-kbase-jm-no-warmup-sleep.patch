@@ -1,0 +1,23 @@
+diff --git a/src/panfrost/lib/kmod/kbase_kmod.c b/src/panfrost/lib/kmod/kbase_kmod.c
+--- a/src/panfrost/lib/kmod/kbase_kmod.c
++++ b/src/panfrost/lib/kmod/kbase_kmod.c
+@@ -1566,9 +1566,17 @@ kbase_kmod_dev_create(int fd, uint32_t flags,
+    unsigned atom_stride = 0;
+    if (!is_csf) {
+       atom_stride = kbase_probe_atom_stride(fd);
+-      struct timespec warmup_ts = { .tv_sec = 2 };
+-      while (nanosleep(&warmup_ts, &warmup_ts) && errno == EINTR)
+-         ;
++      const char *ms_env = getenv("PANVK_KBASE_JM_WARMUP_MS");
++      int ms = (ms_env && ms_env[0]) ? atoi(ms_env) : 0;
++      if (ms > 0 && ms <= 10000) {
++         struct timespec warmup_ts = {
++            .tv_sec = ms / 1000,
++            .tv_nsec = (long)(ms % 1000) * 1000000l,
++         };
++         while (nanosleep(&warmup_ts, &warmup_ts) && errno == EINTR)
++            ;
++      }
+    }
+ 
+    /* Map the tracking page.  The kernel requires this before any memory
