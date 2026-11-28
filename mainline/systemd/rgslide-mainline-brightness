@@ -1,0 +1,50 @@
+#!/bin/sh
+# RG Slide mainline backlight helper (auto-detects /sys/class/backlight/backlight).
+# Usage: rgslide-mainline-brightness get|raw|max_brightness|set N|up|down|restore
+set -u
+
+BL=""
+for d in /sys/class/backlight/backlight /sys/class/backlight/sprd_backlight /sys/class/backlight/*; do
+    if [ -r "$d/max_brightness" ]; then
+        BL="$d"
+        break
+    fi
+done
+[ -n "$BL" ] || { echo "rgslide-mainline-brightness: no backlight device found" >&2; exit 1; }
+
+STATE=/var/lib/rgslide/brightness
+MIN=5
+STEP=5
+MAX=$(cat "$BL/max_brightness")
+
+get() {
+    echo $(( ($(cat "$BL/brightness") * 100 + MAX / 2) / MAX ))
+}
+
+set_pct() {
+    case "$1" in ''|*[!0-9]*) echo "invalid percentage: $1" >&2; exit 2 ;; esac
+    p=$1
+    [ "$p" -lt "$MIN" ] && p=$MIN
+    [ "$p" -gt 100 ] && p=100
+    echo $(( (p * MAX + 50) / 100 )) > "$BL/brightness" || exit 1
+    mkdir -p "$(dirname "$STATE")"
+    echo "$p" > "$STATE"
+    get
+}
+
+case "${1:-get}" in
+    get) get ;;
+    raw) cat "$BL/brightness" ;;
+    max_brightness) echo "$MAX" ;;
+    set) set_pct "${2:-}" ;;
+    up) set_pct $(( $(get) + STEP )) ;;
+    down)
+        c=$(get)
+        [ "$c" -le $((MIN + STEP)) ] && set_pct "$MIN" || set_pct $(( c - STEP )) ;;
+    restore)
+        [ -r "$STATE" ] || exit 0
+        v=$(cat "$STATE")
+        case "$v" in ''|*[!0-9]*) exit 0 ;; esac
+        set_pct "$v" ;;
+    *) echo "usage: $0 get|raw|max_brightness|set N|up|down|restore" >&2; exit 2 ;;
+esac

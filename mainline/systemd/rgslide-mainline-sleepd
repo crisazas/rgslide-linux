@@ -1,0 +1,195 @@
+#!/usr/bin/env python3
+"""rgslide-mainline-sleepd: Instant low-power standby on slider close or Power press.
+
+Monitors gpio-keys for Hall slider close/open (KEY_WAKEUP=143: 1=open, 0=closed)
+and short Power button presses (KEY_POWER=116 < 1.5s):
+  - Blanks the display backlight (/sys/class/backlight/backlight/brightness = 0)
+  - Pauses (SIGSTOP) es-de and retroarch so CPU/GPU drop to ~0% while preserving state
+  - Switches CPU cpufreq governors to powersave
+"""
+import fcntl
+import glob
+import os
+import select
+import signal
+import struct
+import sys
+import time
+
+DEVNAME = os.environ.get("RGSLIDE_SLEEP_DEV", "gpio-keys")
+RUN_DIR = "/run/rgslide"
+SLEEP_FLAG = os.path.join(RUN_DIR, "sleeping")
+POWER = 116
+HALL = 143
+EV_KEY = 1
+EVFMT = "llHHi"
+EVSZ = struct.calcsize(EVFMT)
+EVIOCGKEY = 0x80604518
+PAUSE_PROCS = {"es-de", "retroarch"}
+POWER_SHORT_MAX_S = 1.5
+
+_sleeping = False
+_saved_bl = 200
+_saved_govs = {}
+_paused_pids = set()
+_running = True
+
+
+def _stop(_signum, _frame):
+    global _running
+    _running = False
+
+
+def find_bl():
+    for d in ("/sys/class/backlight/backlight", "/sys/class/backlight/sprd_backlight"):
+        p = os.path.join(d, "brightness")
+        if os.path.exists(p):
+            return p
+    return "/sys/class/backlight/backlight/brightness"
+
+
+def find_dev():
+    try:
+        txt = open("/proc/bus/input/devices").read()
+    except OSError:
+        return None
+    for blk in txt.split("\n\n"):
+        if f'Name="{DEVNAME}"' in blk:
+            for w in blk.split("Handlers=")[-1].split("\n")[0].split():
+                if w.startswith("event"):
+                    return "/dev/input/" + w
+    return None
+
+
+def read_text(path, default=""):
+    try:
+        return open(path).read().strip()
+    except OSError:
+        return default
+
+
+def write_text(path, val):
+    try:
+        with open(path, "w") as f:
+            f.write(f"{val}\n")
+        return True
+    except OSError:
+        return False
+
+
+def find_target_pids():
+    pids = set()
+    for e in os.listdir("/proc"):
+        if e.isdigit() and read_text(f"/proc/{e}/comm") in PAUSE_PROCS:
+            pids.add(int(e))
+    return pids
+
+
+def enter_sleep(bl_path, reason):
+    global _sleeping, _saved_bl, _saved_govs, _paused_pids
+    if _sleeping:
+        return
+    _sleeping = True
+    print(f"rgslide-mainline-sleepd: entering standby ({reason})", file=sys.stderr, flush=True)
+    os.makedirs(RUN_DIR, exist_ok=True)
+    write_text(SLEEP_FLAG, "1")
+
+    cur = read_text(bl_path)
+    if cur.isdigit() and int(cur) > 0:
+        _saved_bl = int(cur)
+    write_text(bl_path, 0)
+
+    _paused_pids = find_target_pids()
+    for pid in _paused_pids:
+        try:
+            os.kill(pid, signal.SIGSTOP)
+        except OSError:
+            pass
+
+    _saved_govs = {}
+    for g in glob.glob("/sys/devices/system/cpu/cpufreq/policy*/scaling_governor"):
+        prev = read_text(g)
+        if prev:
+            _saved_govs[g] = prev
+            write_text(g, "powersave")
+
+
+def exit_sleep(bl_path, reason):
+    global _sleeping, _paused_pids
+    if not _sleeping:
+        return
+    _sleeping = False
+    print(f"rgslide-mainline-sleepd: waking ({reason})", file=sys.stderr, flush=True)
+
+    for g, prev in _saved_govs.items():
+        write_text(g, prev)
+
+    for pid in _paused_pids:
+        try:
+            os.kill(pid, signal.SIGCONT)
+        except OSError:
+            pass
+    _paused_pids = set()
+
+    write_text(bl_path, max(12, _saved_bl))
+    try:
+        os.unlink(SLEEP_FLAG)
+    except OSError:
+        pass
+
+
+def main():
+    signal.signal(signal.SIGTERM, _stop)
+    signal.signal(signal.SIGINT, _stop)
+    bl_path = find_bl()
+
+    while _running:
+        path = find_dev()
+        if not path:
+            time.sleep(1.0)
+            continue
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        except OSError:
+            time.sleep(1.0)
+            continue
+
+        pwr_down_t = 0.0
+        try:
+            while _running:
+                r, _, _ = select.select([fd], [], [], 1.0)
+                if not r:
+                    continue
+                data = os.read(fd, EVSZ * 16)
+                if not data:
+                    break
+                for off in range(0, len(data) - EVSZ + 1, EVSZ):
+                    _s, _u, etype, code, val = struct.unpack_from(EVFMT, data, off)
+                    if etype != EV_KEY:
+                        continue
+                    if code == HALL:
+                        if val == 0:
+                            enter_sleep(bl_path, "slider closed")
+                        elif val == 1:
+                            exit_sleep(bl_path, "slider opened")
+                    elif code == POWER:
+                        if val == 1:
+                            pwr_down_t = time.monotonic()
+                        elif val == 0 and pwr_down_t > 0:
+                            dt = time.monotonic() - pwr_down_t
+                            pwr_down_t = 0.0
+                            if dt < POWER_SHORT_MAX_S:
+                                if _sleeping:
+                                    exit_sleep(bl_path, "power key")
+                                else:
+                                    enter_sleep(bl_path, "power key")
+        except OSError:
+            time.sleep(0.5)
+        finally:
+            os.close(fd)
+            if _sleeping:
+                exit_sleep(bl_path, "daemon exit")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,11 @@
+[Unit]
+Description=Restore RG Slide mainline display backlight brightness
+ConditionKernelVersion=>=6.0
+After=rgslide-mainline-modules.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/rgslide-mainline-brightness restore
+
+[Install]
+WantedBy=multi-user.target

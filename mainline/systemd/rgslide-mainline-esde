@@ -1,0 +1,18 @@
+#!/bin/sh
+# Native ES-DE launcher for RG Slide on mainline Linux 6.18 + Mesa Panfrost KMSDRM.
+# Uses Debian's upstream SDL2 + Mesa GLVND (50_mesa.json), zero libhybris.
+set -u
+
+export HOME=/home/console
+export USER=console
+export LOGNAME=console
+export SDL_VIDEODRIVER=kmsdrm
+export SDL_KMSDRM_DEVICE_INDEX=1
+export SDL_AUDIODRIVER=alsa
+export __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json
+export LD_LIBRARY_PATH="/usr/lib/aarch64-linux-gnu:/opt/es-de/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+mkdir -p /run/rgslide 2>/dev/null || true
+echo menu > /run/rgslide/session 2>/dev/null || true
+
+exec /opt/es-de/bin/es-de "$@"

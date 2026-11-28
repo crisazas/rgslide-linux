@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""rgslide-mainline-volume: RG Slide mainline speaker volume (0-100%).
+
+Maps 0-100% onto AGDSP "VBC DAC0 DG Set" attenuation (100% -> DG=20, 1% -> DG=64,
+0% -> DG=127 digital mute) and persists the percentage in /var/lib/rgslide/volume.
+"""
+import os
+import subprocess
+import sys
+
+STATE_FILE = "/var/lib/rgslide/volume"
+CTL_PY = "/usr/local/lib/rgslide/ctl.py"
+STEP = 5
+
+
+def read_vol():
+    try:
+        v = int(open(STATE_FILE).read().strip())
+        return max(0, min(100, v))
+    except (OSError, ValueError):
+        return 50
+
+
+def save_vol(v):
+    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+    with open(STATE_FILE, "w") as f:
+        f.write(f"{v}\n")
+
+
+def apply_vol(v):
+    dg = 127 if v == 0 else (64 - (v * 44) // 100)
+    if not os.path.exists(CTL_PY):
+        return 1
+    rc = subprocess.run(
+        ["python3", CTL_PY, "set", "VBC DAC0 DG Set", str(dg), str(dg)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    ).returncode
+    return rc
+
+
+def main():
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "get"
+    if cmd == "get":
+        print(read_vol())
+        return 0
+    if cmd == "set":
+        if len(sys.argv) < 3 or not sys.argv[2].isdigit():
+            print("usage: rgslide-mainline-volume set 0-100", file=sys.stderr)
+            return 2
+        v = max(0, min(100, int(sys.argv[2])))
+        save_vol(v)
+        apply_vol(v)
+        print(v)
+        return 0
+    if cmd == "up":
+        v = min(100, read_vol() + STEP)
+        save_vol(v)
+        apply_vol(v)
+        print(v)
+        return 0
+    if cmd == "down":
+        v = max(0, read_vol() - STEP)
+        save_vol(v)
+        apply_vol(v)
+        print(v)
+        return 0
+    if cmd == "apply":
+        return apply_vol(read_vol())
+    print("usage: rgslide-mainline-volume get|set N|up|down|apply", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

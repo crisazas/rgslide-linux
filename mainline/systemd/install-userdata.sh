@@ -16,6 +16,23 @@ b64() { base64 -w0 "$1"; }
   echo "echo $(b64 "$HERE/rgslide-mainline-imu") | base64 -d > /mnt/u/usr/local/sbin/rgslide-mainline-imu && chmod 755 /mnt/u/usr/local/sbin/rgslide-mainline-imu"
   echo "echo $(b64 "$HERE/rgslide-mainline-imu.service") | base64 -d > /mnt/u/etc/systemd/system/rgslide-mainline-imu.service"
   echo 'ln -sf /etc/systemd/system/rgslide-mainline-imu.service /mnt/u/etc/systemd/system/multi-user.target.wants/rgslide-mainline-imu.service'
+  echo "echo $(b64 "$HERE/rgslide-mainline-audiod.service") | base64 -d > /mnt/u/etc/systemd/system/rgslide-mainline-audiod.service"
+  echo 'ln -sf /etc/systemd/system/rgslide-mainline-audiod.service /mnt/u/etc/systemd/system/multi-user.target.wants/rgslide-mainline-audiod.service'
+  echo "echo $(b64 "$HERE/rgslide-mainline-fan.service") | base64 -d > /mnt/u/etc/systemd/system/rgslide-mainline-fan.service"
+  echo 'ln -sf /etc/systemd/system/rgslide-mainline-fan.service /mnt/u/etc/systemd/system/multi-user.target.wants/rgslide-mainline-fan.service'
+  echo "echo $(b64 "$HERE/rgslide-mainline-brightness") | base64 -d > /mnt/u/usr/local/sbin/rgslide-mainline-brightness && chmod 755 /mnt/u/usr/local/sbin/rgslide-mainline-brightness"
+  echo "echo $(b64 "$HERE/rgslide-mainline-brightness.service") | base64 -d > /mnt/u/etc/systemd/system/rgslide-mainline-brightness.service"
+  echo 'ln -sf /etc/systemd/system/rgslide-mainline-brightness.service /mnt/u/etc/systemd/system/multi-user.target.wants/rgslide-mainline-brightness.service'
+  echo "echo $(b64 "$HERE/rgslide-mainline-volume") | base64 -d > /mnt/u/usr/local/sbin/rgslide-mainline-volume && chmod 755 /mnt/u/usr/local/sbin/rgslide-mainline-volume"
+  echo "echo $(b64 "$HERE/rgslide-mainline-hotkeyd") | base64 -d > /mnt/u/usr/local/sbin/rgslide-mainline-hotkeyd && chmod 755 /mnt/u/usr/local/sbin/rgslide-mainline-hotkeyd"
+  echo "echo $(b64 "$HERE/rgslide-mainline-hotkeyd.service") | base64 -d > /mnt/u/etc/systemd/system/rgslide-mainline-hotkeyd.service"
+  echo 'ln -sf /etc/systemd/system/rgslide-mainline-hotkeyd.service /mnt/u/etc/systemd/system/multi-user.target.wants/rgslide-mainline-hotkeyd.service'
+  echo "echo $(b64 "$HERE/rgslide-mainline-sleepd") | base64 -d > /mnt/u/usr/local/sbin/rgslide-mainline-sleepd && chmod 755 /mnt/u/usr/local/sbin/rgslide-mainline-sleepd"
+  echo "echo $(b64 "$HERE/rgslide-mainline-sleep.service") | base64 -d > /mnt/u/etc/systemd/system/rgslide-mainline-sleep.service"
+  echo 'ln -sf /etc/systemd/system/rgslide-mainline-sleep.service /mnt/u/etc/systemd/system/multi-user.target.wants/rgslide-mainline-sleep.service'
+  echo "echo $(b64 "$HERE/rgslide-mainline-esde") | base64 -d > /mnt/u/usr/local/bin/rgslide-mainline-esde && chmod 755 /mnt/u/usr/local/bin/rgslide-mainline-esde"
+  echo "echo $(b64 "$HERE/rgslide-mainline-esde.service") | base64 -d > /mnt/u/etc/systemd/system/rgslide-mainline-esde.service"
+  echo 'ln -sf /etc/systemd/system/rgslide-mainline-esde.service /mnt/u/etc/systemd/system/multi-user.target.wants/rgslide-mainline-esde.service'
   echo "echo $(b64 "$HERE/20-usb0.network") | base64 -d > /mnt/u/etc/systemd/network/20-usb0.network"
   for s in $STAGE1_UNITS; do
     echo "mkdir -p /mnt/u/etc/systemd/system/rgslide-$s.service.d; echo $(b64 "$HERE/stage1-only.conf") | base64 -d > /mnt/u/etc/systemd/system/rgslide-$s.service.d/stage1-only.conf"

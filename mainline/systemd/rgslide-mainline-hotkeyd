@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+"""rgslide-mainline-hotkeyd: Volume hardware button listener for mainline Linux 6.18.
+
+Reads KEY_VOLUMEDOWN (114) and KEY_VOLUMEUP (115) from gpio-keys evdev without
+grabbing the device and adjusts speaker volume via rgslide-mainline-volume.
+Runs as root directly (no sudo spawning) with per-press serialization.
+"""
+import os
+import re
+import select
+import signal
+import struct
+import subprocess
+import sys
+import time
+
+KEYS_NAME = os.environ.get("RGSLIDE_KEYS_NAME", "gpio-keys")
+VOLUME_BIN = "/usr/local/sbin/rgslide-mainline-volume"
+EV_KEY = 1
+EVFMT = "llHHi"
+EVSZ = struct.calcsize(EVFMT)
+VOL_KEYS = {114: "down", 115: "up"}
+
+_running = True
+
+
+def _stop(_signum, _frame):
+    global _running
+    _running = False
+
+
+def find_dev(name):
+    try:
+        txt = open("/proc/bus/input/devices").read()
+    except OSError:
+        return None
+    for blk in txt.split("\n\n"):
+        if f'Name="{name}"' in blk:
+            m = re.search(r"Handlers=.*?\b(event\d+)", blk)
+            if m:
+                return "/dev/input/" + m.group(1)
+    return None
+
+
+def main():
+    signal.signal(signal.SIGTERM, _stop)
+    signal.signal(signal.SIGINT, _stop)
+
+    # Restore persisted volume on start
+    subprocess.run([VOLUME_BIN, "apply"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    while _running:
+        path = find_dev(KEYS_NAME)
+        if not path:
+            time.sleep(1.0)
+            continue
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        except OSError:
+            time.sleep(1.0)
+            continue
+        try:
+            while _running:
+                r, _, _ = select.select([fd], [], [], 1.0)
+                if not r:
+                    continue
+                data = os.read(fd, EVSZ * 16)
+                if not data:
+                    break
+                for off in range(0, len(data) - EVSZ + 1, EVSZ):
+                    _sec, _usec, etype, code, val = struct.unpack_from(EVFMT, data, off)
+                    if etype == EV_KEY and code in VOL_KEYS and val in (1, 2):
+                        subprocess.run(
+                            [VOLUME_BIN, VOL_KEYS[code]],
+                            check=False,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+        except OSError:
+            time.sleep(0.5)
+        finally:
+            os.close(fd)
+
+
+if __name__ == "__main__":
+    main()
