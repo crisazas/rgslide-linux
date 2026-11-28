@@ -25,9 +25,9 @@ Native Linux distribution (Debian 13 Trixie arm64) for **Anbernic Unisoc T820 (`
 
 * **Display & 3D Hardware Acceleration (Mali-G57 GPU):**
   - Native display panels running at full resolution (1280x960 or 960x720) with proper orientation and up to 120 Hz refresh rate.
-  - **Vulkan 1.3 (Native Linux):** Open-source **Mesa PanVK 26.3** (`libvulkan_panfrost.so`) talking directly to `/dev/mali0` (`mali_kbase` JM v9) with zero-copy `VK_KHR_display` presentation on `/dev/dri/card0` (60/90/120 Hz) as well as Wayland/X11 WSI (`VK_KHR_wayland_surface`, `VK_KHR_xcb_surface`) across all supported devices — no `libhybris`, no `tlspad`, no Android blobs.
+  - **Vulkan 1.3 (Native Linux):** Open-source **Mesa PanVK 26.3** (`libvulkan_panfrost.so`) talking directly to `/dev/mali0` (`mali_kbase` JM v9) with zero-copy `VK_KHR_display` presentation on `/dev/dri/card0` (60/90/120 Hz, pinned to DRM `plane-0` / `zpos=0` so it shares the primary scanout plane cleanly with ES-DE and `rgslide-ui`) and Wayland/X11 WSI (`VK_KHR_wayland_surface`, `VK_KHR_xcb_surface`) — no `libhybris`, no `tlspad`, no Android blobs. Removing the upstream 2 s per-open JM warmup sleep brings RetroArch Vulkan startup down to ~0.75 s.
   - **OpenGL ES 2.0 / 3.x:** Hardware acceleration through `libhybris` + Android vendor Mali blob + `libtlspad.so`, with automatic `mali_kbase` cold-boot probe retry in `gpu-prep`.
-  - **EmulationStation Desktop Edition (ES-DE 3.5.0)** and **RetroArch (1.22.2)** running natively (RetroArch defaults to Vulkan + `.slang` shaders via `khr_display`).
+  - **EmulationStation Desktop Edition (ES-DE 3.5.0)** and **RetroArch (1.22.2)** running natively (RetroArch defaults to Vulkan + `.slang` shaders via `khr_display`, routed through `rgslide-esde-retroarch` and `hotkey-launch.py`).
 * **PortMaster & Native Ports Integration:**
   - **PortMaster** integrated directly into ES-DE's **Ports** system (`/opt/tools/PortMaster`, `/roms -> /home/console/ROMs`, automatic ES-DE rescan after installing or removing ports, and automatic download on fresh images).
   - **`rgslide-python3` (`tools/pytls/`):** Minimal CPython 3.13 launcher that reserves the first 512 bytes of main-executable static TLS and loads `libpython3.13.so.1.0` dynamically, resolving the `_Py_tss_tstate` vs Android Mali `TLS_SLOT_OPENGL` (`TPIDR_EL0 + 0x18`) collision cleanly.
@@ -40,7 +40,7 @@ Native Linux distribution (Debian 13 Trixie arm64) for **Anbernic Unisoc T820 (`
 * **Audio Subsystem:**
   - Stereo audio output via built-in speakers and 3.5 mm headphone jack through the Unisoc UMP9620 codec (`snd_soc_sprd_codec_ump9620`).
   - Regulator softdep ordering (`rgslide-audio.conf`) mitigating boot static noise / `DPOP`.
-  - True mute at volume level 0; dedicated ALSA audio daemon (`rgslide-audiod`) with 48 kHz FIFO backpressure pacing for UI navigation sounds, RetroArch, and SDL2/OpenAL/MojoAL/FMOD games.
+  - True silence at volume level 0 via digital VBC attenuation (`VBC DAC0 DG Set 127 127`, keeping the AGDSP/IIS clock ticking); dedicated ALSA audio daemon (`rgslide-audiod`) with 48 kHz FIFO backpressure pacing, automatic `hw_ptr` stall recovery, and deadlock-free FIFO draining for UI navigation sounds, RetroArch, and SDL2/OpenAL/MojoAL/FMOD games.
 * **Controls, Standby & Touch:**
   - Integrated gamepad (`retrogame_joypad`, `/dev/input/event3`) mapped and calibrated for each model with dedicated RetroArch autoconfig.
   - **Touchscreen (`fts_ts`):** Native multi-touch support integrated into RetroArch (`UDEV_TOUCH_SUPPORT`), filtering out the ghost `virtual_gamepad` node and mapping touches to pointer devices (`RETRO_DEVICE_POINTER`, NDS stylus via DeSmuME, lightgun, and XMB menu navigation).
@@ -181,10 +181,11 @@ fastboot reboot
   - `rgslide-ui`: On-screen SDL2 quick settings and tools menu (EN/ES).
   - `tlspad`: `LD_PRELOAD` TLS padding shim.
   - `pytls`: `rgslide-python3` static TLS-padded CPython 3.13 launcher for PortMaster / PySDL2 on Mali.
+  - `vpu`: `rgslide-vpu` hardware video decoder (`libhybris` + Unisoc OMX decoders + `/dev/ion` DMA-BUF).
   - `ahbdrm` / `drmshow`: Direct DRM/KMS test tools and frame allocators.
   - `spd_dump`, `mkbootimg.py`, `unpack_bootimg.py`, `avbtool.py`, `lpunpack`: Flashing and Android image tools.
 - `patches/`: Patches applied to `libhybris`, `sdl2`, `retroarch`, `panvk`, and `es`.
-- `scripts/`: Modular build pipeline (`build-rootfs.sh`, `build-libhybris.sh`, `build-panvk.sh`, `build-sdl2-hybris.sh`, `build-esde.sh`, `build-retroarch.sh`, `build-rgslide-python3.sh`, `build-ags.sh`, `build-full-rootfs.sh`, `pack-boot.sh`, `build-initramfs.sh`).
+- `scripts/`: Modular build pipeline (`build-rootfs.sh`, `build-libhybris.sh`, `build-panvk.sh`, `build-sdl2-hybris.sh`, `build-esde.sh`, `build-retroarch.sh`, `build-rgslide-python3.sh`, `build-ags.sh`, `build-vpu.sh`, `build-full-rootfs.sh`, `pack-boot.sh`, `build-initramfs.sh`).
 - `docs/`: Reverse-engineering notes, partition layouts, audio codec registers, panic analyses, and bring-up quirks (in Spanish).
 
 ---
@@ -254,13 +255,14 @@ The build pipeline cross-compiles the entire userland (Debian 13 Trixie arm64, l
    ```
    Compiles ES-DE 3.5.0 with GLES 3.0 support linked against SDL2-hybris, installing into `out/esde-root/opt/es-de`.
 
-6. **Build RetroArch, Libretro Cores & PortMaster Helpers (`rgslide-python3`, `rgslide-ags`):**
+6. **Build RetroArch, Libretro Cores, VPU Decoder & PortMaster Helpers (`rgslide-python3`, `rgslide-ags`, `rgslide-vpu`):**
    ```bash
    ./scripts/build-retroarch.sh
    ./scripts/build-rgslide-python3.sh
    ./scripts/build-ags.sh
+   ./scripts/build-vpu.sh
    ```
-   Compiles RetroArch 1.22.2 (with native Vulkan, hybris context, and physical rumble bridge), `out/rgslide-python3` (TLS-safe Python 3.13 launcher for PortMaster), and `out/rgslide-ags` (AGS 3.6.3.17 with native OpenGL ES 2.0 on Mali-G57). Extra libretro cores should be placed in `out/extra-cores/` and info files in `out/extra-cores-info/`.
+   Compiles RetroArch 1.22.2 (with native Vulkan, hybris context, and physical rumble bridge), `out/rgslide-python3` (TLS-safe Python 3.13 launcher for PortMaster), `out/rgslide-ags` (AGS 3.6.3.17 with native OpenGL ES 2.0 on Mali-G57), and `out/rgslide-vpu` (Unisoc T820 hardware video decoder). Extra libretro cores should be placed in `out/extra-cores/` and info files in `out/extra-cores-info/`.
 
 7. **Assemble Final Rootfs Image (Select Device):**
    ```bash
@@ -273,7 +275,7 @@ The build pipeline cross-compiles the entire userland (Debian 13 Trixie arm64, l
    # For RG476H
    DEVICE=rg476h ./scripts/build-full-rootfs.sh out/rootfs-rg476h-v0.9.2.ext4
    ```
-   Integrates all components, device-specific overlays (`devices/<device>/overlay/`), firmware, Mali drivers, systemd services (`rgslide-sleep`, `rgslide-ch`, `rgslide-imu`, `rgslide-dp`, etc.), ES-DE configs, and generates the final bootable ext4 filesystem.
+   Integrates all components, device-specific overlays (`devices/<device>/overlay/`), firmware, Mali drivers, systemd services (`rgslide-sleep`, `rgslide-ch`, `rgslide-imu`, `rgslide-vpu`, `rgslide-dp`, etc.), ES-DE configs, and generates the final bootable ext4 filesystem.
 
 8. **Pack Boot Image (Select Device):**
    ```bash

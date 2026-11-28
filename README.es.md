@@ -25,9 +25,9 @@ Distribución Linux nativa (Debian 13 Trixie arm64) para consolas portátiles co
 
 * **Pantalla y aceleración 3D (GPU Mali-G57):**
   - Panel nativo (1280x960 o 960x720) con orientación correcta y hasta 120 Hz.
-  - **Vulkan 1.3 (Linux nativo):** Driver libre **Mesa PanVK 26.3** (`libvulkan_panfrost.so`) comunicándose directo con `/dev/mali0` (`mali_kbase` JM v9) con presentación `VK_KHR_display` zero-copy sobre `/dev/dri/card0` (60/90/120 Hz) y WSI Wayland/X11 (`VK_KHR_wayland_surface`, `VK_KHR_xcb_surface`), sin `libhybris`, sin `tlspad` y sin blobs de Android.
+  - **Vulkan 1.3 (Linux nativo):** Driver libre **Mesa PanVK 26.3** (`libvulkan_panfrost.so`) comunicándose directo con `/dev/mali0` (`mali_kbase` JM v9) con presentación `VK_KHR_display` zero-copy sobre `/dev/dri/card0` (60/90/120 Hz, fijado al plano DRM `plane-0` / `zpos=0` para compartir el plano principal sin tapar ES-DE ni `rgslide-ui`) y WSI Wayland/X11 (`VK_KHR_wayland_surface`, `VK_KHR_xcb_surface`), sin `libhybris`, sin `tlspad` y sin blobs de Android. Al eliminar la espera heredada de 2 s por apertura JM en `kbase`, RetroArch con Vulkan arranca en ~0.75 s.
   - **OpenGL ES 2.0 / 3.x:** Aceleración mediante `libhybris` + blob Mali de fábrica + `libtlspad.so`, con reintento automático de `mali_kbase` en arranque en frío dentro de `gpu-prep`.
-  - **ES-DE 3.5.0** y **RetroArch 1.22.2** corriendo nativos (RetroArch soporta tanto Vulkan + shaders `.slang` por `khr_display` como OpenGL ES).
+  - **ES-DE 3.5.0** y **RetroArch 1.22.2** corriendo nativos (RetroArch usa Vulkan + shaders `.slang` por `khr_display`, enrutado vía `rgslide-esde-retroarch` y `hotkey-launch.py`).
 * **PortMaster e integración de Ports nativos:**
   - **PortMaster** integrado directamente en el sistema **Ports** de ES-DE (`/opt/tools/PortMaster`, `/roms -> /home/console/ROMs`, recarga automática de ES-DE al instalar/desinstalar juegos y autodescarga en imágenes limpias).
   - **`rgslide-python3` (`tools/pytls/`):** Lanzador mínimo de Python 3.13 que reserva los primeros 512 bytes del TLS estático del ejecutable principal y carga `libpython3.13.so.1.0` dinámicamente, resolviendo la colisión entre `_Py_tss_tstate` y `TLS_SLOT_OPENGL` (`TPIDR_EL0 + 0x18`) de Mali.
@@ -40,7 +40,7 @@ Distribución Linux nativa (Debian 13 Trixie arm64) para consolas portátiles co
 * **Audio:**
   - Altavoces estéreo y jack de 3.5 mm vía códec Unisoc UMP9620 (`snd_soc_sprd_codec_ump9620`).
   - Ordenación `softdep` de reguladores (`rgslide-audio.conf`) mitigando estática/chasquidos (`DPOP`) al arrancar.
-  - Silencio real al llegar a volumen 0; demonio ALSA (`rgslide-audiod`) con contrapresión en la FIFO a 48 kHz reales para sonidos de interfaz, RetroArch y juegos SDL2/OpenAL/MojoAL/FMOD.
+  - Silencio real al llegar a volumen 0 mediante atenuación digital VBC (`VBC DAC0 DG Set 127 127`, sin detener el reloj IIS/AGDSP); demonio ALSA (`rgslide-audiod`) con contrapresión en la FIFO a 48 kHz reales, recuperación automática si `hw_ptr` se atasca y drenaje sin bloqueos para sonidos de interfaz, RetroArch y juegos SDL2/OpenAL/MojoAL/FMOD.
 * **Controles, deslizador y modo reposo (standby):**
   - Mando integrado (`retrogame_joypad`, `/dev/input/event3`) mapeado y calibrado.
   - **Pantalla táctil (`fts_ts`):** Soporte multi-touch nativo integrado en RetroArch (`UDEV_TOUCH_SUPPORT`), filtrando el nodo fantasma `virtual_gamepad` y enlazando los toques a dispositivos de puntero (`RETRO_DEVICE_POINTER`, lápiz táctil de NDS, pistolas de luz y navegación en menús XMB).
@@ -214,13 +214,14 @@ El flujo de construcción permite la compilación cruzada completa de todo el es
    ```
    Compila ES-DE 3.5.0 con soporte GLES 3.0 enlazado contra SDL2-hybris, instalando en `out/esde-root/opt/es-de`.
 
-6. **Compilar RetroArch, núcleos Libretro y utilidades de PortMaster (`rgslide-python3`, `rgslide-ags`):**
+6. **Compilar RetroArch, núcleos Libretro, decodificador VPU y utilidades de PortMaster (`rgslide-python3`, `rgslide-ags`, `rgslide-vpu`):**
    ```bash
    ./scripts/build-retroarch.sh
    ./scripts/build-rgslide-python3.sh
    ./scripts/build-ags.sh
+   ./scripts/build-vpu.sh
    ```
-   Compila RetroArch 1.22.2 (con Vulkan nativo, contexto hybris y puente de vibración física), `out/rgslide-python3` (lanzador Python 3.13 seguro frente a TLS para PortMaster) y `out/rgslide-ags` (AGS 3.6.3.17 con OpenGL ES 2.0 nativo en Mali-G57). Los núcleos libretro adicionales se ubican en `out/extra-cores/` y sus archivos info en `out/extra-cores-info/`.
+   Compila RetroArch 1.22.2 (con Vulkan nativo, contexto hybris y puente de vibración física), `out/rgslide-python3` (lanzador Python 3.13 seguro frente a TLS para PortMaster), `out/rgslide-ags` (AGS 3.6.3.17 con OpenGL ES 2.0 nativo en Mali-G57) y `out/rgslide-vpu` (decodificador de vídeo por hardware del T820). Los núcleos libretro adicionales se ubican en `out/extra-cores/` y sus archivos info en `out/extra-cores-info/`.
 
 7. **Ensamblar la imagen final de Rootfs (por dispositivo):**
    ```bash
@@ -233,7 +234,7 @@ El flujo de construcción permite la compilación cruzada completa de todo el es
    # Para RG476H
    DEVICE=rg476h ./scripts/build-full-rootfs.sh out/rootfs-rg476h-v0.9.2.ext4
    ```
-   Integra todos los componentes, overlays específicos (`devices/<dispositivo>/overlay/`), firmware, drivers Mali, servicios systemd (`rgslide-sleep`, `rgslide-ch`, `rgslide-imu`, `rgslide-dp`, etc.), configuraciones de ES-DE y produce el sistema ext4 final arrancable.
+   Integra todos los componentes, overlays específicos (`devices/<dispositivo>/overlay/`), firmware, drivers Mali, servicios systemd (`rgslide-sleep`, `rgslide-ch`, `rgslide-imu`, `rgslide-vpu`, `rgslide-dp`, etc.), configuraciones de ES-DE y produce el sistema ext4 final arrancable.
 
 8. **Empaquetar imagen de arranque (boot por dispositivo):**
    ```bash
