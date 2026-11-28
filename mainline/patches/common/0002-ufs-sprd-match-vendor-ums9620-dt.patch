@@ -1,0 +1,42 @@
+From: rgslide-linux <mainline@rgslide>
+Subject: [PATCH] scsi: ufs: ufs-sprd: match UMS9620 vendor DT (sprd,ufshc)
+
+The stock UMS9620 vendor device tree on the Anbernic RG Slide describes the
+UFS host controller with compatible "sprd,ufshc", reset-names "ufs_soft_rst"
+and "ufsdev_soft_rst", and 3-cell syscon properties "phy_sram_init_done"
+(ufs-anlg-syscon, 0x0c) and "ufsdev_refclk_en" (aon-apb-syscon, 0xce8/0xcfc).
+All register offsets and bit masks match the upstream n6_ufs (UMS9620)
+implementation, so add a vendor variant table entry binding "sprd,ufshc".
+
+--- a/drivers/ufs/host/ufs-sprd.c
++++ b/drivers/ufs/host/ufs-sprd.c
+@@ -405,8 +405,29 @@ static struct ufs_sprd_priv n6_ufs = {
+ 	},
+ };
+ 
++static struct ufs_sprd_priv n6_ufs_vendor = {
++	.rci[SPRD_UFSHCI_SOFT_RST] = { .name = "ufs_soft_rst", },
++	.rci[SPRD_UFS_DEV_RST] = { .name = "ufsdev_soft_rst", },
++
++	.sysci[SPRD_UFS_ANLG] = { .name = "phy_sram_init_done", },
++	.sysci[SPRD_UFS_AON_APB] = { .name = "ufsdev_refclk_en", },
++
++	.vregi[SPRD_UFS_VDD_MPHY] = { .name = "vdd-mphy", },
++
++	.ufs_hba_sprd_vops = {
++		.name = "sprd,ums9620-ufs-vendor",
++		.init = ufs_sprd_n6_init,
++		.hce_enable_notify = sprd_ufs_n6_hce_enable_notify,
++		.pwr_change_notify = sprd_ufs_pwr_change_notify,
++		.hibern8_notify = sprd_ufs_n6_h8_notify,
++		.device_reset = ufs_sprd_n6_device_reset,
++		.suspend = ufs_sprd_suspend,
++	},
++};
++
+ static const struct of_device_id __maybe_unused ufs_sprd_of_match[] = {
+ 	{ .compatible = "sprd,ums9620-ufs", .data = &n6_ufs.ufs_hba_sprd_vops},
++	{ .compatible = "sprd,ufshc", .data = &n6_ufs_vendor.ufs_hba_sprd_vops},
+ 	{},
+ };
+ MODULE_DEVICE_TABLE(of, ufs_sprd_of_match);
