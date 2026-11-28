@@ -1,0 +1,56 @@
+From: rgslide-linux <mainline@rgslide>
+Subject: [PATCH] nvmem: core: skip duplicate sysfs cell filenames
+
+The stock UMS9620 / UMP9620 PMIC efuse DT node defines overlapping legacy cells
+that map to identical (name, offset, bit_offset) tuples (e.g. calib@1b and
+calib@48 both at reg <0x48 0x02>, and calib@1c and calib@4a both at <0x4a 0x02>).
+Without deduplication, device_add_group() fails with -EEXIST and aborts
+registration of sc27xx-efuse0, breaking sc27xx-adc, sc27xx-fgu, and thermal zones.
+
+Skip duplicate sysfs attribute names in nvmem_populate_sysfs_cells() while
+keeping all nvmem cell entries accessible to in-kernel phandle consumers.
+
+--- a/drivers/nvmem/core.c
++++ b/drivers/nvmem/core.c
+@@ -485,19 +485,33 @@
+ 
+ 	/* Initialize each attribute to take the name and size of the cell */
+ 	list_for_each_entry(entry, &nvmem->cells, node) {
++		const char *attr_name;
++		unsigned int j;
++		bool dup = false;
++
++		attr_name = devm_kasprintf(&nvmem->dev, GFP_KERNEL,
++					   "%s@%x,%x", entry->name,
++					   entry->offset,
++					   entry->bit_offset);
++		if (!attr_name) {
++			ret = -ENOMEM;
++			goto unlock_mutex;
++		}
++		for (j = 0; j < i; j++) {
++			if (!strcmp(attrs[j].attr.name, attr_name)) {
++				dup = true;
++				break;
++			}
++		}
++		if (dup)
++			continue;
++
+ 		sysfs_bin_attr_init(&attrs[i]);
+-		attrs[i].attr.name = devm_kasprintf(&nvmem->dev, GFP_KERNEL,
+-						    "%s@%x,%x", entry->name,
+-						    entry->offset,
+-						    entry->bit_offset);
++		attrs[i].attr.name = attr_name;
+ 		attrs[i].attr.mode = 0444 & nvmem_bin_attr_get_umode(nvmem);
+ 		attrs[i].size = entry->bytes;
+ 		attrs[i].read = &nvmem_cell_attr_read;
+ 		attrs[i].private = entry;
+-		if (!attrs[i].attr.name) {
+-			ret = -ENOMEM;
+-			goto unlock_mutex;
+-		}
+ 
+ 		pattrs[i] = &attrs[i];
+ 		i++;

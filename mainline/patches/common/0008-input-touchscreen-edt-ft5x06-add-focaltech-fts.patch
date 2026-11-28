@@ -1,0 +1,52 @@
+From: rgslide-linux <mainline@rgslide>
+Subject: [PATCH] input: touchscreen: edt-ft5x06: add focaltech,fts (FT8201P) support
+
+The RG Slide stock DT describes its in-cell FT8201P touchscreen as
+"focaltech,fts" with "vdd-supply", "focaltech,power-gpio",
+"focaltech,reset-gpio" (active-high run), and "focaltech,display-coords".
+
+Map "focaltech,fts" to edt_ft8201_data, enable the optional vdd regulator and
+focaltech,power-gpio, pulse focaltech,reset-gpio, and honor display-coords.
+
+--- a/drivers/input/touchscreen/edt-ft5x06.c
++++ b/drivers/input/touchscreen/edt-ft5x06.c
+@@ -1217,6 +1217,31 @@
+ 	if (error)
+ 		return error;
+ 
++	if (of_device_is_compatible(client->dev.of_node, "focaltech,fts")) {
++		struct regulator *vdd = devm_regulator_get_optional(&client->dev, "vdd");
++		struct gpio_desc *pwr_gpio, *fts_rst;
++
++		if (!IS_ERR(vdd)) {
++			error = regulator_enable(vdd);
++			if (error)
++				dev_warn(&client->dev, "fts: vdd enable failed: %d\n", error);
++		}
++
++		pwr_gpio = devm_gpiod_get_optional(&client->dev, "focaltech,power", GPIOD_OUT_HIGH);
++		if (!IS_ERR_OR_NULL(pwr_gpio)) {
++			gpiod_set_value_cansleep(pwr_gpio, 1);
++			msleep(10);
++		}
++
++		fts_rst = devm_gpiod_get_optional(&client->dev, "focaltech,reset", GPIOD_OUT_LOW);
++		if (!IS_ERR_OR_NULL(fts_rst)) {
++			gpiod_set_value_cansleep(fts_rst, 0);
++			msleep(10);
++			gpiod_set_value_cansleep(fts_rst, 1);
++			msleep(200);
++		}
++	}
++
+ 	tsdata->reset_gpio = devm_gpiod_get_optional(&client->dev,
+ 						     "reset", GPIOD_OUT_HIGH);
+ 	if (IS_ERR(tsdata->reset_gpio)) {
+@@ -1527,6 +1552,7 @@
+ 	/* Note focaltech vendor prefix for compatibility with ft6236.c */
+ 	{ .compatible = "focaltech,ft6236", .data = &edt_ft6236_data },
+ 	{ .compatible = "focaltech,ft8201", .data = &edt_ft8201_data },
++	{ .compatible = "focaltech,fts", .data = &edt_ft8201_data },
+ 	{ .compatible = "focaltech,ft8716", .data = &edt_ft8716_data },
+ 	{ .compatible = "focaltech,ft8719", .data = &edt_ft8719_data },
+ 	{ /* sentinel */ }
