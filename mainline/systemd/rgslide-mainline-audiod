@@ -46,15 +46,20 @@ class AlsaOut:
     def __init__(self):
         self.lib = ctypes.CDLL("libasound.so.2")
         self.handle = ctypes.c_void_p()
+        self._next_retry = 0.0
 
     def open(self):
         if self.handle.value:
             return True
+        now = time.monotonic()
+        if now < self._next_retry:
+            return False
         rc = self.lib.snd_pcm_open(
             ctypes.byref(self.handle), PCM_DEV, SND_PCM_STREAM_PLAYBACK, 0
         )
         if rc < 0:
             self.handle = ctypes.c_void_p()
+            self._next_retry = now + 1.0
             log(f"snd_pcm_open({PCM_DEV.decode()}) failed: {rc}")
             return False
 

@@ -12,22 +12,39 @@ in UMP9620_POWER_PD_SW (0x201c) via the parent PMIC regmap.
 
 --- a/drivers/gpu/drm/panfrost/panfrost_device.c
 +++ b/drivers/gpu/drm/panfrost/panfrost_device.c
-@@ -3,6 +3,11 @@
+@@ -3,6 +3,12 @@
  /* Copyright 2019 Linaro, Ltd, Rob Herring <robh@kernel.org> */
  
  #include <linux/clk.h>
 +#include <linux/delay.h>
 +#include <linux/mfd/syscon.h>
++#include <linux/moduleparam.h>
 +#include <linux/of.h>
 +#include <linux/of_platform.h>
 +#include <linux/regmap.h>
  #include <linux/reset.h>
  #include <linux/platform_device.h>
  #include <linux/pm_domain.h>
-@@ -197,6 +202,118 @@
+@@ -197,6 +203,163 @@
  	return err;
  }
  
++static unsigned int sprd_dvfs_index = 5;
++module_param(sprd_dvfs_index, uint, 0444);
++MODULE_PARM_DESC(sprd_dvfs_index, "Unisoc UMS9620 GPU DVFS index (3=384MHz, 4=512MHz, 5=680MHz, 6=850MHz)");
++
++static int panfrost_sprd_syscon_write(struct device_node *np, const char *prop,
++				      u32 val)
++{
++	struct regmap *rm;
++	u32 args[2];
++
++	rm = syscon_regmap_lookup_by_phandle_args(np, prop, 2, args);
++	if (IS_ERR(rm))
++		return PTR_ERR(rm);
++
++	return regmap_update_bits(rm, args[0], args[1], val);
++}
 +
 +static int panfrost_sprd_syscon_update(struct device_node *np, const char *prop,
 +				       bool set)
@@ -47,7 +64,7 @@ in UMP9620_POWER_PD_SW (0x201c) via the parent PMIC regmap.
 +	struct device *dev = pfdev->dev;
 +	struct device_node *np = dev->of_node;
 +	struct clk_bulk_data *clks;
-+	struct regmap *state_rm;
++	struct regmap *state_rm, *dvfs_rm;
 +	struct regulator *gpu_reg;
 +	u32 state_args[2], val = 0;
 +	int nclks, ret, i;
@@ -93,6 +110,11 @@ in UMP9620_POWER_PD_SW (0x201c) via the parent PMIC regmap.
 +
 +	panfrost_sprd_syscon_update(np, "top_dvfs_cfg", false);
 +	panfrost_sprd_syscon_update(np, "gpu_sw_dvfs_ctrl", false);
++	/* Program DCDC_GPU hardware DVFS voltage table (3.125 mV/step) */
++	panfrost_sprd_syscon_write(np, "dcdc_gpu_voltage0", 0xD0);        /* 0.65 V */
++	panfrost_sprd_syscon_write(np, "dcdc_gpu_voltage1", 0xE0 << 16);  /* 0.70 V */
++	panfrost_sprd_syscon_write(np, "dcdc_gpu_voltage2", 0xF0);        /* 0.75 V */
++	panfrost_sprd_syscon_write(np, "dcdc_gpu_voltage3", 0x100 << 16); /* 0.80 V */
 +	panfrost_sprd_syscon_update(np, "dcdc_gpu_pd", false);
 +	udelay(50);
 +	panfrost_sprd_syscon_update(np, "gpll_cfg_frc_off", false);
@@ -136,6 +158,28 @@ in UMP9620_POWER_PD_SW (0x201c) via the parent PMIC regmap.
 +		}
 +	}
 +
++	dvfs_rm = syscon_regmap_lookup_by_phandle(np, "sprd,gpu-dvfs-apb-syscon");
++	if (!IS_ERR(dvfs_rm)) {
++		u32 idx = clamp_t(u32, sprd_dvfs_index, 3, 6);
++		u32 cur_idx = 0;
++
++		/* Map GPU OPP indices 3..6 (384/512/680/850 MHz) to voltages 0..3 (0.65..0.80 V) */
++		regmap_update_bits(dvfs_rm, 0x0160, 0x3c0, 0 << 6);
++		regmap_update_bits(dvfs_rm, 0x0164, 0x3c0, 1 << 6);
++		regmap_update_bits(dvfs_rm, 0x0168, 0x3c0, 2 << 6);
++		regmap_update_bits(dvfs_rm, 0x016c, 0x3c0, 3 << 6);
++
++		/* Enable hardware DVFS frequency update handshake */
++		regmap_update_bits(dvfs_rm, 0x09ac, 0x3, 0x1);
++
++		/* Switch GPU DVFS index from boot default 0 (26 MHz) to target */
++		regmap_update_bits(dvfs_rm, 0x0794, 0x7, idx);
++		udelay(200);
++		regmap_read(dvfs_rm, 0x0794, &cur_idx);
++		dev_info(dev, "sprd: GPU DVFS index set to %u (cfg=0x%x)\n",
++			 idx, cur_idx & 0x7);
++	}
++
 +	dev_info(dev, "sprd: UMS9620 Mali-G57 power/clock domain ready (top_state=0x%x)\n", val);
 +	return 0;
 +}
@@ -143,7 +187,7 @@ in UMP9620_POWER_PD_SW (0x201c) via the parent PMIC regmap.
  int panfrost_device_init(struct panfrost_device *pfdev)
  {
  	int err;
-@@ -230,11 +339,17 @@
+@@ -230,11 +393,17 @@
  		goto out_reset;
  	}
  
