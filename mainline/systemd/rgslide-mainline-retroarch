@@ -1,0 +1,23 @@
+#!/bin/sh
+# Native RetroArch launcher for RG Slide on mainline Linux 6.18 + Mesa Panfrost KMS.
+# Invokes Debian's native /usr/bin/retroarch with Mesa GLVND (50_mesa.json) and
+# appends /etc/rgslide-mainline-retroarch.cfg on top of /etc/retroarch.cfg.
+set -u
+
+export HOME=/home/console
+export USER=console
+export LOGNAME=console
+export __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json
+export LD_LIBRARY_PATH="/usr/lib/aarch64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+mkdir -p /run/rgslide 2>/dev/null || true
+echo game > /run/rgslide/session 2>/dev/null || true
+
+/usr/bin/retroarch \
+    --config "${RGSLIDE_RA_CONFIG:-/etc/retroarch.cfg}" \
+    --appendconfig=/etc/rgslide-mainline-retroarch.cfg \
+    "$@"
+rc=$?
+
+echo menu > /run/rgslide/session 2>/dev/null || true
+exit "$rc"

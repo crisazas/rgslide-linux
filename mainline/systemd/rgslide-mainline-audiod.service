@@ -6,7 +6,7 @@ Requires=rgslide-mainline-audio.service
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/rgslide-audiod
+ExecStart=/usr/local/sbin/rgslide-mainline-audiod
 Restart=on-failure
 RestartSec=3
 

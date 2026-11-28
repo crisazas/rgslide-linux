@@ -1,0 +1,175 @@
+#!/usr/bin/env python3
+"""rgslide-mainline-audiod: Lightweight ALSA FIFO -> AGDSP speaker daemon.
+
+Reads raw 48 kHz stereo S16_LE PCM from /run/rgslide/audio.fifo (configured as
+ALSA default/rgslide in /etc/asound.conf) and writes it to hw:0,1
+(FE_ST_NORMAL_AP01) using the exact buffer size required by sprd-dmaengine-pcm
+(24000 frames = 96000 B <= 128 KiB, period = 6000 frames).
+
+Uses 0% CPU while idle: closes hw:0,1 after 3 seconds of silence and re-opens
+it on demand when the next audio chunk arrives.
+"""
+import ctypes
+import os
+import select
+import signal
+import stat
+import sys
+import time
+
+FIFO_PATH = "/run/rgslide/audio.fifo"
+PCM_DEV = os.environ.get("RGSLIDE_PCM_DEV", "hw:0,1").encode()
+RATE = 48000
+CHANNELS = 2
+FRAME_BYTES = 4  # S16_LE * 2
+BUFFER_FRAMES = 24000  # 96000 B (<= 128 KiB DMA limit)
+PERIOD_FRAMES = 6000
+IDLE_CLOSE_S = 3.0
+
+SND_PCM_STREAM_PLAYBACK = 0
+SND_PCM_ACCESS_RW_INTERLEAVED = 3
+SND_PCM_FORMAT_S16_LE = 2
+
+_running = True
+
+
+def _stop(_signum, _frame):
+    global _running
+    _running = False
+
+
+def log(*args):
+    print("rgslide-mainline-audiod:", *args, file=sys.stderr, flush=True)
+
+
+class AlsaOut:
+    def __init__(self):
+        self.lib = ctypes.CDLL("libasound.so.2")
+        self.handle = ctypes.c_void_p()
+
+    def open(self):
+        if self.handle.value:
+            return True
+        rc = self.lib.snd_pcm_open(
+            ctypes.byref(self.handle), PCM_DEV, SND_PCM_STREAM_PLAYBACK, 0
+        )
+        if rc < 0:
+            self.handle = ctypes.c_void_p()
+            log(f"snd_pcm_open({PCM_DEV.decode()}) failed: {rc}")
+            return False
+
+        params = ctypes.c_void_p()
+        self.lib.snd_pcm_hw_params_malloc(ctypes.byref(params))
+        try:
+            self.lib.snd_pcm_hw_params_any(self.handle, params)
+            self.lib.snd_pcm_hw_params_set_access(
+                self.handle, params, SND_PCM_ACCESS_RW_INTERLEAVED
+            )
+            self.lib.snd_pcm_hw_params_set_format(
+                self.handle, params, SND_PCM_FORMAT_S16_LE
+            )
+            self.lib.snd_pcm_hw_params_set_channels(self.handle, params, CHANNELS)
+            rate = ctypes.c_uint(RATE)
+            self.lib.snd_pcm_hw_params_set_rate_near(
+                self.handle, params, ctypes.byref(rate), None
+            )
+            buf_sz = ctypes.c_ulong(BUFFER_FRAMES)
+            per_sz = ctypes.c_ulong(PERIOD_FRAMES)
+            self.lib.snd_pcm_hw_params_set_buffer_size_near(
+                self.handle, params, ctypes.byref(buf_sz)
+            )
+            self.lib.snd_pcm_hw_params_set_period_size_near(
+                self.handle, params, ctypes.byref(per_sz), None
+            )
+            rc = self.lib.snd_pcm_hw_params(self.handle, params)
+            if rc < 0:
+                log(f"snd_pcm_hw_params failed: {rc}")
+                self.close()
+                return False
+        finally:
+            self.lib.snd_pcm_hw_params_free(params)
+
+        self.lib.snd_pcm_prepare(self.handle)
+        return True
+
+    def write(self, data):
+        if not self.handle.value and not self.open():
+            return False
+        nframes = len(data) // FRAME_BYTES
+        if nframes <= 0:
+            return True
+        buf = ctypes.create_string_buffer(data, nframes * FRAME_BYTES)
+        off = 0
+        while off < nframes:
+            ptr = ctypes.c_void_p(ctypes.addressof(buf) + off * FRAME_BYTES)
+            w = self.lib.snd_pcm_writei(self.handle, ptr, nframes - off)
+            if w < 0:
+                w = self.lib.snd_pcm_recover(self.handle, int(w), 1)
+                if w < 0:
+                    log(f"snd_pcm_recover failed: {w}")
+                    self.close()
+                    return False
+                continue
+            off += int(w)
+        return True
+
+    def close(self):
+        if self.handle.value:
+            try:
+                self.lib.snd_pcm_drop(self.handle)
+                self.lib.snd_pcm_close(self.handle)
+            except Exception:
+                pass
+            self.handle = ctypes.c_void_p()
+
+
+def ensure_fifo():
+    os.makedirs(os.path.dirname(FIFO_PATH), exist_ok=True)
+    if os.path.exists(FIFO_PATH):
+        st = os.stat(FIFO_PATH)
+        if not stat.S_ISFIFO(st.st_mode):
+            os.unlink(FIFO_PATH)
+    if not os.path.exists(FIFO_PATH):
+        os.mkfifo(FIFO_PATH, 0o666)
+    os.chmod(FIFO_PATH, 0o666)
+
+
+def main():
+    signal.signal(signal.SIGTERM, _stop)
+    signal.signal(signal.SIGINT, _stop)
+
+    ensure_fifo()
+    # Open RDWR|NONBLOCK so readers never see EOF when all clients close
+    fd = os.open(FIFO_PATH, os.O_RDWR | os.O_NONBLOCK)
+    alsa = AlsaOut()
+    rem = b""
+    last_data = 0.0
+    log(f"listening on {FIFO_PATH} -> {PCM_DEV.decode()}")
+
+    try:
+        while _running:
+            timeout = 0.5 if alsa.handle.value else 2.0
+            r, _, _ = select.select([fd], [], [], timeout)
+            now = time.monotonic()
+            if r:
+                try:
+                    chunk = os.read(fd, 16384)
+                except OSError:
+                    chunk = b""
+                if chunk:
+                    last_data = now
+                    buf = rem + chunk
+                    usable = len(buf) - (len(buf) % FRAME_BYTES)
+                    if usable > 0:
+                        alsa.write(buf[:usable])
+                    rem = buf[usable:]
+            elif alsa.handle.value and (now - last_data) >= IDLE_CLOSE_S:
+                alsa.close()
+                rem = b""
+    finally:
+        alsa.close()
+        os.close(fd)
+
+
+if __name__ == "__main__":
+    main()

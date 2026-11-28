@@ -16,8 +16,11 @@ b64() { base64 -w0 "$1"; }
   echo "echo $(b64 "$HERE/rgslide-mainline-imu") | base64 -d > /mnt/u/usr/local/sbin/rgslide-mainline-imu && chmod 755 /mnt/u/usr/local/sbin/rgslide-mainline-imu"
   echo "echo $(b64 "$HERE/rgslide-mainline-imu.service") | base64 -d > /mnt/u/etc/systemd/system/rgslide-mainline-imu.service"
   echo 'ln -sf /etc/systemd/system/rgslide-mainline-imu.service /mnt/u/etc/systemd/system/multi-user.target.wants/rgslide-mainline-imu.service'
+  echo "echo $(b64 "$HERE/rgslide-mainline-audiod") | base64 -d > /mnt/u/usr/local/sbin/rgslide-mainline-audiod && chmod 755 /mnt/u/usr/local/sbin/rgslide-mainline-audiod"
   echo "echo $(b64 "$HERE/rgslide-mainline-audiod.service") | base64 -d > /mnt/u/etc/systemd/system/rgslide-mainline-audiod.service"
   echo 'ln -sf /etc/systemd/system/rgslide-mainline-audiod.service /mnt/u/etc/systemd/system/multi-user.target.wants/rgslide-mainline-audiod.service'
+  echo "echo $(b64 "$HERE/rgslide-mainline-retroarch") | base64 -d > /mnt/u/usr/local/bin/rgslide-mainline-retroarch && chmod 755 /mnt/u/usr/local/bin/rgslide-mainline-retroarch"
+  echo "echo $(b64 "$HERE/rgslide-mainline-retroarch.cfg") | base64 -d > /mnt/u/etc/rgslide-mainline-retroarch.cfg"
   echo "echo $(b64 "$HERE/rgslide-mainline-fan.service") | base64 -d > /mnt/u/etc/systemd/system/rgslide-mainline-fan.service"
   echo 'ln -sf /etc/systemd/system/rgslide-mainline-fan.service /mnt/u/etc/systemd/system/multi-user.target.wants/rgslide-mainline-fan.service'
   echo "echo $(b64 "$HERE/rgslide-mainline-brightness") | base64 -d > /mnt/u/usr/local/sbin/rgslide-mainline-brightness && chmod 755 /mnt/u/usr/local/sbin/rgslide-mainline-brightness"
