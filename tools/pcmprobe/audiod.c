@@ -38,7 +38,7 @@ static void onsig(int s){(void)s;stop=1;}
 static long now_ms(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);return t.tv_sec*1000L+t.tv_nsec/1000000L;}
 
 static short ring[RING*2]; static long rhead, rtail; /* en frames, crecen sin parar */
-static pthread_mutex_t mu=PTHREAD_MUTEX_INITIALIZER; static volatile long last_data, last_sound;
+static pthread_mutex_t mu=PTHREAD_MUTEX_INITIALIZER; static volatile long last_data, last_sound, last_hw_ms;
 static volatile int pcm_active;
 static int fifo_rd;
 static int always_on, amp_mute;   /* AMP_MUTE=1: con silencio digital se activa "Speaker Mute" (apaga el amplificador, GPIO 176) y se quita al llegar sonido */
@@ -69,10 +69,10 @@ static void *reader(void*a)
 {
 	(void)a; static unsigned char raw[4096]; int carry=0;
 	while(!stop){
-		/* Con el PCM ya abierto, aplicar contrapresion natural por la FIFO si el anillo supera LAT (200 ms):
-		 * asi los clientes ALSA sobre slave "null" (SDL2/OpenAL/MojoAL) se regulan a 48 kHz reales
-		 * en vez de girar a 9x quemando CPU y descartando audio. */
-		if(pcm_active && ring_frames()>LAT){usleep(4000);continue;}
+		/* Con el PCM ya abierto y avanzando (hw_ptr vivo <250 ms), aplicar contrapresion natural por la FIFO
+		 * si el anillo supera LAT (200 ms): asi los clientes ALSA sobre slave "null" se regulan a 48 kHz reales.
+		 * Si el DSP se atasca (hw_ptr detenido >=250 ms), drenar SIEMPRE la FIFO para no bloquear nunca a ES-DE/juegos. */
+		if(pcm_active && (now_ms()-last_hw_ms<250) && ring_frames()>LAT){usleep(4000);continue;}
 		int n=read(fifo_rd,raw+carry,sizeof raw-carry);
 		if(n<=0){usleep(5000);continue;}
 		n+=carry; int fr=n/4; ring_put((short*)raw,fr); carry=n-fr*4; if(carry)memmove(raw,raw+fr*4,carry);
@@ -153,10 +153,14 @@ int main(int argc,char**argv)
 			if(h1!=h0)fd=f; else {fprintf(stderr,"hw_ptr clavado, reabro (intento %d)\n",t);pcm_close(f);}
 		}
 		if(fd<0){route("off");route_on=0;usleep(500000);continue;}
-		ring_trim(OPENKEEP); pcm_active=1; last_data=now_ms(); long lastlog=now_ms(); st_under=st_drop=st_in=st_out=0; fprintf(stderr,"audio abierto (anillo=%ld frames, %ld ms desde el primer sonido)\n",ring_frames(),now_ms()-last_sound);
+		ring_trim(OPENKEEP); last_hw_ms=now_ms(); pcm_active=1; last_data=now_ms(); long lastlog=now_ms(); st_under=st_drop=st_in=st_out=0; fprintf(stderr,"audio abierto (anillo=%ld frames, %ld ms desde el primer sonido)\n",ring_frames(),now_ms()-last_sound);
 		if(amp_mute&&now_ms()-last_sound>IDLE_PCM_MS)set_mute_now(1);
+		unsigned long prev_hw=0; int have_hw=0;
 		while(!stop){
 			unsigned long hw; long av=avail(fd,&hw); if(av<0)break;
+			long now=now_ms();
+			if(!have_hw || hw!=prev_hw){prev_hw=hw; have_hw=1; last_hw_ms=now;}
+			else if(now-last_hw_ms>500){fprintf(stderr,"hw_ptr atascado (%lu), reabriendo PCM\n",hw); break;}
 			long queued=BUFFR-av;
 			if(queued<TARGET&&av>=CH){
 				if(ring_frames()>HARDTRIM){st_drop+=ring_frames()-OPENKEEP;ring_trim(OPENKEEP);}   /* el juego va un poco mas rapido que el DAC: descarta lo viejo */
@@ -165,9 +169,9 @@ int main(int argc,char**argv)
 				else if(queued<CH){st_under++;if(wr(fd,zero,CH)<0)break;}   /* relleno solo si el buffer esta a punto de vaciarse */
 				else usleep(4000);
 			} else usleep(4000);
-			if(amp_mute){ if(now_ms()-last_sound>IDLE_PCM_MS&&BUFFR-av<CH*8)set_mute_now(1); else if(now_ms()-last_sound<MUTE_MS)set_mute_now(0); }   /* cierra tras 15 s de silencio con la cola consumida (pausas musicales no lo cierran); abre al llegar sonido */
-			if(!always_on&&now_ms()-last_sound>SILMS)break;
-			if(now_ms()-lastlog>5000){lastlog=now_ms();fprintf(stderr,"in=%ld out=%ld vaciados=%ld descartados=%ld anillo=%ld cola=%ld\n",st_in,st_out,st_under,st_drop,ring_frames(),BUFFR-av);}
+			if(amp_mute){ if(now-last_sound>IDLE_PCM_MS&&BUFFR-av<CH*8)set_mute_now(1); else if(now-last_sound<MUTE_MS)set_mute_now(0); }   /* cierra tras 15 s de silencio con la cola consumida (pausas musicales no lo cierran); abre al llegar sonido */
+			if(!always_on&&now-last_sound>SILMS)break;
+			if(now-lastlog>5000){lastlog=now;fprintf(stderr,"in=%ld out=%ld vaciados=%ld descartados=%ld anillo=%ld cola=%ld\n",st_in,st_out,st_under,st_drop,ring_frames(),BUFFR-av);}
 		}
 		pcm_active=0; pcm_close(fd); set_mute_now(0); closed_at=now_ms(); fprintf(stderr,"audio cerrado\n");
 	}
