@@ -8,14 +8,21 @@ export HOME=/home/console
 export USER=console
 export LOGNAME=console
 export __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json
-export LD_LIBRARY_PATH="/usr/lib/aarch64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH="/usr/lib/aarch64-linux-gnu:/opt/retroarch/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 mkdir -p /run/rgslide 2>/dev/null || true
 echo game > /run/rgslide/session 2>/dev/null || true
 
+EXTRA_CFG=""
+REFRESH=$(sed -n 's/^REFRESH=//p' /etc/default/rgslide-display 2>/dev/null | tail -n 1 | tr -d "\"' ")
+if [ "$REFRESH" = "120" ]; then
+    printf 'video_refresh_rate = "120.000000"\n' > /tmp/rgslide-ra-refresh.cfg 2>/dev/null || true
+    EXTRA_CFG="/tmp/rgslide-ra-refresh.cfg"
+fi
+
 /usr/bin/retroarch \
     --config "${RGSLIDE_RA_CONFIG:-/etc/retroarch.cfg}" \
-    --appendconfig=/etc/rgslide-mainline-retroarch.cfg \
+    --appendconfig="/etc/rgslide-mainline-retroarch.cfg${EXTRA_CFG:+|$EXTRA_CFG}" \
     "$@"
 rc=$?
 
