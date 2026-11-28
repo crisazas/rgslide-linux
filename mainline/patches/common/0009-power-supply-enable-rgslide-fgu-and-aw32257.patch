@@ -1,0 +1,39 @@
+From: rgslide-linux <mainline@rgslide>
+Subject: [PATCH] power: supply: enable UMP9620 fuel gauge and AW32257 charger on RG Slide
+
+- Allow sprd,ump9620-fgu to probe when "monitored-battery" is present in DT
+  (not only on ZTE boards carrying /charger_policy_service), enabling real
+  battery capacity, voltage, current, and temperature on the RG Slide.
+- Match the Awinic AW32257 I2C charger ("aw32257" at 0x6a) in bq2415x_charger
+  as a BQ24157S-compatible device.
+
+--- a/drivers/power/supply/sc27xx_fuel_gauge.c
++++ b/drivers/power/supply/sc27xx_fuel_gauge.c
+@@ -1410,7 +1410,8 @@
+ 	 * one with made-up readings (19 %, "Over voltage", 75 C from an unconnected NTC) that every user-space reader
+ 	 * had to be told to ignore. Only the U30 Air's device tree has the charger policy service.
+ 	 */
+-	if (of_device_is_compatible(dev->of_node, "sprd,ump9620-fgu")) {
++	if (of_device_is_compatible(dev->of_node, "sprd,ump9620-fgu") &&
++	    !of_property_present(dev->of_node, "monitored-battery")) {
+ 		struct device_node *policy = of_find_node_by_path("/charger_policy_service");
+ 
+ 		of_node_put(policy);
+--- a/drivers/power/supply/bq2415x_charger.c
++++ b/drivers/power/supply/bq2415x_charger.c
+@@ -1751,6 +1751,7 @@
+ 	{ "bq24156a", BQ24156A },
+ 	{ "bq24157s", BQ24157S },
+ 	{ "bq24158", BQ24158 },
++	{ "aw32257", BQ24157S },
+ 	{},
+ };
+ MODULE_DEVICE_TABLE(i2c, bq2415x_i2c_id_table);
+@@ -1789,6 +1790,7 @@
+ 	{ .compatible = "ti,bq24156a" },
+ 	{ .compatible = "ti,bq24157s" },
+ 	{ .compatible = "ti,bq24158" },
++	{ .compatible = "aw32257" },
+ 	{},
+ };
+ MODULE_DEVICE_TABLE(of, bq2415x_of_match_table);

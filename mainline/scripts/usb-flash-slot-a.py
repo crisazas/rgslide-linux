@@ -24,6 +24,8 @@ MISC_OUT = os.path.join(OUT_DIR, 'misc-a-once.img')
 HOST_IP = os.environ.get('RGSLIDE_HOST_IP', '10.55.0.1')
 DEV_IP = os.environ.get('RGSLIDE_DEV_IP', '10.55.0.2')
 HTTP_PORT = int(os.environ.get('RGSLIDE_HTTP_PORT', '18080'))
+# Boot attempts for Slot A before the bootloader falls back to Slot B (2 = one real attempt).
+TRIES = int(os.environ.get('RGSLIDE_A_TRIES', '2'))
 
 for path in (BOOT_IMG, MISC_BASE):
     if not os.path.isfile(path):
@@ -34,7 +36,7 @@ for path in (BOOT_IMG, MISC_BASE):
 m = bytearray(open(MISC_BASE, 'rb').read())
 o = 0x800
 m[o:o + 4] = b'_a\0\0'
-m[o + 12] = (15 & 15) | (2 << 4)
+m[o + 12] = (15 & 15) | (TRIES << 4)
 m[o + 13] = 0
 m[o + 14] = (14 & 15) | (2 << 4) | (1 << 7)
 m[o + 15] = 0

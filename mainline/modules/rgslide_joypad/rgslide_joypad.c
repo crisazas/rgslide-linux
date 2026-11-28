@@ -189,6 +189,7 @@ struct rgslide_joypad {
 	struct rgslide_btn btns[RGSLIDE_MAX_BTNS];
 	int num_btns;
 	u16 center[4];
+	u16 trig_rest[2];
 	bool calibrated;
 };
 
@@ -231,6 +232,8 @@ static void rgslide_joypad_poll(struct input_dev *input)
 		if (!jp->calibrated) {
 			for (i = 0; i < 4; i++)
 				jp->center[i] = axes[i] ? axes[i] : 16384;
+			jp->trig_rest[0] = axes[4];
+			jp->trig_rest[1] = axes[5];
 			jp->calibrated = true;
 		}
 		for (i = 0; i < 4; i++) {
@@ -239,8 +242,10 @@ static void rgslide_joypad_poll(struct input_dev *input)
 			val = clamp(val, -16384, 16383);
 			input_report_abs(input, axis_codes[i], val);
 		}
-		input_report_abs(input, ABS_Z, clamp((int)axes[4], 0, 32767));
-		input_report_abs(input, ABS_RZ, clamp((int)axes[5], 0, 32767));
+		input_report_abs(input, ABS_Z,
+				 clamp(abs((int)axes[4] - (int)jp->trig_rest[0]), 0, 32767));
+		input_report_abs(input, ABS_RZ,
+				 clamp(abs((int)axes[5] - (int)jp->trig_rest[1]), 0, 32767));
 	}
 
 	input_sync(input);

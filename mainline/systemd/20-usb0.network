@@ -1,0 +1,11 @@
+[Match]
+Name=usb0
+
+[Link]
+RequiredForOnline=no
+
+[Network]
+# The initramfs gives usb0 10.55.0.2; without this networkd (DHCP=no) strips it after switch_root.
+Address=10.55.0.2/24
+LinkLocalAddressing=no
+DHCP=no

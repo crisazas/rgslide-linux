@@ -29,7 +29,8 @@ mainline/
 ├── initramfs/         # Minimal bring-up initramfs (busybox + USB gadget + pstore)
 ├── modules/           # Temporary out-of-tree modules during bring-up
 ├── patches/           # Kernel patches (common/ and <major.minor>/)
-└── scripts/           # Build, boot-image packing, and Slot A flash helpers
+├── scripts/           # Build, boot-image packing, and Slot A flash helpers
+└── systemd/           # Stage 2 module autoload, usb0 IP, and Stage 1 drop-in isolation
 ```
 
 ## Bring-Up Roadmap & Status
@@ -38,6 +39,6 @@ mainline/
 | :--- | :--- | :--- |
 | **M0 — Minimal Boot** | Linux 6.18 LTS (`6.18.60-rgslide-m0`) + LK stub + stock `vendor_boot` DTB + USB ECM (`10.55.0.2`) & ACM (`/dev/ttyACM0`) + `ramoops`/pstore + 8 CPUs + 8 GiB RAM + `/dev/kvm` | **Done** |
 | **M1 — Storage & Net** | UFS (`22000000.ufs`, 128 GB, 73 GPT parts) + Debian 13 Trixie `switch_root` + `systemd` + SSH (`10.55.0.2`) + `/dev/ttyACM0` + Marlin3 SDIO Wi-Fi (`wlan0` via `wcn_bsp` + `sprd_wlan_combo`) & Bluetooth (`/dev/ttyBT0` via `sprdbt_tty`) | **Done** |
-| **M2 — Display & GPU** | **Mali-G57 Panfrost (`0x9091`, `/dev/dri/renderD128`, Mesa 25.0.7 OpenGL 3.1 / GLES 3.1)** + **UMS9620 DPU R6P0 KMS (`sprd-drm`, `/dev/dri/card0`, 1280×960 handoff)** + **PWM backlight (`64030000.pwm` + `pwm_bl`)** — verified live with `kmscube` spinning on screen at ~58.5–60 FPS | **Done** |
-| **M3 — Console Input** | Integrated gamepad (`rgslide_joypad.ko` -> `retrogame_joypad` + `/dev/input/js0`: 18 GPIO buttons + 6 SPI MCU analog axes on `spi0.0`), FT8201P touchscreen (`edt-ft5x06.ko` on `i2c-3` `0x38`), Hall slider & volume/power keys (`gpio-keys`), rumble (`sc27xx:vibrator`), plus `sc27xx-efuse0` + `sc27xx-adc` + IIO thermal zones | **Done** |
-| **M4 — Full Parity** | UMP9620/AGDSP audio, CM4 watchdog/IMU, battery/charger (`aw32257`), VPU, `s2idle` suspend | Planned |
+| **M2 — Display & GPU** | **Mali-G57 Panfrost (`0x9091`, `/dev/dri/renderD128`, Mesa 25.0.7 OpenGL 3.1 / GLES 3.1)** + **UMS9620 DPU R6P0 KMS (`sprd-drm`, `/dev/dri/card1`, 1280×960 handoff)** + **PWM backlight (`64030000.pwm` + `pwm_bl`)** — verified live with `kmscube` spinning on screen at ~58.5–60 FPS | **Done** |
+| **M3 — Console Input** | Integrated gamepad (`rgslide_joypad.ko` -> `retrogame_joypad` + `/dev/input/js0`: 18 GPIO buttons + 6 SPI MCU analog axes on `spi0.0`, auto-calibrated Hall triggers), FT8201P touchscreen (`edt-ft5x06.ko` on `i2c-3` `0x38`), Hall slider & volume/power keys (`gpio-keys`), rumble (`sc27xx:vibrator`), plus `sc27xx-efuse0` + `sc27xx-adc` + IIO thermal zones | **Done** |
+| **M4 — Full Parity** | **Done:** Battery fuel gauge (`sc27xx-fgu`) + charger (`aw32257`), `s2idle` suspend + `/dev/rtc0` wake, Stage 1/2 systemd isolation (`ConditionKernelVersion=<6.0`), Stage 2 module autoload (`rgslide-mainline-modules.service` with crash-loop guard + persistent `usb0` `10.55.0.2/24`), UMP9620 PMIC watchdog verified past 284 s without CM4. **Remaining:** 120 Hz VRR DSI switch, UMP9620/AGDSP audio, CM4 IMU, VPU | **In Progress** |

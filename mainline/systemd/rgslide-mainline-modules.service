@@ -1,0 +1,17 @@
+[Unit]
+Description=Load RG Slide mainline Linux 6.18 hardware modules
+ConditionKernelVersion=>=6.0
+After=systemd-udevd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Crash-loop guard: the marker is written before the risky Wi-Fi/BT modules load and removed after they did. If the
+# kernel panics in between, the next boot sees the marker, skips them and comes up with SSH and pstore readable.
+# wcn_bsp must finish scanning the SDIO bus before sprd_wlan_combo loads, hence the pause after it.
+ExecStart=/bin/sh -c 'MOD=/lib/modules/$(uname -r)/extra; G=/var/lib/rgslide/wcn-crashed; mkdir -p /var/lib/rgslide; \
+ if [ -e $G ]; then echo "wcn guard marker present, skipping Marlin3 modules"; W=""; else touch $G; sync; W="wcn_bsp.ko sprd_wlan_combo.ko sprdbt_tty.ko"; fi; \
+ for m in $W drm_kms_helper.ko drm_dma_helper.ko sprd-drm.ko drm_shmem_helper.ko gpu-sched.ko panfrost.ko edt-ft5x06.ko rgslide_joypad.ko; do [ -f "$MOD/$m" ] && /sbin/insmod "$MOD/$m" 2>/dev/null; [ "$m" = wcn_bsp.ko ] && sleep 2; done; [ -n "$W" ] && rm -f $G; true'
+
+[Install]
+WantedBy=multi-user.target
