@@ -139,7 +139,7 @@ if [ -x out/rgslide-vpu ]; then
 fi
 sudo mkdir -p "$T/usr/local/lib/rgslide-pybin"
 sudo ln -sf /usr/local/bin/rgslide-python3 "$T/usr/local/lib/rgslide-pybin/python3"
-sudo ln -sf /usr/local/bin/rgslide-retroarch "$T/usr/bin/retroarch"
+sudo ln -sf /usr/local/bin/rgslide-esde-retroarch "$T/usr/bin/retroarch"
 sudo mkdir -p "$T/usr/share/glvnd/egl_vendor.d" "$T/etc/ld.so.conf.d" "$T/etc/profile.d" "$T/etc/environment.d"
 sudo cp -a "$T/opt/hybris-glvnd/etc/10_libhybris.json" "$T/usr/share/glvnd/egl_vendor.d/"
 sudo cp -a "$T/opt/hybris-glvnd/etc/rgslide-hybris.conf" "$T/etc/ld.so.conf.d/"

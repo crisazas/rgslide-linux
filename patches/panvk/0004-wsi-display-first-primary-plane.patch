@@ -1,0 +1,23 @@
+diff --git a/src/vulkan/wsi/wsi_common_display.c b/src/vulkan/wsi/wsi_common_display.c
+--- a/src/vulkan/wsi/wsi_common_display.c
++++ b/src/vulkan/wsi/wsi_common_display.c
+@@ -2426,14 +2426,15 @@ wsi_display_select_plane(const struct wsi_display_connector *connector,
+          continue;
+       }
+ 
+-      /* if there's a plane is active on the connector's crtc, pick it */
+-      if (plane->crtc_id == connector->crtc_id) {
++      /* if there's a plane active on the connector's crtc, pick the first one
++       * (lowest zpos on drivers like sprd_drm that expose multiple PRIMARY planes) */
++      if (!active_plane && plane->crtc_id == connector->crtc_id) {
+          active_plane = plane->plane_id;
+       }
+ 
+       /* if a plane is not active on any crtc but the connector's crtc is
+-       * in the plane's possible_crtcs, pick it */
+-      if (plane->possible_crtcs & (1u << crtc_index)) {
++       * in the plane's possible_crtcs, pick the first one */
++      if (!possible_plane && (plane->possible_crtcs & (1u << crtc_index))) {
+          possible_plane = plane->plane_id;
+       }
+ 
