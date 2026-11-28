@@ -88,7 +88,7 @@ in UMP9620_POWER_PD_SW (0x201c) via the parent PMIC regmap.
 +			dev_err(dev, "sprd: gpu regulator enable failed: %d\n", ret);
 +			return ret;
 +		}
-+		udelay(100);
++		msleep(5);
 +	}
 +
 +	panfrost_sprd_syscon_update(np, "top_dvfs_cfg", false);

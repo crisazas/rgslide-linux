@@ -1,0 +1,553 @@
+From: rgslide-linux <mainline@rgslide>
+Subject: [PATCH] drm/sprd: add Unisoc UMS9620 (qogirn6pro) DPU R6P0 and DSI handoff support
+
+Enable mainline DRM KMS scanout on the Anbernic RG Slide (UMS9620 / T820):
+- Fix Linux 6.18 drmm_universal_plane_alloc() / drmm_crtc_alloc_with_planes()
+  by dropping legacy .destroy callbacks on managed plane and CRTC funcs.
+- Register a lightweight genpd provider for "sprd,vpu-pd" so 31000000.dpu and
+  31300000.dsi satisfy their stock DT power-domains dependency without blocking.
+- Bind only dpu0 (31000000.dpu) + dsi0 (31300000.dsi) on qogirn6pro so
+  display-subsystem does not stall waiting for unbound dpu1 (DisplayPort).
+- Add DPU R6P0 register map (0x08 CTRL, 0x2c LAY_EN mask, 0x40 layer stride,
+  0x250/0x254/0x258 IRQ regs, BIT(4) VSYNC, BIT(18) UPDATE_DONE) in handoff
+  mode preserving the live LK DSI/DPHY/FT8201P 1280x960 pipeline.
+- Add qogirn6pro-dsi-host handoff connector exposing the FT8201P 1280x960@60Hz
+  mode and call drm_client_setup() for fbdev/fbcon support.
+
+--- a/drivers/gpu/drm/sprd/sprd_drm.c
++++ b/drivers/gpu/drm/sprd/sprd_drm.c
+@@ -10,8 +10,10 @@
+ #include <linux/mutex.h>
+ #include <linux/of_graph.h>
+ #include <linux/platform_device.h>
++#include <linux/pm_domain.h>
+ 
+ #include <drm/drm_atomic_helper.h>
++#include <drm/clients/drm_client_setup.h>
+ #include <drm/drm_drv.h>
+ #include <drm/drm_gem_dma_helper.h>
+ #include <drm/drm_gem_framebuffer_helper.h>
+@@ -106,6 +108,8 @@
+ 	if (ret < 0)
+ 		goto err_kms_helper_poll_fini;
+ 
++	drm_client_setup(drm, NULL);
++
+ 	return 0;
+ 
+ err_kms_helper_poll_fini:
+@@ -133,7 +137,40 @@
+ 
+ static int sprd_drm_probe(struct platform_device *pdev)
+ {
+-	return drm_of_component_probe(&pdev->dev, component_compare_of, &drm_component_ops);
++	struct device *dev = &pdev->dev;
++	struct device_node *port0, *dpu_np, *ep, *dsi_np;
++	struct component_match *match = NULL;
++
++	dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32));
++
++	/*
++	 * On UMS9620 (qogirn6pro), display-subsystem lists both dpu0 (MIPI-DSI)
++	 * and dpu1 (DisplayPort). Bind only dpu0 + dsi0 when dpu0 is qogirn6pro
++	 * so we don't stall waiting for an unbound dpu1 component.
++	 */
++	port0 = of_parse_phandle(dev->of_node, "ports", 0);
++	if (port0) {
++		dpu_np = of_get_parent(port0);
++		if (dpu_np && of_device_is_compatible(dpu_np, "sprd,qogirn6pro-dpu")) {
++			drm_of_component_match_add(dev, &match, component_compare_of, dpu_np);
++			ep = of_get_next_child(port0, NULL);
++			if (ep) {
++				dsi_np = of_graph_get_remote_port_parent(ep);
++				if (dsi_np) {
++					drm_of_component_match_add(dev, &match, component_compare_of, dsi_np);
++					of_node_put(dsi_np);
++				}
++				of_node_put(ep);
++			}
++			of_node_put(dpu_np);
++			of_node_put(port0);
++			return component_master_add_with_match(dev, &drm_component_ops, match);
++		}
++		of_node_put(dpu_np);
++		of_node_put(port0);
++	}
++
++	return drm_of_component_probe(dev, component_compare_of, &drm_component_ops);
+ }
+ 
+ static void sprd_drm_remove(struct platform_device *pdev)
+@@ -169,7 +206,39 @@
+ 	},
+ };
+ 
++static int sprd_vpu_pd_probe(struct platform_device *pdev)
++{
++	struct generic_pm_domain *genpd;
++
++	genpd = devm_kzalloc(&pdev->dev, sizeof(*genpd), GFP_KERNEL);
++	if (!genpd)
++		return -ENOMEM;
++
++	genpd->name = dev_name(&pdev->dev);
++	pm_genpd_init(genpd, NULL, false);
++	return of_genpd_add_provider_simple(pdev->dev.of_node, genpd);
++}
++
++static void sprd_vpu_pd_remove(struct platform_device *pdev)
++{
++}
++
++static const struct of_device_id sprd_vpu_pd_match[] = {
++	{ .compatible = "sprd,vpu-pd" },
++	{ /* sentinel */ },
++};
++
++static struct platform_driver sprd_vpu_pd_driver = {
++	.probe = sprd_vpu_pd_probe,
++	.remove = sprd_vpu_pd_remove,
++	.driver = {
++		.name = "sprd-vpu-pd",
++		.of_match_table = sprd_vpu_pd_match,
++	},
++};
++
+ static struct platform_driver *sprd_drm_drivers[]  = {
++	&sprd_vpu_pd_driver,
+ 	&sprd_drm_driver,
+ 	&sprd_dpu_driver,
+ 	&sprd_dsi_driver,
+--- a/drivers/gpu/drm/sprd/sprd_dpu.h
++++ b/drivers/gpu/drm/sprd/sprd_dpu.h
+@@ -48,6 +48,7 @@
+ 	u8 if_type;
+ 	struct videomode vm;
+ 	bool stopped;
++	bool is_r6p0;
+ 	wait_queue_head_t wait_queue;
+ 	bool evt_update;
+ 	bool evt_stop;
+@@ -90,7 +91,8 @@
+ static inline u32
+ layer_reg_rd(struct dpu_context *ctx, u32 offset, int index)
+ {
+-	u32 layer_offset = offset + index * DPU_LAY_REG_OFFSET;
++	u32 stride = ctx->is_r6p0 ? 0x40 : DPU_LAY_REG_OFFSET;
++	u32 layer_offset = offset + index * stride;
+ 
+ 	return readl(ctx->base + layer_offset);
+ }
+@@ -98,7 +100,8 @@
+ static inline void
+ layer_reg_wr(struct dpu_context *ctx, u32 offset, u32 cfg_bits, int index)
+ {
+-	u32 layer_offset =  offset + index * DPU_LAY_REG_OFFSET;
++	u32 stride = ctx->is_r6p0 ? 0x40 : DPU_LAY_REG_OFFSET;
++	u32 layer_offset = offset + index * stride;
+ 
+ 	writel(cfg_bits, ctx->base + layer_offset);
+ }
+--- a/drivers/gpu/drm/sprd/sprd_dpu.c
++++ b/drivers/gpu/drm/sprd/sprd_dpu.c
+@@ -32,6 +32,27 @@
+ #define REG_BLEND_SIZE	0x24
+ #define REG_BG_COLOR	0x2C
+ 
++/* DPU R6P0 (UMS9620 / qogirn6pro) register offsets */
++#define REG_R6P0_DPU_CTRL	0x08
++#define REG_R6P0_DPU_CFG0	0x0C
++#define REG_R6P0_BG_COLOR	0x24
++#define REG_R6P0_LAY_EN		0x2C
++#define REG_R6P0_LAY_DES_SIZE	0x48
++#define REG_R6P0_LAY_PITCH	0x4C
++#define REG_R6P0_LAY_POS	0x50
++#define REG_R6P0_LAY_ALPHA	0x54
++#define REG_R6P0_LAY_CROP_START	0x60
++#define REG_R6P0_INT_EN		0x250
++#define REG_R6P0_INT_CLR	0x254
++#define REG_R6P0_INT_STS	0x258
++#define REG_R6P0_DPI_CTRL	0x260
++#define REG_R6P0_DPI_H_TIMING	0x264
++#define REG_R6P0_DPI_V_TIMING	0x268
++
++#define BIT_R6P0_DPU_REG_UPDATE	BIT(4)
++#define BIT_R6P0_INT_VSYNC	BIT(4)
++#define BIT_R6P0_INT_UPDATE_DONE BIT(18)
++
+ /* Layer0 control registers */
+ #define REG_LAY_BASE_ADDR0	0x30
+ #define REG_LAY_BASE_ADDR1	0x34
+@@ -356,6 +377,30 @@
+ 		pitch = fb->pitches[0] / fb->format->cpp[0];
+ 	}
+ 
++	if (ctx->is_r6p0) {
++		u32 dst_size = ((u32)state->crtc_w & 0xffff) | ((u32)state->crtc_h << 16);
++
++		layer_reg_wr(ctx, REG_R6P0_LAY_POS, offset, index);
++		layer_reg_wr(ctx, REG_LAY_SIZE, size, index);
++		layer_reg_wr(ctx, REG_R6P0_LAY_DES_SIZE, dst_size, index);
++		layer_reg_wr(ctx, REG_R6P0_LAY_CROP_START,
++			     src_y << 16 | src_x, index);
++		layer_reg_wr(ctx, REG_R6P0_LAY_ALPHA, alpha, index);
++		layer_reg_wr(ctx, REG_R6P0_LAY_PITCH, pitch, index);
++
++		format = drm_format_to_dpu(fb);
++		blend = drm_blend_to_dpu(state);
++		rotation = drm_rotation_to_dpu(state);
++
++		layer_reg_wr(ctx, REG_LAY_CTRL, BIT_DPU_LAY_EN |
++					format |
++					blend |
++					rotation,
++					index);
++		dpu_reg_set(ctx, REG_R6P0_LAY_EN, BIT(index));
++		return;
++	}
++
+ 	layer_reg_wr(ctx, REG_LAY_POS, offset, index);
+ 	layer_reg_wr(ctx, REG_LAY_SIZE, size, index);
+ 	layer_reg_wr(ctx, REG_LAY_CROP_START,
+@@ -378,6 +423,16 @@
+ {
+ 	struct dpu_context *ctx = &dpu->ctx;
+ 
++	if (ctx->is_r6p0) {
++		ctx->evt_update = false;
++		dpu_reg_set(ctx, REG_R6P0_DPU_CTRL, BIT_R6P0_DPU_REG_UPDATE);
++		if (!wait_event_interruptible_timeout(ctx->wait_queue,
++						      ctx->evt_update,
++						      msecs_to_jiffies(100)))
++			drm_err(dpu->drm, "dpu wait for reg update done time out!\n");
++		return;
++	}
++
+ 	/*
+ 	 * Make sure the dpu is in stop status. DPU has no shadow
+ 	 * registers in EDPI mode. So the config registers can only be
+@@ -406,6 +461,20 @@
+ 	struct dpu_context *ctx = &dpu->ctx;
+ 	u32 int_mask = 0;
+ 
++	if (ctx->is_r6p0) {
++		/*
++		 * Handoff mode: preserve the live LK DPU/DPI/DSI/FT8201P state
++		 * and enable VSYNC + UPDATE_DONE interrupts for atomic page flips.
++		 */
++		writel(0x00, ctx->base + REG_R6P0_BG_COLOR);
++		writel(BIT_DPU_INT_DONE | BIT_R6P0_INT_VSYNC | BIT_R6P0_INT_UPDATE_DONE,
++		       ctx->base + REG_R6P0_INT_CLR);
++		writel(BIT_DPU_INT_DONE | BIT_R6P0_INT_VSYNC | BIT_R6P0_INT_UPDATE_DONE,
++		       ctx->base + REG_R6P0_INT_EN);
++		ctx->stopped = false;
++		return;
++	}
++
+ 	writel(0x00, ctx->base + REG_BG_COLOR);
+ 	writel(0x00, ctx->base + REG_MMU_EN);
+ 	writel(0x00, ctx->base + REG_MMU_PPN1);
+@@ -453,6 +522,12 @@
+ {
+ 	struct dpu_context *ctx = &dpu->ctx;
+ 
++	if (ctx->is_r6p0) {
++		writel(0x00, ctx->base + REG_R6P0_INT_EN);
++		writel(0xff, ctx->base + REG_R6P0_INT_CLR);
++		return;
++	}
++
+ 	writel(0x00, ctx->base + REG_DPU_INT_EN);
+ 	writel(0xff, ctx->base + REG_DPU_INT_CLR);
+ }
+@@ -463,6 +538,9 @@
+ 	u32 reg_val;
+ 	u32 size;
+ 
++	if (ctx->is_r6p0)
++		return;
++
+ 	size = (ctx->vm.vactive << 16) | ctx->vm.hactive;
+ 	writel(size, ctx->base + REG_PANEL_SIZE);
+ 	writel(size, ctx->base + REG_BLEND_SIZE);
+@@ -544,6 +622,8 @@
+ 	struct sprd_dpu *dpu = to_sprd_crtc(old_state->crtc);
+ 
+ 	layer_reg_wr(&dpu->ctx, REG_LAY_CTRL, 0x00, old_state->zpos);
++	if (dpu->ctx.is_r6p0)
++		dpu_reg_clr(&dpu->ctx, REG_R6P0_LAY_EN, BIT(old_state->zpos));
+ }
+ 
+ static void sprd_plane_create_properties(struct sprd_plane *plane, int index)
+@@ -577,7 +657,6 @@
+ static const struct drm_plane_funcs sprd_plane_funcs = {
+ 	.update_plane = drm_atomic_helper_update_plane,
+ 	.disable_plane	= drm_atomic_helper_disable_plane,
+-	.destroy = drm_plane_cleanup,
+ 	.reset = drm_atomic_helper_plane_reset,
+ 	.atomic_duplicate_state = drm_atomic_helper_plane_duplicate_state,
+ 	.atomic_destroy_state = drm_atomic_helper_plane_destroy_state,
+@@ -626,7 +705,7 @@
+ 				  crtc->state->encoder_mask) {
+ 		dsi = encoder_to_dsi(encoder);
+ 
+-		if (dsi->slave->mode_flags & MIPI_DSI_MODE_VIDEO)
++		if (!dsi->slave || (dsi->slave->mode_flags & MIPI_DSI_MODE_VIDEO))
+ 			dpu->ctx.if_type = SPRD_DPU_IF_DPI;
+ 		else
+ 			dpu->ctx.if_type = SPRD_DPU_IF_EDPI;
+@@ -684,7 +763,10 @@
+ {
+ 	struct sprd_dpu *dpu = to_sprd_crtc(crtc);
+ 
+-	dpu_reg_set(&dpu->ctx, REG_DPU_INT_EN, BIT_DPU_INT_VSYNC);
++	if (dpu->ctx.is_r6p0)
++		dpu_reg_set(&dpu->ctx, REG_R6P0_INT_EN, BIT_R6P0_INT_VSYNC);
++	else
++		dpu_reg_set(&dpu->ctx, REG_DPU_INT_EN, BIT_DPU_INT_VSYNC);
+ 
+ 	return 0;
+ }
+@@ -693,7 +775,10 @@
+ {
+ 	struct sprd_dpu *dpu = to_sprd_crtc(crtc);
+ 
+-	dpu_reg_clr(&dpu->ctx, REG_DPU_INT_EN, BIT_DPU_INT_VSYNC);
++	if (dpu->ctx.is_r6p0)
++		dpu_reg_clr(&dpu->ctx, REG_R6P0_INT_EN, BIT_R6P0_INT_VSYNC);
++	else
++		dpu_reg_clr(&dpu->ctx, REG_DPU_INT_EN, BIT_DPU_INT_VSYNC);
+ }
+ 
+ static const struct drm_crtc_helper_funcs sprd_crtc_helper_funcs = {
+@@ -704,7 +789,6 @@
+ };
+ 
+ static const struct drm_crtc_funcs sprd_crtc_funcs = {
+-	.destroy	= drm_crtc_cleanup,
+ 	.set_config	= drm_atomic_helper_set_config,
+ 	.page_flip	= drm_atomic_helper_page_flip,
+ 	.reset		= drm_atomic_helper_crtc_reset,
+@@ -750,6 +834,23 @@
+ 	struct dpu_context *ctx = &dpu->ctx;
+ 	u32 reg_val, int_mask = 0;
+ 
++	if (ctx->is_r6p0) {
++		reg_val = readl(ctx->base + REG_R6P0_INT_STS);
++		if (reg_val & BIT_R6P0_INT_UPDATE_DONE) {
++			ctx->evt_update = true;
++			wake_up_interruptible_all(&ctx->wait_queue);
++		}
++		if (reg_val & BIT_DPU_INT_DONE) {
++			ctx->evt_stop = true;
++			wake_up_interruptible_all(&ctx->wait_queue);
++		}
++		if (reg_val & BIT_R6P0_INT_VSYNC)
++			drm_crtc_handle_vblank(&dpu->base);
++
++		writel(reg_val, ctx->base + REG_R6P0_INT_CLR);
++		return IRQ_HANDLED;
++	}
++
+ 	reg_val = readl(ctx->base + REG_DPU_INT_STS);
+ 
+ 	/* disable err interrupt */
+@@ -786,6 +887,9 @@
+ 	struct dpu_context *ctx = &dpu->ctx;
+ 	int ret;
+ 
++	ctx->is_r6p0 = of_device_is_compatible(dev->of_node, "sprd,qogirn6pro-dpu");
++	dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32));
++
+ 	ctx->base = devm_platform_ioremap_resource(pdev, 0);
+ 	if (IS_ERR(ctx->base)) {
+ 		dev_err(dev, "failed to map dpu registers\n");
+@@ -797,8 +901,13 @@
+ 		return ctx->irq;
+ 
+ 	/* disable and clear interrupts before register dpu IRQ. */
+-	writel(0x00, ctx->base + REG_DPU_INT_EN);
+-	writel(0xff, ctx->base + REG_DPU_INT_CLR);
++	if (ctx->is_r6p0) {
++		writel(0x00, ctx->base + REG_R6P0_INT_EN);
++		writel(0xff, ctx->base + REG_R6P0_INT_CLR);
++	} else {
++		writel(0x00, ctx->base + REG_DPU_INT_EN);
++		writel(0xff, ctx->base + REG_DPU_INT_CLR);
++	}
+ 
+ 	ret = devm_request_irq(dev, ctx->irq, sprd_dpu_isr,
+ 			       IRQF_TRIGGER_NONE, "DPU", dpu);
+@@ -843,6 +952,7 @@
+ 
+ static const struct of_device_id dpu_match_table[] = {
+ 	{ .compatible = "sprd,sharkl3-dpu" },
++	{ .compatible = "sprd,qogirn6pro-dpu" },
+ 	{ /* sentinel */ },
+ };
+ MODULE_DEVICE_TABLE(of, dpu_match_table);
+--- a/drivers/gpu/drm/sprd/sprd_dsi.h
++++ b/drivers/gpu/drm/sprd/sprd_dsi.h
+@@ -116,8 +116,10 @@
+ 	struct mipi_dsi_host host;
+ 	struct mipi_dsi_device *slave;
+ 	struct drm_encoder encoder;
++	struct drm_connector connector;
+ 	struct drm_bridge *panel_bridge;
+ 	struct dsi_context ctx;
++	bool is_qogirn6pro;
+ };
+ 
+ int dphy_pll_config(struct dsi_context *ctx);
+--- a/drivers/gpu/drm/sprd/sprd_dsi.c
++++ b/drivers/gpu/drm/sprd/sprd_dsi.c
+@@ -11,8 +11,10 @@
+ 
+ #include <drm/drm_atomic_helper.h>
+ #include <drm/drm_bridge.h>
++#include <drm/drm_atomic_helper.h>
+ #include <drm/drm_of.h>
+ #include <drm/drm_probe_helper.h>
++#include <drm/drm_probe_helper.h>
+ 
+ #include "sprd_drm.h"
+ #include "sprd_dpu.h"
+@@ -793,6 +795,11 @@
+ 	struct sprd_dpu *dpu = to_sprd_crtc(encoder->crtc);
+ 	struct dsi_context *ctx = &dsi->ctx;
+ 
++	if (dsi->is_qogirn6pro) {
++		ctx->enabled = true;
++		return;
++	}
++
+ 	if (ctx->enabled) {
+ 		drm_warn(dsi->drm, "dsi is initialized\n");
+ 		return;
+@@ -830,6 +837,11 @@
+ 	struct sprd_dpu *dpu = to_sprd_crtc(encoder->crtc);
+ 	struct dsi_context *ctx = &dsi->ctx;
+ 
++	if (dsi->is_qogirn6pro) {
++		ctx->enabled = false;
++		return;
++	}
++
+ 	if (!ctx->enabled) {
+ 		drm_warn(dsi->drm, "dsi isn't initialized\n");
+ 		return;
+@@ -880,11 +892,69 @@
+ 	return 0;
+ }
+ 
++static int sprd_dsi_handoff_get_modes(struct drm_connector *connector)
++{
++	static const struct drm_display_mode ft8201p_mode = {
++		.clock = 182000,
++		.hdisplay = 1280,
++		.hsync_start = 1280 + 14,
++		.hsync_end = 1280 + 14 + 10,
++		.htotal = 1280 + 14 + 10 + 10,
++		.vdisplay = 960,
++		.vsync_start = 960 + 1021,
++		.vsync_end = 960 + 1021 + 10,
++		.vtotal = 960 + 1021 + 10 + 314,
++		.width_mm = 68,
++		.height_mm = 121,
++		.type = DRM_MODE_TYPE_DRIVER | DRM_MODE_TYPE_PREFERRED,
++	};
++	struct drm_display_mode *mode;
++
++	mode = drm_mode_duplicate(connector->dev, &ft8201p_mode);
++	if (!mode)
++		return 0;
++
++	drm_mode_set_name(mode);
++	drm_mode_probed_add(connector, mode);
++	connector->display_info.width_mm = ft8201p_mode.width_mm;
++	connector->display_info.height_mm = ft8201p_mode.height_mm;
++	return 1;
++}
++
++static const struct drm_connector_helper_funcs sprd_dsi_handoff_conn_helper = {
++	.get_modes = sprd_dsi_handoff_get_modes,
++};
++
++static enum drm_connector_status
++sprd_dsi_handoff_detect(struct drm_connector *connector, bool force)
++{
++	return connector_status_connected;
++}
++
++static const struct drm_connector_funcs sprd_dsi_handoff_conn_funcs = {
++	.detect = sprd_dsi_handoff_detect,
++	.fill_modes = drm_helper_probe_single_connector_modes,
++	.destroy = drm_connector_cleanup,
++	.reset = drm_atomic_helper_connector_reset,
++	.atomic_duplicate_state = drm_atomic_helper_connector_duplicate_state,
++	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
++};
++
+ static int sprd_dsi_bridge_init(struct sprd_dsi *dsi,
+ 				struct device *dev)
+ {
+ 	int ret;
+ 
++	if (dsi->is_qogirn6pro) {
++		drm_connector_helper_add(&dsi->connector, &sprd_dsi_handoff_conn_helper);
++		ret = drm_connector_init(dsi->drm, &dsi->connector,
++					 &sprd_dsi_handoff_conn_funcs,
++					 DRM_MODE_CONNECTOR_DSI);
++		if (ret)
++			return ret;
++		return drm_connector_attach_encoder(&dsi->connector, &dsi->encoder);
++	}
++
+ 	dsi->panel_bridge = devm_drm_of_get_bridge(dev, dev->of_node, 1, 0);
+ 	if (IS_ERR(dsi->panel_bridge))
+ 		return PTR_ERR(dsi->panel_bridge);
+@@ -954,7 +1024,10 @@
+ {
+ 	struct sprd_dsi *dsi = dev_get_drvdata(dev);
+ 
+-	drm_of_panel_bridge_remove(dev->of_node, 1, 0);
++	if (dsi->is_qogirn6pro)
++		drm_connector_cleanup(&dsi->connector);
++	else
++		drm_of_panel_bridge_remove(dev->of_node, 1, 0);
+ 
+ 	drm_encoder_cleanup(&dsi->encoder);
+ }
+@@ -1024,6 +1097,7 @@
+ 
+ static const struct of_device_id dsi_match_table[] = {
+ 	{ .compatible = "sprd,sharkl3-dsi-host" },
++	{ .compatible = "sprd,qogirn6pro-dsi-host" },
+ 	{ /* sentinel */ },
+ };
+ 
+@@ -1037,6 +1111,12 @@
+ 		return -ENOMEM;
+ 
+ 	dev_set_drvdata(dev, dsi);
++	dsi->is_qogirn6pro = of_device_is_compatible(dev->of_node, "sprd,qogirn6pro-dsi-host");
++
++	if (dsi->is_qogirn6pro) {
++		dsi->ctx.work_mode = DSI_MODE_VIDEO;
++		return component_add(dev, &dsi_component_ops);
++	}
+ 
+ 	dsi->host.ops = &sprd_dsi_host_ops;
+ 	dsi->host.dev = dev;
+@@ -1048,6 +1128,11 @@
+ {
+ 	struct sprd_dsi *dsi = dev_get_drvdata(&pdev->dev);
+ 
++	if (dsi->is_qogirn6pro) {
++		component_del(&pdev->dev, &dsi_component_ops);
++		return;
++	}
++
+ 	mipi_dsi_host_unregister(&dsi->host);
+ }
+ 

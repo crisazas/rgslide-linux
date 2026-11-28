@@ -1,0 +1,28 @@
+From: rgslide-linux <mainline@rgslide>
+Subject: [PATCH] pwm/backlight: add Unisoc UMS9620 (qogirn6pro) PWM and backlight compatibles
+
+The RG Slide stock DT declares the SoC PWM controller as "sprd,qogirn6pro-pwm"
+(identical register layout and clock bindings to "sprd,ums512-pwm") and the
+panel backlight as "sprd,qogirn6pro-backlight" (using standard pwm-backlight
+properties: pwms, brightness-levels, default-brightness-level).
+
+--- a/drivers/pwm/pwm-sprd.c
++++ b/drivers/pwm/pwm-sprd.c
+@@ -278,6 +278,7 @@
+ 
+ static const struct of_device_id sprd_pwm_of_match[] = {
+ 	{ .compatible = "sprd,ums512-pwm", },
++	{ .compatible = "sprd,qogirn6pro-pwm", },
+ 	{ },
+ };
+ MODULE_DEVICE_TABLE(of, sprd_pwm_of_match);
+--- a/drivers/video/backlight/pwm_bl.c
++++ b/drivers/video/backlight/pwm_bl.c
+@@ -349,6 +349,7 @@
+ 
+ static const struct of_device_id pwm_backlight_of_match[] = {
+ 	{ .compatible = "pwm-backlight" },
++	{ .compatible = "sprd,qogirn6pro-backlight" },
+ 	{ }
+ };
+ 
