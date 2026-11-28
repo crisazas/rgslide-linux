@@ -14,10 +14,10 @@ apply() {
 	/usr/local/sbin/rgslide-agdsp-access get vol || return 1
 	if [ "$vol" -eq 0 ]; then
 		dg=127
-		python3 "$CTL" set "Speaker Mute" 1 >/dev/null 2>&1
-		python3 "$CTL" set "Speaker2 Mute" 1 >/dev/null 2>&1
-		# No activar VBC_DL_MUTE=1: congela el DMA/hw_ptr del AGDSP y atasca rgslide-audiod.
-		# Speaker Mute=1 + DG=127 garantizan silencio real manteniendo el reloj del PCM activo.
+		# No activar Speaker Mute + Speaker2 Mute ni VBC_DL_MUTE juntos: apagan el reloj IIS/DAC
+		# y dejan hw_ptr clavado en el AGDSP. VBC DAC0 DG Set=127 atenua digitalmente a silencio total.
+		python3 "$CTL" set "Speaker Mute" 0 >/dev/null 2>&1
+		python3 "$CTL" set "Speaker2 Mute" 0 >/dev/null 2>&1
 		python3 "$CTL" set "VBC_DL_MUTE" 0 >/dev/null 2>&1
 	else
 		dg=$(( 64 - vol * 44 / 100 ))
