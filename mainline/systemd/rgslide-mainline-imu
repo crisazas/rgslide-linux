@@ -1,0 +1,390 @@
+#!/usr/bin/env python3
+"""rgslide-mainline-imu: Native CM4 sensorhub loader and DSU (Cemuhook) UDP server.
+
+Boots the Unisoc T820 CH Cortex-M4 sensorhub (ICM-42607 accel + gyro) directly
+from /dev/sda30 (ch_sys_a) via /dev/chsys without any Android binaries, then
+exposes standard DSU/Cemuhook UDP motion packets on 127.0.0.1:26760 for
+Dolphin, melonDS, Azahar/Citra, Cemu, and RetroArch.
+
+Uses 0% CPU while idle: accel (handle 1) and gyro (handle 4) are only enabled
+at 50 Hz while a DSU client is subscribed, and disabled 5 seconds after the
+last client request.
+"""
+import ctypes
+import fcntl
+import math
+import os
+import select
+import signal
+import socket
+import struct
+import subprocess
+import sys
+import time
+import zlib
+
+HOST = os.environ.get("RGSLIDE_IMU_HOST", "127.0.0.1")
+PORT = int(os.environ.get("RGSLIDE_IMU_PORT", "26760"))
+CH_FW_DEV = os.environ.get("RGSLIDE_CH_FW_DEV", "/dev/sda30")
+CH_MODEM_DEV = "/dev/chsys"
+SPIPE_CMD = "/dev/spipe_ch0"
+SPIPE_DATA = "/dev/spipe_ch1"
+
+# sprd_modem_loader ioctls (arm64)
+MODEM_WRITE_LOCK_CMD = 0x4D03
+MODEM_WRITE_UNLOCK_CMD = 0x4D04
+MODEM_SET_LOAD_INFO_CMD = 0x43604D06
+MODEM_SET_WRITE_REGION_CMD = 0x40044D08
+MODEM_STOP_CMD = 0x4D0C
+MODEM_START_CMD = 0x4D0D
+
+# CH Cortex-M4 bootcode from modem_ch_info.xml (remaps 0x80040000 -> 0xAE640000)
+CH_BOOTCODE = struct.pack(
+    "<7I",
+    0x0002A000,
+    0x00000009,
+    0xF2404802,
+    0x600121E6,
+    0x46874801,
+    0x62110060,
+    0x80040000,
+)
+
+# Sensorhub handles & protocol constants
+HANDLE_ACCEL = 1
+HANDLE_GYRO = 4
+SAMPLE_PERIOD_US = 20000  # 50 Hz
+
+# DSU/Cemuhook constants
+SERVER_ID = 0x5247534C  # 'RGSL'
+MAC = b"\x02\x7b\x5a\x0c\x18\x5b"
+MSG_VER = 0x100000
+MSG_INFO = 0x100001
+MSG_DATA = 0x100002
+G0 = 9.80665
+
+_running = True
+
+
+def _on_signal(_signum, _frame):
+    global _running
+    _running = False
+
+
+def log(*args):
+    print("rgslide-mainline-imu:", *args, file=sys.stderr, flush=True)
+
+
+def encode_shub_pkt(ptype, subtype, payload=b"\xff"):
+    plen = len(payload)
+    s = 0xFCFC + ((ptype << 8) | subtype) + plen
+    s = (s >> 16) + (s & 0xFFFF)
+    s += s >> 16
+    hchk = (~s) & 0xFFFF
+
+    ds = 0
+    for i in range(0, plen - (plen & 1), 2):
+        ds += (payload[i] << 8) | payload[i + 1]
+    if plen & 1:
+        ds += payload[-1] << 8
+    ds = (ds >> 16) + (ds & 0xFFFF)
+    ds += ds >> 16
+    dchk = (~ds) & 0xFFFF
+
+    return (
+        b"\x7e\x7e\x7e\x7e"
+        + struct.pack(">BBHH", ptype, subtype, plen, hchk)
+        + payload
+        + struct.pack(">H", dchk)
+    )
+
+
+def ensure_modules():
+    if os.path.exists(CH_MODEM_DEV) and os.path.exists(SPIPE_CMD):
+        return
+    krel = os.uname().release
+    extra = f"/lib/modules/{krel}/extra"
+    for mod in ("spipe.ko", "sprd_modem_loader.ko"):
+        path = os.path.join(extra, mod)
+        if os.path.exists(path):
+            subprocess.run(["insmod", path], check=False, stderr=subprocess.DEVNULL)
+    for _ in range(30):
+        if os.path.exists(CH_MODEM_DEV) and os.path.exists(SPIPE_CMD):
+            return
+        time.sleep(0.1)
+
+
+def query_fw_version(sp0, timeout=1.0):
+    try:
+        os.write(sp0, encode_shub_pkt(0xFF, 0xCD, b"\xff"))
+    except OSError:
+        return None
+    deadline = time.monotonic() + timeout
+    buf = bytearray()
+    while time.monotonic() < deadline:
+        r, _, _ = select.select([sp0], [], [], max(0.05, deadline - time.monotonic()))
+        if not r:
+            continue
+        try:
+            buf.extend(os.read(sp0, 512))
+        except OSError:
+            break
+        idx = buf.find(b"\x7e\x7e\x7e\x7e\xff\xcd")
+        if idx >= 0 and len(buf) >= idx + 16:
+            return struct.unpack_from("<I", buf, idx + 10)[0]
+    return None
+
+
+def boot_ch_sys():
+    # Check if CH is already running and responsive
+    try:
+        sp0 = os.open(SPIPE_CMD, os.O_RDWR | os.O_NONBLOCK)
+        ver = query_fw_version(sp0, timeout=0.5)
+        os.close(sp0)
+        if ver:
+            log(f"ch_sys already running (CM4 Version: {ver})")
+            return ver
+    except OSError:
+        pass
+
+    # sprd_modem_loader checks current->comm == "modem_control" for SET_LOAD_INFO
+    libc = ctypes.CDLL("libc.so.6")
+    libc.prctl(15, b"modem_control\0", 0, 0, 0)
+
+    info = bytearray(864)
+    struct.pack_into("<I", info, 0, 2)  # region_cnt
+    struct.pack_into("<Q", info, 32, 0x65016000)  # modem_base
+    struct.pack_into("<I", info, 40, 0x60000)  # modem_size
+    struct.pack_into("<Q", info, 48, 0xAE600000)  # all_base
+    struct.pack_into("<I", info, 56, 0x300000)  # all_size
+    struct.pack_into("<QI21s", info, 64, 0xAE640000, 0x100000, b"chsys")
+    struct.pack_into("<QI21s", info, 104, 0x65016000, 0x1000, b"boot_code")
+
+    with open(CH_FW_DEV, "rb") as f:
+        ch_img = f.read(0x100000)
+
+    fd = os.open(CH_MODEM_DEV, os.O_RDWR)
+    try:
+        fcntl.ioctl(fd, MODEM_WRITE_LOCK_CMD)
+        try:
+            fcntl.ioctl(fd, MODEM_SET_LOAD_INFO_CMD, bytes(info))
+            try:
+                fcntl.ioctl(fd, MODEM_STOP_CMD)
+            except OSError:
+                pass
+            time.sleep(0.1)
+
+            fcntl.ioctl(fd, MODEM_SET_WRITE_REGION_CMD, struct.pack("<i", 0))
+            os.lseek(fd, 0, os.SEEK_SET)
+            os.write(fd, ch_img)
+
+            fcntl.ioctl(fd, MODEM_SET_WRITE_REGION_CMD, struct.pack("<i", 1))
+            os.lseek(fd, 0, os.SEEK_SET)
+            os.write(fd, CH_BOOTCODE)
+
+            fcntl.ioctl(fd, MODEM_START_CMD)
+        finally:
+            fcntl.ioctl(fd, MODEM_WRITE_UNLOCK_CMD)
+    finally:
+        os.close(fd)
+
+    # Wait for SIPC sbuf 9-4 to become ready
+    sp0 = -1
+    for _ in range(50):
+        try:
+            sp0 = os.open(SPIPE_CMD, os.O_RDWR | os.O_NONBLOCK)
+            break
+        except OSError:
+            time.sleep(0.1)
+    if sp0 < 0:
+        raise RuntimeError("spipe_ch0 did not become ready after ch_sys start")
+
+    try:
+        time.sleep(1.5)
+        for _ in range(5):
+            ver = query_fw_version(sp0, timeout=1.0)
+            if ver:
+                log(f"ch_sys booted (CM4 Version: {ver})")
+                return ver
+            time.sleep(0.3)
+        raise RuntimeError("CM4 did not answer GET_FWVERSION")
+    finally:
+        os.close(sp0)
+
+
+def sync_cm4_time(sp0):
+    now_ns = time.clock_gettime_ns(time.CLOCK_BOOTTIME)
+    # struct cnter_to_boottime (40 bytes):
+    # last_boottime, last_systimer, last_sysfrt, systimer_mult/shift, sysfrt_mult/shift
+    payload = struct.pack("<QQQIIII", now_ns, 0, 0, 1000000, 0, 31250000, 10)
+    os.write(sp0, encode_shub_pkt(0xFF, 0xC4, payload))
+
+
+def set_ap_awake(sp0, awake=True):
+    os.write(sp0, encode_shub_pkt(0xFF, 0xC5, b"\x02" if awake else b"\x03"))
+
+
+def sensors_start(sp0):
+    sync_cm4_time(sp0)
+    time.sleep(0.02)
+    set_ap_awake(sp0, True)
+    time.sleep(0.02)
+    for h in (HANDLE_ACCEL, HANDLE_GYRO):
+        os.write(sp0, encode_shub_pkt(h, 2, struct.pack("<IQ", SAMPLE_PERIOD_US, 0)))
+        time.sleep(0.02)
+        os.write(sp0, encode_shub_pkt(h, 0, b"\xff"))
+        time.sleep(0.02)
+
+
+def sensors_stop(sp0):
+    for h in (HANDLE_ACCEL, HANDLE_GYRO):
+        try:
+            os.write(sp0, encode_shub_pkt(h, 1, b"\xff"))
+        except OSError:
+            pass
+
+
+def pack_dsu(msg_type, payload):
+    body = struct.pack("<I", msg_type) + payload
+    hdr = struct.pack("<4sHHII", b"DSUS", 1001, len(body), 0, SERVER_ID)
+    pkt = hdr + body
+    crc = zlib.crc32(pkt) & 0xFFFFFFFF
+    return pkt[:8] + struct.pack("<I", crc) + pkt[12:]
+
+
+def slot_meta(slot):
+    # slot, state(2=connected), model(2=full gyro), conn(1=usb), mac(6), battery(5=full)
+    if slot == 0:
+        return struct.pack("<BBBB6sB", 0, 2, 2, 1, MAC, 5)
+    return struct.pack("<BBBB6sB", slot, 0, 0, 0, b"\0" * 6, 0)
+
+
+def main():
+    signal.signal(signal.SIGTERM, _on_signal)
+    signal.signal(signal.SIGINT, _on_signal)
+
+    ensure_modules()
+    boot_ch_sys()
+
+    sp0 = os.open(SPIPE_CMD, os.O_RDWR | os.O_NONBLOCK)
+    sp1 = os.open(SPIPE_DATA, os.O_RDWR | os.O_NONBLOCK)
+    sync_cm4_time(sp0)
+    set_ap_awake(sp0, True)
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind((HOST, PORT))
+    sock.setblocking(False)
+    log(f"listening on {HOST}:{PORT} (DSU/Cemuhook)")
+
+    clients = {}  # addr -> last_seen_monotonic
+    streaming = False
+    last_sync = time.monotonic()
+    rxbuf = bytearray()
+    pkt_num = 0
+    ax = ay = az = 0.0
+    gx = gy = gz = 0.0
+    ts_us = 0
+
+    try:
+        while _running:
+            now = time.monotonic()
+            for a in [a for a, t in clients.items() if now - t > 5.0]:
+                del clients[a]
+
+            if clients and not streaming:
+                try:
+                    sensors_start(sp0)
+                    rxbuf.clear()
+                    streaming = True
+                    last_sync = now
+                    log("CM4 accel+gyro stream started (50 Hz)")
+                except OSError as e:
+                    log("failed to start CM4 stream:", e)
+            elif not clients and streaming:
+                sensors_stop(sp0)
+                streaming = False
+                log("CM4 accel+gyro stream stopped (idle)")
+            elif streaming and now - last_sync > 60.0:
+                try:
+                    sync_cm4_time(sp0)
+                    last_sync = now
+                except OSError:
+                    pass
+
+            rlist = [sock, sp1] if streaming else [sock]
+            r, _, _ = select.select(rlist, [], [], 1.0)
+
+            if sock in r:
+                try:
+                    data, addr = sock.recvfrom(256)
+                except OSError:
+                    data = b""
+                if len(data) >= 20 and data[:4] == b"DSUC":
+                    msg_type = struct.unpack_from("<I", data, 16)[0]
+                    if msg_type == MSG_VER:
+                        sock.sendto(pack_dsu(MSG_VER, struct.pack("<H", 1001)), addr)
+                    elif msg_type == MSG_INFO and len(data) >= 24:
+                        cnt = min(struct.unpack_from("<I", data, 20)[0], 4)
+                        for i in range(cnt):
+                            slot = data[24 + i] if len(data) > 24 + i else i
+                            sock.sendto(pack_dsu(MSG_INFO, slot_meta(slot) + b"\0"), addr)
+                    elif msg_type == MSG_DATA:
+                        clients[addr] = time.monotonic()
+
+            if streaming and sp1 in r:
+                try:
+                    chunk = os.read(sp1, 4096)
+                except OSError:
+                    chunk = b""
+                if chunk:
+                    rxbuf.extend(chunk)
+                updated = False
+                while True:
+                    idx = rxbuf.find(b"\x7e\x7e\x7e\x7e")
+                    if idx < 0:
+                        rxbuf.clear()
+                        break
+                    if idx > 0:
+                        del rxbuf[:idx]
+                    if len(rxbuf) < 10:
+                        break
+                    ptype, sub, plen, _hchk = struct.unpack_from(">BBHH", rxbuf, 4)
+                    if len(rxbuf) < 10 + plen + 2:
+                        break
+                    pay = bytes(rxbuf[10 : 10 + plen])
+                    del rxbuf[: 10 + plen + 2]
+                    if ptype == 0xFF and sub == 0x04 and plen >= 14:
+                        h = pay[0]
+                        x, y, z = struct.unpack_from("<fff", pay, 2)
+                        ts_us = int(time.monotonic() * 1e6)
+                        if h == HANDLE_ACCEL:
+                            ax, ay, az = x / G0, y / G0, z / G0
+                            updated = True
+                        elif h == HANDLE_GYRO:
+                            gx, gy, gz = math.degrees(x), math.degrees(y), math.degrees(z)
+                            updated = True
+                if updated and clients:
+                    pkt_num = (pkt_num + 1) & 0xFFFFFFFF
+                    payload = (
+                        slot_meta(0)
+                        + struct.pack("<BI", 1, pkt_num)
+                        + b"\0" * 32
+                        + struct.pack("<Qffffff", ts_us, ax, ay, az, gx, gy, gz)
+                    )
+                    pkt = pack_dsu(MSG_DATA, payload)
+                    for addr in list(clients):
+                        try:
+                            sock.sendto(pkt, addr)
+                        except OSError:
+                            pass
+    finally:
+        if streaming:
+            sensors_stop(sp0)
+        os.close(sp0)
+        os.close(sp1)
+        sock.close()
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,14 @@
+[Unit]
+Description=RG Slide mainline CM4 sensorhub IMU DSU (Cemuhook) server
+ConditionKernelVersion=>=6.0
+After=rgslide-mainline-modules.service
+Wants=rgslide-mainline-modules.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/rgslide-mainline-imu
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

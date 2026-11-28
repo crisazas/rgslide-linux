@@ -71,6 +71,11 @@ for m in $MODS; do
         done
     else
         cp -r "$MU300_UPSTREAM/modules/$m" "$MOD_BUILD/$m"
+        if [ "$m" = "sprd_modem" ]; then
+            for p in "$ROOT_DIR"/mainline/patches/modem/*.patch; do
+                [ -f "$p" ] && patch -d "$MOD_BUILD/sprd_modem" -p1 -s < "$p"
+            done
+        fi
     fi
     [ -d "$MOD_BUILD/wcn_bsp" ] || cp -r "$MU300_UPSTREAM/modules/wcn_bsp" "$MOD_BUILD/wcn_bsp"
 

@@ -1,0 +1,30 @@
+From: rgslide-linux <noreply@rgslide>
+Subject: [PATCH] modem_loader: enable CH Cortex-M4 DDR access before start
+
+On Unisoc T820 (ums9620), the CH Cortex-M4 sensorhub executes firmware
+loaded into DDR at 0xAE640000. Ensure PMU_APB 0x0910 (CH_ACCESS_DDR_CFG
+bit 0) is set before releasing CH core reset in soc_modem_start().
+---
+ modem_loader/sprd_modem_loader.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/modem_loader/sprd_modem_loader.c b/modem_loader/sprd_modem_loader.c
+index 1111111..2222222 100644
+--- a/modem_loader/sprd_modem_loader.c
++++ b/modem_loader/sprd_modem_loader.c
+@@ -759,6 +759,13 @@ static void modem_reg_ctrl(struct modem_device *modem, u32 index, u32 b_clear)
+ 
+ static void soc_modem_start(struct modem_device *modem)
+ {
++	if (modem->modem_dst == SIPC_ID_CH &&
++	    modem->modem_ctrl->ctrl_map[MODEM_CTRL_DEEP_SLEEP]) {
++		/* Allow CH Cortex-M4 to fetch firmware from DDR (0xAE640000). */
++		regmap_update_bits(modem->modem_ctrl->ctrl_map[MODEM_CTRL_DEEP_SLEEP],
++				   0x0910, 0x1, 0x1);
++	}
++
+ 	/* clear cp force shutdown */
+ 	modem_reg_ctrl(modem, MODEM_CTRL_SHUT_DOWN, 1);
+ 
+-- 
+2.43.0

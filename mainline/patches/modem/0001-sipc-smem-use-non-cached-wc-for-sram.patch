@@ -1,0 +1,33 @@
+From: rgslide-linux <noreply@rgslide>
+Subject: [PATCH] sipc/smem: use non-cached WC mapping for SRAM regions
+
+In Linux 6.18, memremap() checks MEMREMAP_WB before MEMREMAP_WC. Passing
+MEMREMAP_WC | MEMREMAP_WB for non-RAM shared regions (such as AON IRAM at
+0x6500d000 used by the CM4 sensorhub SIPC sbuf rings) silently falls back
+to write-back cached mappings, leaving AP ring-header writes stuck in the
+CPU cache and invisible to the Cortex-M4.
+
+Drop MEMREMAP_WB when mtype != MMAP_CACHE so SRAM regions are mapped with
+MEMREMAP_WC (ioremap_wc).
+---
+ sipc/smem.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/sipc/smem.c b/sipc/smem.c
+index 1111111..2222222 100644
+--- a/sipc/smem.c
++++ b/sipc/smem.c
+@@ -181,9 +181,9 @@ static void *soc_modem_ram_vmap(phys_addr_t start, size_t size, E_MMAP_TYPE mtyp
+ 		}
+ 	}
+ 	map->vmapped = vaddr != NULL;
+-	if (!vaddr)	/* no struct pages (a real no-map region): memremap can still map it */
++	if (!vaddr)	/* no struct pages (a real no-map / SRAM region): do not fall back to cached WB */
+ 		vaddr = memremap(page_start, page_count * PAGE_SIZE,
+-				 mtype == MMAP_CACHE ? MEMREMAP_WB : MEMREMAP_WC | MEMREMAP_WB);
++				 mtype == MMAP_CACHE ? MEMREMAP_WB : MEMREMAP_WC);
+ 	if (!vaddr) {
+ 		pr_err("smem: cannot map %pa (%u pages)\n", &page_start, page_count);
+ 		kfree(map);
+-- 
+2.43.0
