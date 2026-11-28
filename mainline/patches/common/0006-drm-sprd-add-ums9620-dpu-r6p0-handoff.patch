@@ -150,7 +150,7 @@ Enable mainline DRM KMS scanout on the Anbernic RG Slide (UMS9620 / T820):
  }
 --- a/drivers/gpu/drm/sprd/sprd_dpu.c
 +++ b/drivers/gpu/drm/sprd/sprd_dpu.c
-@@ -32,6 +32,27 @@
+@@ -32,6 +32,28 @@
  #define REG_BLEND_SIZE	0x24
  #define REG_BG_COLOR	0x2C
  
@@ -173,12 +173,13 @@ Enable mainline DRM KMS scanout on the Anbernic RG Slide (UMS9620 / T820):
 +
 +#define BIT_R6P0_DPU_REG_UPDATE	BIT(4)
 +#define BIT_R6P0_INT_VSYNC	BIT(4)
++#define BIT_R6P0_INT_STOP_DONE	BIT(16)
 +#define BIT_R6P0_INT_UPDATE_DONE BIT(18)
 +
  /* Layer0 control registers */
  #define REG_LAY_BASE_ADDR0	0x30
  #define REG_LAY_BASE_ADDR1	0x34
-@@ -356,6 +377,30 @@
+@@ -356,6 +378,30 @@
  		pitch = fb->pitches[0] / fb->format->cpp[0];
  	}
  
@@ -209,7 +210,7 @@ Enable mainline DRM KMS scanout on the Anbernic RG Slide (UMS9620 / T820):
  	layer_reg_wr(ctx, REG_LAY_POS, offset, index);
  	layer_reg_wr(ctx, REG_LAY_SIZE, size, index);
  	layer_reg_wr(ctx, REG_LAY_CROP_START,
-@@ -378,6 +423,16 @@
+@@ -378,6 +424,16 @@
  {
  	struct dpu_context *ctx = &dpu->ctx;
  
@@ -226,7 +227,7 @@ Enable mainline DRM KMS scanout on the Anbernic RG Slide (UMS9620 / T820):
  	/*
  	 * Make sure the dpu is in stop status. DPU has no shadow
  	 * registers in EDPI mode. So the config registers can only be
-@@ -406,6 +461,20 @@
+@@ -406,6 +462,22 @@
  	struct dpu_context *ctx = &dpu->ctx;
  	u32 int_mask = 0;
  
@@ -236,9 +237,11 @@ Enable mainline DRM KMS scanout on the Anbernic RG Slide (UMS9620 / T820):
 +		 * and enable VSYNC + UPDATE_DONE interrupts for atomic page flips.
 +		 */
 +		writel(0x00, ctx->base + REG_R6P0_BG_COLOR);
-+		writel(BIT_DPU_INT_DONE | BIT_R6P0_INT_VSYNC | BIT_R6P0_INT_UPDATE_DONE,
++		writel(BIT_DPU_INT_DONE | BIT_R6P0_INT_VSYNC |
++		       BIT_R6P0_INT_STOP_DONE | BIT_R6P0_INT_UPDATE_DONE,
 +		       ctx->base + REG_R6P0_INT_CLR);
-+		writel(BIT_DPU_INT_DONE | BIT_R6P0_INT_VSYNC | BIT_R6P0_INT_UPDATE_DONE,
++		writel(BIT_DPU_INT_DONE | BIT_R6P0_INT_VSYNC |
++		       BIT_R6P0_INT_STOP_DONE | BIT_R6P0_INT_UPDATE_DONE,
 +		       ctx->base + REG_R6P0_INT_EN);
 +		ctx->stopped = false;
 +		return;
@@ -247,7 +250,7 @@ Enable mainline DRM KMS scanout on the Anbernic RG Slide (UMS9620 / T820):
  	writel(0x00, ctx->base + REG_BG_COLOR);
  	writel(0x00, ctx->base + REG_MMU_EN);
  	writel(0x00, ctx->base + REG_MMU_PPN1);
-@@ -453,6 +522,12 @@
+@@ -453,6 +525,12 @@
  {
  	struct dpu_context *ctx = &dpu->ctx;
  
@@ -260,23 +263,17 @@ Enable mainline DRM KMS scanout on the Anbernic RG Slide (UMS9620 / T820):
  	writel(0x00, ctx->base + REG_DPU_INT_EN);
  	writel(0xff, ctx->base + REG_DPU_INT_CLR);
  }
-@@ -463,6 +538,15 @@
+@@ -463,6 +541,9 @@
  	u32 reg_val;
  	u32 size;
  
-+	if (ctx->is_r6p0) {
-+		/* Program VRR vertical porches (60 / 90 / 120 Hz at fixed 182 MHz pixel clock). */
-+		reg_val = ctx->vm.vsync_len |
-+			  (ctx->vm.vback_porch << 8) |
-+			  (ctx->vm.vfront_porch << 20);
-+		writel(reg_val, ctx->base + REG_R6P0_DPI_V_TIMING);
++	if (ctx->is_r6p0)
 +		return;
-+	}
 +
  	size = (ctx->vm.vactive << 16) | ctx->vm.hactive;
  	writel(size, ctx->base + REG_PANEL_SIZE);
  	writel(size, ctx->base + REG_BLEND_SIZE);
-@@ -544,6 +628,8 @@
+@@ -544,6 +625,8 @@
  	struct sprd_dpu *dpu = to_sprd_crtc(old_state->crtc);
  
  	layer_reg_wr(&dpu->ctx, REG_LAY_CTRL, 0x00, old_state->zpos);
@@ -285,7 +282,7 @@ Enable mainline DRM KMS scanout on the Anbernic RG Slide (UMS9620 / T820):
  }
  
  static void sprd_plane_create_properties(struct sprd_plane *plane, int index)
-@@ -577,7 +663,6 @@
+@@ -577,7 +660,6 @@
  static const struct drm_plane_funcs sprd_plane_funcs = {
  	.update_plane = drm_atomic_helper_update_plane,
  	.disable_plane	= drm_atomic_helper_disable_plane,
@@ -293,7 +290,16 @@ Enable mainline DRM KMS scanout on the Anbernic RG Slide (UMS9620 / T820):
  	.reset = drm_atomic_helper_plane_reset,
  	.atomic_duplicate_state = drm_atomic_helper_plane_duplicate_state,
  	.atomic_destroy_state = drm_atomic_helper_plane_destroy_state,
-@@ -626,7 +711,7 @@
+@@ -618,7 +700,7 @@
+ 	struct sprd_dpu *dpu = to_sprd_crtc(crtc);
+ 	struct drm_display_mode *mode = &crtc->state->adjusted_mode;
+ 	struct drm_encoder *encoder;
+-	struct sprd_dsi *dsi;
++	struct sprd_dsi *dsi = NULL;
+ 
+ 	drm_display_mode_to_videomode(mode, &dpu->ctx.vm);
+ 
+@@ -626,12 +708,42 @@
  				  crtc->state->encoder_mask) {
  		dsi = encoder_to_dsi(encoder);
  
@@ -302,7 +308,42 @@ Enable mainline DRM KMS scanout on the Anbernic RG Slide (UMS9620 / T820):
  			dpu->ctx.if_type = SPRD_DPU_IF_DPI;
  		else
  			dpu->ctx.if_type = SPRD_DPU_IF_EDPI;
-@@ -684,7 +769,10 @@
+ 	}
+ 
++	if (dpu->ctx.is_r6p0) {
++		struct dpu_context *ctx = &dpu->ctx;
++		u32 cur_v = readl(ctx->base + REG_R6P0_DPI_V_TIMING);
++		u32 new_v = ctx->vm.vsync_len |
++			    (ctx->vm.vback_porch << 8) |
++			    (ctx->vm.vfront_porch << 20);
++		u32 new_h = ctx->vm.hsync_len |
++			    (ctx->vm.hback_porch << 8) |
++			    (ctx->vm.hfront_porch << 20);
++
++		if (new_v != cur_v) {
++			dpu_reg_set(ctx, REG_R6P0_INT_EN,
++				    BIT_DPU_INT_DONE | BIT_R6P0_INT_STOP_DONE);
++			ctx->evt_stop = false;
++			dpu_reg_set(ctx, REG_R6P0_DPU_CTRL, BIT_DPU_STOP);
++			wait_event_interruptible_timeout(ctx->wait_queue,
++							 ctx->evt_stop,
++							 msecs_to_jiffies(50));
++			writel(new_v, ctx->base + REG_R6P0_DPI_V_TIMING);
++			writel(new_h, ctx->base + REG_R6P0_DPI_H_TIMING);
++			sprd_dsi_qogirn6pro_vrr_timing(dsi, &ctx->vm);
++			dpu_reg_set(ctx, REG_R6P0_DPU_CTRL, BIT_DPU_RUN);
++			drm_info(dpu->drm, "dpu r6p0 VRR: %ux%u@%dHz (vfp=%u vbp=%u)\n",
++				 mode->hdisplay, mode->vdisplay,
++				 drm_mode_vrefresh(mode),
++				 ctx->vm.vfront_porch, ctx->vm.vback_porch);
++		}
++		return;
++	}
++
+ 	sprd_dpi_init(dpu);
+ }
+ 
+@@ -684,7 +796,10 @@
  {
  	struct sprd_dpu *dpu = to_sprd_crtc(crtc);
  
@@ -314,7 +355,7 @@ Enable mainline DRM KMS scanout on the Anbernic RG Slide (UMS9620 / T820):
  
  	return 0;
  }
-@@ -693,7 +781,10 @@
+@@ -693,7 +808,10 @@
  {
  	struct sprd_dpu *dpu = to_sprd_crtc(crtc);
  
@@ -326,7 +367,7 @@ Enable mainline DRM KMS scanout on the Anbernic RG Slide (UMS9620 / T820):
  }
  
  static const struct drm_crtc_helper_funcs sprd_crtc_helper_funcs = {
-@@ -704,7 +795,6 @@
+@@ -704,7 +822,6 @@
  };
  
  static const struct drm_crtc_funcs sprd_crtc_funcs = {
@@ -334,7 +375,7 @@ Enable mainline DRM KMS scanout on the Anbernic RG Slide (UMS9620 / T820):
  	.set_config	= drm_atomic_helper_set_config,
  	.page_flip	= drm_atomic_helper_page_flip,
  	.reset		= drm_atomic_helper_crtc_reset,
-@@ -750,6 +840,23 @@
+@@ -750,6 +867,23 @@
  	struct dpu_context *ctx = &dpu->ctx;
  	u32 reg_val, int_mask = 0;
  
@@ -344,7 +385,7 @@ Enable mainline DRM KMS scanout on the Anbernic RG Slide (UMS9620 / T820):
 +			ctx->evt_update = true;
 +			wake_up_interruptible_all(&ctx->wait_queue);
 +		}
-+		if (reg_val & BIT_DPU_INT_DONE) {
++		if (reg_val & (BIT_DPU_INT_DONE | BIT_R6P0_INT_STOP_DONE)) {
 +			ctx->evt_stop = true;
 +			wake_up_interruptible_all(&ctx->wait_queue);
 +		}
@@ -358,7 +399,7 @@ Enable mainline DRM KMS scanout on the Anbernic RG Slide (UMS9620 / T820):
  	reg_val = readl(ctx->base + REG_DPU_INT_STS);
  
  	/* disable err interrupt */
-@@ -786,6 +893,9 @@
+@@ -786,6 +920,9 @@
  	struct dpu_context *ctx = &dpu->ctx;
  	int ret;
  
@@ -368,7 +409,7 @@ Enable mainline DRM KMS scanout on the Anbernic RG Slide (UMS9620 / T820):
  	ctx->base = devm_platform_ioremap_resource(pdev, 0);
  	if (IS_ERR(ctx->base)) {
  		dev_err(dev, "failed to map dpu registers\n");
-@@ -797,8 +907,13 @@
+@@ -797,8 +934,13 @@
  		return ctx->irq;
  
  	/* disable and clear interrupts before register dpu IRQ. */
@@ -384,7 +425,7 @@ Enable mainline DRM KMS scanout on the Anbernic RG Slide (UMS9620 / T820):
  
  	ret = devm_request_irq(dev, ctx->irq, sprd_dpu_isr,
  			       IRQF_TRIGGER_NONE, "DPU", dpu);
-@@ -843,6 +958,7 @@
+@@ -843,6 +985,7 @@
  
  static const struct of_device_id dpu_match_table[] = {
  	{ .compatible = "sprd,sharkl3-dpu" },
@@ -394,7 +435,7 @@ Enable mainline DRM KMS scanout on the Anbernic RG Slide (UMS9620 / T820):
  MODULE_DEVICE_TABLE(of, dpu_match_table);
 --- a/drivers/gpu/drm/sprd/sprd_dsi.h
 +++ b/drivers/gpu/drm/sprd/sprd_dsi.h
-@@ -116,8 +116,10 @@
+@@ -116,11 +116,14 @@
  	struct mipi_dsi_host host;
  	struct mipi_dsi_device *slave;
  	struct drm_encoder encoder;
@@ -405,6 +446,10 @@ Enable mainline DRM KMS scanout on the Anbernic RG Slide (UMS9620 / T820):
  };
  
  int dphy_pll_config(struct dsi_context *ctx);
+ void dphy_timing_config(struct dsi_context *ctx);
++void sprd_dsi_qogirn6pro_vrr_timing(struct sprd_dsi *dsi, const struct videomode *vm);
+ 
+ #endif /* __SPRD_DSI_H__ */
 --- a/drivers/gpu/drm/sprd/sprd_dsi.c
 +++ b/drivers/gpu/drm/sprd/sprd_dsi.c
 @@ -11,8 +11,10 @@
@@ -418,7 +463,27 @@ Enable mainline DRM KMS scanout on the Anbernic RG Slide (UMS9620 / T820):
  
  #include "sprd_drm.h"
  #include "sprd_dpu.h"
-@@ -793,6 +795,11 @@
+@@ -778,6 +780,19 @@
+ 	dsi_reg_up(ctx, PHY_INTERFACE_CTRL, RF_PHY_RESET_N, RF_PHY_RESET_N);
+ }
+ 
++void sprd_dsi_qogirn6pro_vrr_timing(struct sprd_dsi *dsi, const struct videomode *vm)
++{
++	struct dsi_context *ctx;
++
++	if (!dsi || !dsi->is_qogirn6pro || !dsi->ctx.base || !vm)
++		return;
++
++	ctx = &dsi->ctx;
++	dsi_reg_wr(ctx, VIDEO_VBLK_LINES, VFP_LINES, 0, vm->vfront_porch);
++	dsi_reg_wr(ctx, VIDEO_VBLK_LINES, VBP_LINES, 10, vm->vback_porch);
++	dsi_reg_wr(ctx, VIDEO_VBLK_LINES, VSA_LINES, 20, vm->vsync_len);
++}
++
+ static void sprd_dsi_encoder_mode_set(struct drm_encoder *encoder,
+ 				      struct drm_display_mode *mode,
+ 				 struct drm_display_mode *adj_mode)
+@@ -793,6 +808,11 @@
  	struct sprd_dpu *dpu = to_sprd_crtc(encoder->crtc);
  	struct dsi_context *ctx = &dsi->ctx;
  
@@ -430,7 +495,7 @@ Enable mainline DRM KMS scanout on the Anbernic RG Slide (UMS9620 / T820):
  	if (ctx->enabled) {
  		drm_warn(dsi->drm, "dsi is initialized\n");
  		return;
-@@ -830,6 +837,11 @@
+@@ -830,6 +850,11 @@
  	struct sprd_dpu *dpu = to_sprd_crtc(encoder->crtc);
  	struct dsi_context *ctx = &dsi->ctx;
  
@@ -442,7 +507,7 @@ Enable mainline DRM KMS scanout on the Anbernic RG Slide (UMS9620 / T820):
  	if (!ctx->enabled) {
  		drm_warn(dsi->drm, "dsi isn't initialized\n");
  		return;
-@@ -880,11 +892,107 @@
+@@ -880,11 +905,107 @@
  	return 0;
  }
  
@@ -550,7 +615,7 @@ Enable mainline DRM KMS scanout on the Anbernic RG Slide (UMS9620 / T820):
  	dsi->panel_bridge = devm_drm_of_get_bridge(dev, dev->of_node, 1, 0);
  	if (IS_ERR(dsi->panel_bridge))
  		return PTR_ERR(dsi->panel_bridge);
-@@ -954,7 +1062,10 @@
+@@ -954,7 +1075,10 @@
  {
  	struct sprd_dsi *dsi = dev_get_drvdata(dev);
  
@@ -562,7 +627,7 @@ Enable mainline DRM KMS scanout on the Anbernic RG Slide (UMS9620 / T820):
  
  	drm_encoder_cleanup(&dsi->encoder);
  }
-@@ -1024,6 +1135,7 @@
+@@ -1024,6 +1148,7 @@
  
  static const struct of_device_id dsi_match_table[] = {
  	{ .compatible = "sprd,sharkl3-dsi-host" },
@@ -570,7 +635,7 @@ Enable mainline DRM KMS scanout on the Anbernic RG Slide (UMS9620 / T820):
  	{ /* sentinel */ },
  };
  
-@@ -1037,6 +1149,12 @@
+@@ -1037,6 +1162,12 @@
  		return -ENOMEM;
  
  	dev_set_drvdata(dev, dsi);
@@ -583,7 +648,7 @@ Enable mainline DRM KMS scanout on the Anbernic RG Slide (UMS9620 / T820):
  
  	dsi->host.ops = &sprd_dsi_host_ops;
  	dsi->host.dev = dev;
-@@ -1048,6 +1166,11 @@
+@@ -1048,6 +1179,11 @@
  {
  	struct sprd_dsi *dsi = dev_get_drvdata(&pdev->dev);
  
